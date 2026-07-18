@@ -94,11 +94,12 @@ export function getEatScore(predator, prey, options = {}) {
     options.speciesScore ?? prey?.speciesScore ?? prey?.scoreMultiplier,
     CONFIG.scoring.defaultSpeciesScore,
   );
+  const environmentMultiplier = finitePositive(options.environmentMultiplier, 1);
   const baseScore = Math.round(
     preyMass * speciesScore * CONFIG.scoring.pointsPerMass,
   );
   return Math.round(
-    baseScore * comboMultiplier * getRiskMultiplier(predator, prey),
+    baseScore * comboMultiplier * environmentMultiplier * getRiskMultiplier(predator, prey),
   );
 }
 

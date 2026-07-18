@@ -1,3 +1,5 @@
+import { CONFIG } from "./config.js";
+
 /**
  * High-clarity pixel fish pipeline:
  * - Logical 48x28 art, 3x block scale → crisp on high-DPR canvases
@@ -57,6 +59,22 @@ const SPECIES_PALETTES = {
     fin: "#6f9baa",
     eye: "#101820",
     accent: "#b9dfe2",
+  },
+  puffer: {
+    body: "#d5b95d",
+    light: "#fff0a0",
+    dark: "#75643d",
+    fin: "#b58a48",
+    eye: "#171a18",
+    accent: "#6b8b61",
+  },
+  lantern: {
+    body: "#31546d",
+    light: "#86e6d0",
+    dark: "#152a48",
+    fin: "#563f83",
+    eye: "#eaffb4",
+    accent: "#b8ff76",
   },
 };
 
@@ -156,6 +174,26 @@ const SPECIES_SHAPE = {
     nose: 1.05,
     belly: 0.88,
     tailSpread: 0.72,
+  },
+  puffer: {
+    length: 0.82,
+    height: 1.42,
+    bodyStart: 15,
+    bodyEnd: 38,
+    halfMul: 8.4,
+    nose: 0.82,
+    belly: 1.38,
+    tailSpread: 0.48,
+  },
+  lantern: {
+    length: 0.94,
+    height: 0.78,
+    bodyStart: 15,
+    bodyEnd: 40,
+    halfMul: 5,
+    nose: 0.88,
+    belly: 0.9,
+    tailSpread: 0.9,
   },
 };
 
@@ -289,6 +327,19 @@ function paintFishGrid(palette, species, frame, tier) {
   // --- Species markings ---
   paintMarkings(grid, species, palette, bodyStart, bodyEnd, centerY, tier, wave);
 
+  if (species === "puffer") {
+    for (let x = bodyStart + 2; x < bodyEnd - 2; x += 4) {
+      setPx(grid, x, centerY - 9, palette.light);
+      setPx(grid, x + 1, centerY + 9, palette.fin);
+    }
+  } else if (species === "lantern") {
+    const lureX = bodyEnd - 7;
+    setPx(grid, lureX, centerY - 7, palette.fin);
+    setPx(grid, lureX + 1, centerY - 8, palette.fin);
+    setPx(grid, lureX + 2, centerY - 9, palette.accent);
+    setPx(grid, lureX + 3, centerY - 9, "#efffc0");
+  }
+
   // Gill plate and alternating scale glints give every species a little depth.
   const gillX = bodyEnd - 7;
   setPx(grid, gillX, centerY - 1, palette.dark);
@@ -338,6 +389,16 @@ function paintMarkings(grid, species, palette, bodyStart, bodyEnd, centerY, tier
       if (x % 3 === 0) setPx(grid, x, centerY + 2, palette.dark);
     }
     setPx(grid, bodyEnd - 8, centerY, palette.accent);
+  } else if (species === "puffer") {
+    for (let x = bodyStart + 3; x < bodyEnd - 4; x += 4) {
+      setPx(grid, x, centerY - 3, palette.accent);
+      setPx(grid, x + 1, centerY + 3, palette.dark);
+    }
+  } else if (species === "lantern") {
+    for (let x = bodyStart + 3; x < bodyEnd - 4; x += 3) {
+      setPx(grid, x, centerY - 2, palette.accent);
+      setPx(grid, x + 1, centerY + 2, palette.light);
+    }
   } else if (species === "bluefin") {
     for (let x = bodyStart + 2; x < bodyEnd - 3; x++) {
       setPx(grid, x, centerY - 4, palette.light);
@@ -470,6 +531,7 @@ export class SpriteFactory {
 
     const baseAlpha = options.alpha ?? 1;
     const isGold = species === "gold";
+    const isLantern = species === "lantern";
 
     // Soft contact shadow (reads as depth without blur cost on the sprite itself)
     ctx.save();
@@ -494,7 +556,13 @@ export class SpriteFactory {
     ctx.restore();
 
     // Relation glow (kept soft)
-    if (options.relation === "prey" || options.relation === "fringe") {
+    if (isLantern && (options.nightStrength ?? 0) > 0.08) {
+      ctx.shadowColor = "#b8ff76";
+      ctx.shadowBlur = 4 + (options.nightStrength ?? 0) * CONFIG.dayNight.rareGlowNightBoost;
+    } else if (isGold && (options.nightStrength ?? 0) > 0.08) {
+      ctx.shadowColor = "#ffe37a";
+      ctx.shadowBlur = 5 + (options.nightStrength ?? 0) * CONFIG.dayNight.rareGlowNightBoost;
+    } else if (options.relation === "prey" || options.relation === "fringe") {
       ctx.shadowColor = options.relation === "fringe" ? "#ffd45e" : "#72f5cf";
       ctx.shadowBlur = options.highContrast
         ? 12

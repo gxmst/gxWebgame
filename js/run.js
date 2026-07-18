@@ -4,6 +4,7 @@ export function createRunResult({
   victory = false,
   victoryElapsedMs = null,
   reachedTier = "T1",
+  collectedPearls = 0,
 } = {}) {
   const survivalMs = Math.max(0, Math.round(elapsedSeconds * 1000));
   const capturedClearTime = Number.isFinite(victoryElapsedMs)
@@ -15,6 +16,7 @@ export function createRunResult({
     victory: victory === true,
     clearTimeMs: victory ? capturedClearTime : null,
     reachedTier,
+    collectedPearls: Math.max(0, Math.round(collectedPearls)),
   };
 }
 

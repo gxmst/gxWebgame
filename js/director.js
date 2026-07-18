@@ -264,7 +264,11 @@ export class Director {
     else if (relation === "neutral") ratio = this.randomRange(0.87, 1.13);
     else ratio = this.randomRange(1.28, game.player.tier <= 2 ? 1.58 : 1.82);
 
-    const species = forcedSpecies || this.chooseSpecies(relation, game.elapsed);
+    const species = forcedSpecies || this.chooseSpecies(
+      relation,
+      game.elapsed,
+      game.dayNight?.nightStrength ?? 0,
+    );
     const mass = Math.max(4.5, playerMass * ratio);
     let point;
     if (initial) {
@@ -311,13 +315,24 @@ export class Director {
     });
   }
 
-  chooseSpecies(relation, elapsed) {
+  chooseSpecies(relation, elapsed, nightStrength = 0) {
     if (relation === "predator" && elapsed > 8 && this.random() < 0.42) return "barracuda";
     const roll = this.random();
-    if (roll < 0.45) return "silver";
-    if (roll < 0.72) return "bluefin";
-    if (roll < 0.92) return "grouper";
-    return elapsed > 8 ? "barracuda" : "silver";
+    const night = Math.max(0, Math.min(1, nightStrength));
+    const entries = [
+      ["silver", 0.31 - night * 0.08],
+      ["bluefin", 0.23 - night * 0.03],
+      ["grouper", 0.17 - night * 0.02],
+      ["puffer", 0.12 - night * 0.01],
+      ["lantern", 0.1 + night * CONFIG.dayNight.lanternNightWeightBonus],
+      [elapsed > 8 ? "barracuda" : "silver", 0.07],
+    ];
+    let cursor = roll;
+    for (const [species, weight] of entries) {
+      cursor -= weight;
+      if (cursor <= 0) return species;
+    }
+    return entries[entries.length - 1][0];
   }
 
   randomWorldPoint(player, minDistance, maxDistance) {

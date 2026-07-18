@@ -156,15 +156,16 @@ export class Effects {
     for (const ring of this.rings) {
       const t = 1 - ring.life / ring.maxLife;
       const radius = lerp(ring.startRadius, ring.endRadius, easeOutCubic(t)) * camera.zoom;
-      const screen = camera.worldToScreen(ring.x, ring.y);
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, (1 - t) * 0.85);
-      ctx.strokeStyle = ring.color;
-      ctx.lineWidth = Math.max(1, ring.width * (1 - t * 0.55) * camera.zoom);
-      ctx.beginPath();
-      ctx.arc(screen.x, screen.y, Math.max(1, radius), 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
+      for (const screen of camera.getVisibleWrappedScreens(ring.x, ring.y, ring.endRadius)) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, (1 - t) * 0.85);
+        ctx.strokeStyle = ring.color;
+        ctx.lineWidth = Math.max(1, ring.width * (1 - t * 0.55) * camera.zoom);
+        ctx.beginPath();
+        ctx.arc(screen.x, screen.y, Math.max(1, radius), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
 
     for (const item of this.sucks) {
@@ -173,73 +174,76 @@ export class Effects {
       const x = lerp(item.fromX, item.toX, ease);
       const y = lerp(item.fromY, item.toY, ease);
       const scale = lerp(1, 0.25, ease);
-      const screen = camera.worldToScreen(x, y);
       const radius = item.radius * scale * camera.zoom;
-      if (sprites?.drawFish) {
-        sprites.drawFish(ctx, {
+      for (const screen of camera.getVisibleWrappedScreens(x, y, item.radius * 2)) {
+        if (sprites?.drawFish) {
+          sprites.drawFish(ctx, {
           species: item.species,
           angle: item.angle + t * 1.2,
           tier: item.tier,
           dashing: false,
           animOffset: 0,
-        }, screen, radius, {
+          }, screen, radius, {
           time: t * 3,
           alpha: 1 - t * 0.35,
           skin: item.skin,
           isPlayer: false,
           relation: null,
-        });
-      } else {
-        ctx.save();
-        ctx.globalAlpha = 1 - t * 0.4;
-        ctx.fillStyle = item.color;
-        ctx.beginPath();
-        ctx.ellipse(screen.x, screen.y, radius * 1.4, radius * 0.75, item.angle, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+          });
+        } else {
+          ctx.save();
+          ctx.globalAlpha = 1 - t * 0.4;
+          ctx.fillStyle = item.color;
+          ctx.beginPath();
+          ctx.ellipse(screen.x, screen.y, radius * 1.4, radius * 0.75, item.angle, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
       }
     }
 
     for (const particle of this.particles) {
-      const screen = camera.worldToScreen(particle.x, particle.y);
       const alpha = Math.max(0, particle.life / particle.maxLife);
       const size = Math.max(1, particle.size * camera.zoom * (0.55 + alpha * 0.55));
-      ctx.save();
-      ctx.translate(Math.round(screen.x), Math.round(screen.y));
-      ctx.rotate(particle.angle || 0);
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = particle.color;
-      if (particle.shape === "drop") {
-        ctx.beginPath();
-        ctx.ellipse(0, 0, size * 0.45, size * 0.85, 0, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (particle.shape === "scale") {
-        ctx.beginPath();
-        ctx.moveTo(0, -size);
-        ctx.lineTo(size * 0.7, size * 0.4);
-        ctx.lineTo(-size * 0.7, size * 0.4);
-        ctx.closePath();
-        ctx.fill();
-      } else {
-        ctx.fillRect(-Math.ceil(size / 2), -Math.ceil(size / 2), Math.ceil(size), Math.ceil(size));
+      for (const screen of camera.getVisibleWrappedScreens(particle.x, particle.y, particle.size * 2)) {
+        ctx.save();
+        ctx.translate(Math.round(screen.x), Math.round(screen.y));
+        ctx.rotate(particle.angle || 0);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = particle.color;
+        if (particle.shape === "drop") {
+          ctx.beginPath();
+          ctx.ellipse(0, 0, size * 0.45, size * 0.85, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (particle.shape === "scale") {
+          ctx.beginPath();
+          ctx.moveTo(0, -size);
+          ctx.lineTo(size * 0.7, size * 0.4);
+          ctx.lineTo(-size * 0.7, size * 0.4);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          ctx.fillRect(-Math.ceil(size / 2), -Math.ceil(size / 2), Math.ceil(size), Math.ceil(size));
+        }
+        ctx.restore();
       }
-      ctx.restore();
     }
     ctx.globalAlpha = 1;
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     for (const item of this.texts) {
-      const screen = camera.worldToScreen(item.x, item.y);
       const t = item.life / item.maxLife;
       ctx.globalAlpha = Math.min(1, t * 2.2);
       const pop = 1 + (1 - t) * 0.18;
       ctx.font = `700 ${Math.round(item.size * pop)}px ui-monospace, monospace`;
       ctx.lineWidth = 4;
       ctx.strokeStyle = "rgba(6, 25, 35, 0.72)";
-      ctx.strokeText(item.text, screen.x, screen.y);
-      ctx.fillStyle = item.color;
-      ctx.fillText(item.text, screen.x, screen.y);
+      for (const screen of camera.getVisibleWrappedScreens(item.x, item.y, item.size * 6)) {
+        ctx.strokeText(item.text, screen.x, screen.y);
+        ctx.fillStyle = item.color;
+        ctx.fillText(item.text, screen.x, screen.y);
+      }
     }
     ctx.globalAlpha = 1;
   }

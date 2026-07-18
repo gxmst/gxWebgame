@@ -88,7 +88,8 @@ export function updateResults(save, result = {}) {
     }
   }
 
-  let earnedPearls = Math.floor(score / CONFIG.progression.scorePerPearl);
+  let earnedPearls = Math.floor(score / CONFIG.progression.scorePerPearl)
+    + nonNegativeInteger(result.collectedPearls);
   if (victory) earnedPearls += CONFIG.progression.victoryPearls;
 
   const reachedTier = normalizeTierId(result.reachedTier ?? result.tier);

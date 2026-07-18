@@ -141,7 +141,7 @@ export class WorldRenderer {
   /**
    * depthT 0 = surface (bright), 1 = abyss (dark). Driven by camera Y.
    */
-  draw(ctx, camera, time) {
+  draw(ctx, camera, time, dayNight = null) {
     const width = camera.viewportWidth;
     const height = camera.viewportHeight;
     const L = CONFIG.lighting;
@@ -183,7 +183,7 @@ export class WorldRenderer {
       ctx.fillRect(0, 0, width, height * 0.55);
     }
 
-    this.drawSunbeams(ctx, camera, time, depthT);
+    this.drawSunbeams(ctx, camera, time, depthT, dayNight);
     this.drawCaustics(ctx, camera, time, depthT);
     // The photo already contains distant reefs; keep generated far/mid scenery
     // only for the gradient fallback so the two art layers never look muddy.
@@ -197,14 +197,15 @@ export class WorldRenderer {
     if (!usingBackgroundImage) {
       for (const item of this.midDecor) {
         if (!this.#nearCamera(camera, item.x, item.y, halfW, halfH)) continue;
-        const point = camera.worldToScreen(item.x, item.y);
         const scale = item.scale * camera.zoom;
-        const shade = this.#entityShade(depthT, point.y, height);
-        ctx.save();
-        ctx.globalAlpha = shade;
-        if (item.type === "coral") this.drawCoral(ctx, point.x, point.y, scale, item.colorIndex, 1);
-        else this.drawRock(ctx, point.x, point.y, scale, 1);
-        ctx.restore();
+        for (const point of camera.getVisibleWrappedScreens(item.x, item.y, 180 * item.scale)) {
+          const shade = this.#entityShade(depthT, point.y, height);
+          ctx.save();
+          ctx.globalAlpha = shade;
+          if (item.type === "coral") this.drawCoral(ctx, point.x, point.y, scale, item.colorIndex, 1);
+          else this.drawRock(ctx, point.x, point.y, scale, 1);
+          ctx.restore();
+        }
       }
     }
 
@@ -224,15 +225,16 @@ export class WorldRenderer {
         this.width,
       );
       if (!this.#nearCamera(camera, wx, loopY, halfW, halfH)) continue;
-      const point = camera.worldToScreen(wx, loopY);
       const r = Math.max(1.2, bubble.size * camera.zoom);
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, r, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = `rgba(230, 255, 250, ${0.12 + (1 - depthT) * 0.12})`;
-      ctx.beginPath();
-      ctx.arc(point.x - r * 0.25, point.y - r * 0.25, r * 0.28, 0, Math.PI * 2);
-      ctx.fill();
+      for (const point of camera.getVisibleWrappedScreens(wx, loopY, bubble.size * 2)) {
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = `rgba(230, 255, 250, ${0.12 + (1 - depthT) * 0.12})`;
+        ctx.beginPath();
+        ctx.arc(point.x - r * 0.25, point.y - r * 0.25, r * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     ctx.fillStyle = `rgba(218, 255, 232, ${0.12 + (1 - depthT) * 0.16})`;
@@ -244,10 +246,13 @@ export class WorldRenderer {
       );
       const wx = wrap(mote.x + time * CONFIG.visuals.currentDriftX + driftX, this.width);
       if (!this.#nearCamera(camera, wx, loopY, halfW, halfH)) continue;
-      const point = camera.worldToScreen(wx, loopY);
       const size = Math.max(1, Math.round(mote.size * camera.zoom));
-      ctx.fillRect(Math.round(point.x), Math.round(point.y), size, size);
+      for (const point of camera.getVisibleWrappedScreens(wx, loopY, mote.size * 2)) {
+        ctx.fillRect(Math.round(point.x), Math.round(point.y), size, size);
+      }
     }
+
+    this.drawDayNightOverlay(ctx, width, height, dayNight);
 
     // Depth veil: stronger in abyss, heavier toward bottom of screen
     const veil = ctx.createLinearGradient(0, 0, 0, height);
@@ -331,31 +336,32 @@ export class WorldRenderer {
       const drawX = wrap(camera.x + ox, this.width);
       const drawY = item.y;
       if (!this.#nearCamera(camera, drawX, drawY, halfW, halfH)) continue;
-      const point = camera.worldToScreen(drawX, drawY);
       const w = item.w * camera.zoom * 0.55;
       const h = item.h * camera.zoom * 0.55;
-      if (item.kind === "ridge") {
-        ctx.fillStyle = depthT > 0.55 ? "#061e28" : "#0a3a48";
-        ctx.beginPath();
-        ctx.moveTo(point.x - w, point.y + h * 0.2);
-        ctx.quadraticCurveTo(point.x - w * 0.3, point.y - h, point.x, point.y - h * 0.55);
-        ctx.quadraticCurveTo(point.x + w * 0.35, point.y - h * 1.05, point.x + w, point.y + h * 0.15);
-        ctx.lineTo(point.x - w, point.y + h * 0.2);
-        ctx.fill();
-      } else {
-        ctx.strokeStyle = depthT > 0.55 ? "#0a2832" : "#0d4654";
-        ctx.lineWidth = Math.max(4, 10 * camera.zoom);
-        for (let i = -1; i <= 1; i++) {
+      for (const point of camera.getVisibleWrappedScreens(drawX, drawY, Math.max(item.w, item.h))) {
+        if (item.kind === "ridge") {
+          ctx.fillStyle = depthT > 0.55 ? "#061e28" : "#0a3a48";
           ctx.beginPath();
-          const sway = Math.sin(time * 0.6 + item.phase + i) * 12 * camera.zoom;
-          ctx.moveTo(point.x + i * 14 * camera.zoom, point.y + h * 0.3);
-          ctx.quadraticCurveTo(
-            point.x + i * 14 * camera.zoom + sway,
-            point.y - h * 0.2,
-            point.x + i * 10 * camera.zoom + sway * 1.2,
-            point.y - h,
-          );
-          ctx.stroke();
+          ctx.moveTo(point.x - w, point.y + h * 0.2);
+          ctx.quadraticCurveTo(point.x - w * 0.3, point.y - h, point.x, point.y - h * 0.55);
+          ctx.quadraticCurveTo(point.x + w * 0.35, point.y - h * 1.05, point.x + w, point.y + h * 0.15);
+          ctx.lineTo(point.x - w, point.y + h * 0.2);
+          ctx.fill();
+        } else {
+          ctx.strokeStyle = depthT > 0.55 ? "#0a2832" : "#0d4654";
+          ctx.lineWidth = Math.max(4, 10 * camera.zoom);
+          for (let i = -1; i <= 1; i++) {
+            ctx.beginPath();
+            const sway = Math.sin(time * 0.6 + item.phase + i) * 12 * camera.zoom;
+            ctx.moveTo(point.x + i * 14 * camera.zoom, point.y + h * 0.3);
+            ctx.quadraticCurveTo(
+              point.x + i * 14 * camera.zoom + sway,
+              point.y - h * 0.2,
+              point.x + i * 10 * camera.zoom + sway * 1.2,
+              point.y - h,
+            );
+            ctx.stroke();
+          }
         }
       }
     }
@@ -365,21 +371,22 @@ export class WorldRenderer {
   drawNearLayer(ctx, camera, time, halfW, halfH, depthT, viewHeight) {
     for (const item of this.nearDecor) {
       if (!this.#nearCamera(camera, item.x, item.y, halfW, halfH)) continue;
-      const point = camera.worldToScreen(item.x, item.y);
       const scale = item.scale * camera.zoom;
-      const shade = this.#entityShade(depthT, point.y, viewHeight);
-      ctx.save();
-      ctx.globalAlpha = shade;
-      if (item.type === "grass") this.drawGrass(ctx, point.x, point.y, scale, time + item.phase);
-      else if (item.type === "anemone") this.drawAnemone(ctx, point.x, point.y, scale, time + item.phase);
-      else this.drawPebble(ctx, point.x, point.y, scale);
-      ctx.restore();
+      for (const point of camera.getVisibleWrappedScreens(item.x, item.y, 90 * item.scale)) {
+        const shade = this.#entityShade(depthT, point.y, viewHeight);
+        ctx.save();
+        ctx.globalAlpha = shade;
+        if (item.type === "grass") this.drawGrass(ctx, point.x, point.y, scale, time + item.phase);
+        else if (item.type === "anemone") this.drawAnemone(ctx, point.x, point.y, scale, time + item.phase);
+        else this.drawPebble(ctx, point.x, point.y, scale);
+        ctx.restore();
+      }
     }
   }
 
-  drawSunbeams(ctx, camera, time, depthT) {
+  drawSunbeams(ctx, camera, time, depthT, dayNight = null) {
     const L = CONFIG.lighting;
-    const strength = lerp(L.sunbeamSurface, L.sunbeamAbyss, depthT);
+    const strength = lerp(L.sunbeamSurface, L.sunbeamAbyss, depthT) * (dayNight?.beamScale ?? 1);
     if (strength < 0.01) return;
     ctx.save();
     ctx.globalCompositeOperation = "screen";
@@ -408,6 +415,28 @@ export class WorldRenderer {
     ctx.restore();
   }
 
+  drawDayNightOverlay(ctx, width, height, dayNight) {
+    if (!dayNight) return;
+    const tuning = CONFIG.dayNight;
+    if (dayNight.warmStrength > 0.01) {
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      ctx.globalAlpha = dayNight.warmStrength * tuning.warmTintAlpha;
+      ctx.fillStyle = dayNight.dawnStrength > dayNight.duskStrength
+        ? tuning.dawnColor
+        : tuning.duskColor;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
+    if (dayNight.nightStrength > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = dayNight.nightStrength * tuning.nightDarkenAlpha;
+      ctx.fillStyle = tuning.nightColor;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
+  }
+
   drawCaustics(ctx, camera, time, depthT) {
     const L = CONFIG.lighting;
     const alpha = lerp(L.causticSurface, L.causticAbyss, depthT);
@@ -429,6 +458,96 @@ export class WorldRenderer {
         ctx.stroke();
       }
     }
+    ctx.restore();
+  }
+
+  drawEnvironment(ctx, camera, time, items, layer = "ground", quality = "auto") {
+    for (const item of items) {
+      if (!item.active) continue;
+      const foreground = item.type === "seaweed";
+      if ((layer === "foreground") !== foreground) continue;
+      const screens = camera.getVisibleWrappedScreens(item.x, item.y, item.radius * 1.5);
+      for (const point of screens) {
+        if (item.type === "seaweed") {
+          this.drawSeaweedPatch(ctx, point.x, point.y, item.radius * camera.zoom, time + item.phase, quality);
+        } else if (item.type === "trash") {
+          this.drawTrash(ctx, point.x, point.y, item.radius * camera.zoom, time + item.phase, item.kind);
+        } else if (item.type === "shell") {
+          this.drawShell(ctx, point.x, point.y, item.radius * camera.zoom, time + item.phase, item.rare);
+        }
+      }
+    }
+  }
+
+  drawSeaweedPatch(ctx, x, y, radius, time, quality) {
+    const blades = quality === "low" ? 3 : 5;
+    ctx.save();
+    ctx.translate(Math.round(x), Math.round(y + radius * 0.35));
+    ctx.globalAlpha = 0.82;
+    for (let index = 0; index < blades; index++) {
+      const offset = (index / Math.max(1, blades - 1) - 0.5) * radius * 1.25;
+      const height = radius * (0.85 + (index % 3) * 0.18);
+      const sway = Math.sin(time * 1.25 + index * 0.8) * radius * 0.16;
+      ctx.strokeStyle = index % 2 ? "#24795f" : "#3aa572";
+      ctx.lineWidth = Math.max(3, radius * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(offset, 0);
+      ctx.quadraticCurveTo(offset - sway * 0.35, -height * 0.55, offset + sway, -height);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(117, 207, 132, 0.45)";
+      ctx.fillRect(Math.round(offset + sway - 2), Math.round(-height - 2), 4, 4);
+    }
+    ctx.restore();
+  }
+
+  drawTrash(ctx, x, y, radius, time, kind) {
+    ctx.save();
+    ctx.translate(Math.round(x), Math.round(y));
+    ctx.rotate(Math.sin(time * 0.8) * 0.12);
+    ctx.globalAlpha = 0.78;
+    if (kind === "bag") {
+      ctx.fillStyle = "#9ebbb4";
+      ctx.strokeStyle = "#42636a";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-radius * 0.55, -radius * 0.45);
+      ctx.lineTo(radius * 0.5, -radius * 0.35);
+      ctx.lineTo(radius * 0.4, radius * 0.55);
+      ctx.lineTo(-radius * 0.45, radius * 0.45);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeRect(-radius * 0.28, -radius * 0.65, radius * 0.2, radius * 0.3);
+      ctx.strokeRect(radius * 0.08, -radius * 0.62, radius * 0.2, radius * 0.28);
+    } else {
+      ctx.fillStyle = "#788e91";
+      ctx.fillRect(-radius * 0.7, -radius * 0.2, radius * 1.4, radius * 0.45);
+      ctx.fillStyle = "#b9c6b8";
+      ctx.fillRect(-radius * 0.35, -radius * 0.42, radius * 0.5, radius * 0.25);
+    }
+    ctx.restore();
+  }
+
+  drawShell(ctx, x, y, radius, time, rare) {
+    const bob = Math.sin(time * 1.6) * 2;
+    ctx.save();
+    ctx.translate(Math.round(x), Math.round(y + bob));
+    ctx.shadowColor = rare ? "#ffe37a" : "#d9c8ff";
+    ctx.shadowBlur = rare ? 12 : 5;
+    ctx.fillStyle = rare ? "#ffd45c" : "#c9a9d8";
+    ctx.strokeStyle = rare ? "#fff0a0" : "#f0dcf5";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.72, Math.PI, Math.PI * 2);
+    ctx.lineTo(radius * 0.72, radius * 0.35);
+    ctx.lineTo(-radius * 0.72, radius * 0.35);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#fff8d2";
+    ctx.beginPath();
+    ctx.arc(0, -radius * 0.05, radius * 0.18, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 

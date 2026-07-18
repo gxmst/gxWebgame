@@ -6,8 +6,11 @@ import { tests as director } from "./director.test.js";
 import { tests as quality } from "./quality.test.js";
 import { tests as upgrades } from "./upgrades.test.js";
 import { tests as effects } from "./effects.test.js";
+import { tests as input } from "./input.test.js";
+import { tests as dayNight } from "./day-night.test.js";
+import { tests as environment } from "./environment.test.js";
 
-const tests = [...rules, ...camera, ...save, ...run, ...director, ...quality, ...upgrades, ...effects];
+const tests = [...rules, ...camera, ...save, ...run, ...director, ...quality, ...upgrades, ...effects, ...input, ...dayNight, ...environment];
 let passed = 0;
 
 for (const test of tests) {

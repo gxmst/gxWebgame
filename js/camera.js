@@ -61,6 +61,10 @@ export class Camera {
   /** 0 at surface (top of map), 1 at abyss (bottom). */
   get depthT() {
     if (!(this.worldHeight > 0)) return 0.5;
+    if (this.wrap) {
+      const phase = wrap(this.y, this.worldHeight) / this.worldHeight * Math.PI * 2;
+      return 0.5 - Math.cos(phase) * 0.5;
+    }
     return clamp(this.y / this.worldHeight, 0, 1);
   }
 
@@ -164,6 +168,45 @@ export class Camera {
       x: dx * this.zoom + this.width / 2,
       y: dy * this.zoom + this.height / 2,
     };
+  }
+
+  /** All toroidal images of a point that intersect the viewport. */
+  getVisibleWrappedScreens(xOrPoint, yOrRadius, radius = 0) {
+    let x;
+    let y;
+    let worldRadius;
+    if (typeof xOrPoint === "object") {
+      x = xOrPoint.x;
+      y = xOrPoint.y;
+      worldRadius = finiteNumber(yOrRadius, xOrPoint.radius ?? xOrPoint.r ?? 0);
+    } else {
+      x = xOrPoint;
+      y = yOrRadius;
+      worldRadius = finiteNumber(radius, 0);
+    }
+
+    const base = this.worldToScreen(x, y);
+    const margin = Math.max(0, worldRadius) * this.zoom;
+    if (!this.wrap) {
+      return base.x >= -margin && base.x <= this.width + margin
+        && base.y >= -margin && base.y <= this.height + margin
+        ? [base]
+        : [];
+    }
+
+    const periodX = this.worldWidth * this.zoom;
+    const periodY = this.worldHeight * this.zoom;
+    const minX = Math.ceil((-margin - base.x) / periodX);
+    const maxX = Math.floor((this.width + margin - base.x) / periodX);
+    const minY = Math.ceil((-margin - base.y) / periodY);
+    const maxY = Math.floor((this.height + margin - base.y) / periodY);
+    const screens = [];
+    for (let iy = minY; iy <= maxY; iy++) {
+      for (let ix = minX; ix <= maxX; ix++) {
+        screens.push({ x: base.x + ix * periodX, y: base.y + iy * periodY });
+      }
+    }
+    return screens;
   }
 
   screenToWorld(xOrPoint, y) {

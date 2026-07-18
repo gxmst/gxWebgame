@@ -1,5 +1,15 @@
 import { CONFIG } from "./config.js";
-import { clamp, normalize } from "./math.js";
+import { clamp, normalize, wrapDelta } from "./math.js";
+
+export function getWorldTargetDelta(camera, player, target) {
+  if (camera?.wrap) {
+    return {
+      x: wrapDelta(target.x, player.x, camera.worldWidth),
+      y: wrapDelta(target.y, player.y, camera.worldHeight),
+    };
+  }
+  return { x: target.x - player.x, y: target.y - player.y };
+}
 
 export class InputController {
   constructor(canvas, options = {}) {
@@ -173,8 +183,7 @@ export class InputController {
     const player = this.playerProvider();
     if (!camera || !player) return { moveX: 0, moveY: 0, moveStrength: 0 };
     const target = camera.screenToWorld(screenX, screenY);
-    const dx = target.x - player.x;
-    const dy = target.y - player.y;
+    const { x: dx, y: dy } = getWorldTargetDelta(camera, player, target);
     const length = Math.hypot(dx, dy);
     const deadzone = CONFIG.input.absoluteDeadzone;
     if (length < deadzone) return { moveX: 0, moveY: 0, moveStrength: 0 };

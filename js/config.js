@@ -43,6 +43,23 @@ export const CONFIG = deepFreeze({
     screenGradientStrength: 0.55,
   },
 
+  dayNight: {
+    periodSeconds: 210,
+    startPhase: 0.2,
+    nightStartThreshold: 0.62,
+    dayStartThreshold: 0.72,
+    nightScoreMultiplier: 1.15,
+    nightHintDistanceScale: 0.78,
+    nightBeamScale: 0.42,
+    nightDarkenAlpha: 0.4,
+    warmTintAlpha: 0.16,
+    nightColor: "#071632",
+    duskColor: "#d27348",
+    dawnColor: "#efad72",
+    lanternNightWeightBonus: 0.14,
+    rareGlowNightBoost: 12,
+  },
+
   simulation: {
     fixedStep: 1 / 60,
     maxFrameTime: 0.1,
@@ -213,10 +230,14 @@ export const CONFIG = deepFreeze({
   },
 
   species: {
-    reef: { nutrition: 1, score: 1 },
-    blueTail: { nutrition: 1, score: 1.1 },
-    golden: { nutrition: 1.35, score: 1.8 },
-    barracuda: { nutrition: 1.05, score: 1.25 },
+    silver: { speed: 0.88, turn: 1.15, sense: 210, nutrition: 1, score: 1, label: "银鱼" },
+    bluefin: { speed: 0.94, turn: 1.05, sense: 245, nutrition: 1.05, score: 1.12, label: "蓝尾鱼" },
+    grouper: { speed: 0.72, turn: 0.7, sense: 190, nutrition: 1.24, score: 1.18, label: "石斑鱼" },
+    puffer: { speed: 0.62, turn: 0.76, sense: 175, nutrition: 1.18, score: 1.26, label: "胖河豚" },
+    lantern: { speed: 0.84, turn: 1.12, sense: 170, nutrition: 1.08, score: 1.48, label: "发光鱼", luminescent: true },
+    barracuda: { speed: 0.96, turn: 0.84, sense: 300, nutrition: 1.08, score: 1.35, label: "梭鱼" },
+    gold: { speed: 1.02, turn: 1.18, sense: 290, nutrition: 1.35, score: 2.8, label: "金色鱼", luminescent: true },
+    sardine: { speed: 0.52, turn: 1.3, sense: 82, nutrition: 0.38, score: 0.48, label: "沙丁鱼" },
   },
 
   baitSchool: {
@@ -281,6 +302,29 @@ export const CONFIG = deepFreeze({
     jellyfishStunSeconds: 0.65,
     jellyfishSpeedScale: 0.25,
     apexDurationSeconds: 30,
+  },
+
+  environment: {
+    interactionInterval: 0.1,
+    seaweedCount: 28,
+    seaweedRadiusMin: 38,
+    seaweedRadiusMax: 64,
+    seaweedPlayerSlowScale: 0.72,
+    seaweedFishSlowScale: 0.8,
+    trashCount: 10,
+    trashRadius: 18,
+    trashSlowScale: 0.64,
+    trashSlowSeconds: 1.4,
+    trashRetriggerSeconds: 2.4,
+    shellCount: 14,
+    shellRadius: 13,
+    shellRareChance: 0.14,
+    shellCommonPearls: 1,
+    shellRarePearls: 4,
+    mineTrackingTier: 5,
+    mineTrackingSpeed: 34,
+    mineTrackingSense: 520,
+    mineTrackingResponse: 2.2,
   },
 
   progression: {

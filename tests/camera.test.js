@@ -126,4 +126,33 @@ export const tests = [
       near(wrapDelta(90, 10, 100), -20);
     },
   },
+  {
+    name: "wide wrapped view enumerates every visible world image",
+    run() {
+      const camera = new Camera({
+        width: 250,
+        height: 100,
+        x: 0,
+        y: 50,
+        zoom: 1,
+        wrap: true,
+        worldWidth: 100,
+        worldHeight: 100,
+      });
+      const screens = camera.getVisibleWrappedScreens(0, 50);
+      assert(screens.length === 3);
+      assert(screens.map((point) => point.x).join(",") === "25,125,225");
+    },
+  },
+  {
+    name: "wrapped depth lighting is continuous across the vertical seam",
+    run() {
+      const camera = new Camera({ wrap: true, worldWidth: 1000, worldHeight: 600, y: 1 });
+      const topDepth = camera.depthT;
+      camera.y = 599;
+      near(camera.depthT, topDepth, 1e-8);
+      camera.y = 300;
+      near(camera.depthT, 1, 1e-8);
+    },
+  },
 ];

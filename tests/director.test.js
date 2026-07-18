@@ -84,4 +84,31 @@ export const tests = [
       assert(director.countBaitMembers(game) <= CONFIG.baitSchool.maxMembers);
     },
   },
+  {
+    name: "director includes puffer and lantern in the regular ecology",
+    run() {
+      const director = new Director(CONFIG.world, 424242);
+      const species = new Set();
+      for (let index = 0; index < 300; index += 1) {
+        species.add(director.chooseSpecies("prey", 20));
+      }
+      assert(species.has("puffer"));
+      assert(species.has("lantern"));
+      assert(CONFIG.species.sardine.label === "沙丁鱼");
+    },
+  },
+  {
+    name: "lantern fish become more common at night",
+    run() {
+      const dayDirector = new Director(CONFIG.world, 7788);
+      const nightDirector = new Director(CONFIG.world, 7788);
+      let dayLanterns = 0;
+      let nightLanterns = 0;
+      for (let index = 0; index < 1000; index += 1) {
+        dayLanterns += Number(dayDirector.chooseSpecies("prey", 20, 0) === "lantern");
+        nightLanterns += Number(nightDirector.chooseSpecies("prey", 20, 1) === "lantern");
+      }
+      assert(nightLanterns > dayLanterns * 1.8);
+    },
+  },
 ];

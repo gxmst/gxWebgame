@@ -6,22 +6,8 @@ export function resetEntityIds(start = 1) {
   nextEntityId = Math.max(1, Math.floor(start));
 }
 
-export const SPECIES = {
-  // Speeds kept below the player so hunting stays readable; threats pressure by angle, not pure pace.
-  silver: { speed: 0.88, turn: 1.15, sense: 210, nutrition: 1, score: 1, label: "银鱼" },
-  bluefin: { speed: 0.94, turn: 1.05, sense: 245, nutrition: 1.05, score: 1.12, label: "蓝尾鱼" },
-  grouper: { speed: 0.72, turn: 0.7, sense: 190, nutrition: 1.24, score: 1.18, label: "石斑鱼" },
-  barracuda: { speed: 0.96, turn: 0.84, sense: 300, nutrition: 1.08, score: 1.35, label: "梭鱼" },
-  gold: { speed: 1.02, turn: 1.18, sense: 290, nutrition: 1.35, score: 2.8, label: "金色鱼" },
-  sardine: {
-    speed: CONFIG.baitSchool.speedScale,
-    turn: CONFIG.baitSchool.turnScale,
-    sense: CONFIG.baitSchool.senseDistance,
-    nutrition: CONFIG.baitSchool.nutrition,
-    score: CONFIG.baitSchool.score,
-    label: "沙丁鱼",
-  },
-};
+// Speeds stay below the player; threats pressure by angle rather than raw pace.
+export const SPECIES = CONFIG.species;
 
 export function createPlayer(x, y, skin = "reef") {
   return {
@@ -47,6 +33,8 @@ export function createPlayer(x, y, skin = "reef") {
     staminaDelay: 0,
     invulnerable: 2,
     stunned: 0,
+    entangledTimer: 0,
+    environmentSlowScale: 1,
     alive: true,
     animOffset: 0,
     bodyTwist: 0,
@@ -89,6 +77,7 @@ export function createFish(options) {
     active: true,
     animOffset: random() * 10,
     bodyTwist: 0,
+    environmentSlowScale: 1,
     label: SPECIES[species]?.label || "鱼",
   };
 }
@@ -122,6 +111,8 @@ export function createMine(x, y, random = Math.random) {
     triggered: false,
     active: true,
     phase: random() * Math.PI * 2,
+    vx: 0,
+    vy: 0,
   };
 }
 

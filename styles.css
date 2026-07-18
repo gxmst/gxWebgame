@@ -1293,6 +1293,20 @@ body.high-contrast .ocean-vignette {
     margin-top: 10px;
   }
 
+  .record-line {
+    grid-column: 1 / -1;
+    width: 100%;
+    gap: 3px 8px;
+    font-size: 11px;
+  }
+
+  #high-score,
+  #best-clear-time,
+  .record-line [data-coins],
+  .record-line [data-pearls] {
+    font-size: 18px;
+  }
+
   .button {
     min-height: 44px;
     padding-top: 8px;

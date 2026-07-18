@@ -82,6 +82,7 @@ export const tests = [
       const safe = getEatScore(100, 25);
       const risky = getEatScore(100, 82);
       assert(risky > safe);
+      assert(getEatScore(100, 25, { environmentMultiplier: 1.15 }) > safe);
       near(getMassGain(20), 4.4);
     },
   },

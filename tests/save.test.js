@@ -130,4 +130,13 @@ export const tests = [
       assert(second.wallet.pearls === first.wallet.pearls + 10);
     },
   },
+  {
+    name: "collected shell pearls settle exactly once with a run",
+    run() {
+      const original = createDefaultSave();
+      const settled = updateResults(original, { collectedPearls: 7 });
+      assert(settled.wallet.pearls === 7);
+      assert(original.wallet.pearls === 0);
+    },
+  },
 ];

@@ -9,7 +9,7 @@ import {
   wrap,
   wrapDelta,
 } from "./math.js";
-import { Camera } from "./camera.js";
+import { Camera } from "./camera.js?v=3";
 import {
   RELATION,
   canEat,
@@ -32,6 +32,13 @@ import { Director } from "./director.js";
 import { WorldRenderer } from "./world.js";
 import { createRunResult, getRunRecordLabels } from "./run.js";
 import { AutoQualityController } from "./quality.js";
+import { getDayNightState } from "./day-night.js";
+import {
+  createEnvironment,
+  getSeaweedSlowScale,
+  getMineTrackingTarget,
+  wrappedCircleTouches,
+} from "./environment.js";
 import {
   MAX_UPGRADE_LEVEL,
   UPGRADE_TYPES,
@@ -105,6 +112,8 @@ class Game {
     this.hitStop = 0;
     this.tierCameraTimer = 0;
     this.cameraMode = "normal";
+    this.dayNight = getDayNightState(0);
+    this.daySegment = this.dayNight.segment;
     this.trailTimer = 0;
     this.baitFeastCount = 0;
     this.baitFeastTimer = 0;
@@ -132,6 +141,9 @@ class Game {
     this.camera.setTarget(this.player);
     this.fish = [];
     this.specials = [];
+    this.environment = [];
+    this.environmentCheckTimer = 0;
+    this.collectedPearls = 0;
 
     this.input = new InputController(this.canvas, {
       dashButton: this.dom.dashButton,
@@ -209,6 +221,10 @@ class Game {
       if (event.code === "BracketRight") this.debugTier(1);
       if (event.code === "BracketLeft") this.debugTier(-1);
       if (event.code === "KeyI") this.player.invulnerable = this.player.invulnerable > 20 ? 0 : 999;
+      if (event.code === "KeyN") {
+        this.elapsed += CONFIG.dayNight.periodSeconds / 4;
+        this.updateDayNight();
+      }
     });
 
     click(this.dom.startButton, () => this.startGame());
@@ -342,6 +358,7 @@ class Game {
     this.specials = [];
     this.director.reset(this.getSeed());
     this.director.populateInitial(this);
+    this.environment = createEnvironment(CONFIG.world, this.director.random);
   }
 
   startGame() {
@@ -363,12 +380,17 @@ class Game {
     this.effects.clear();
     this.director.reset(seed);
     this.director.populateInitial(this);
+    this.environment = createEnvironment(CONFIG.world, this.director.random);
     this.score = 0;
     this.combo = createComboState();
     this.maxCombo = 0;
     this.elapsed = 0;
     this.hitStop = 0;
     this.tierCameraTimer = 0;
+    this.dayNight = getDayNightState(0);
+    this.daySegment = this.dayNight.segment;
+    this.environmentCheckTimer = 0;
+    this.collectedPearls = 0;
     this.trailTimer = 0;
     this.baitFeastCount = 0;
     this.baitFeastTimer = 0;
@@ -492,6 +514,8 @@ class Game {
     if (![STATE.PLAYING, STATE.APEX, STATE.ENDLESS].includes(this.state)) return;
 
     this.elapsed += dt;
+    this.updateDayNight();
+    this.updateEnvironment(dt);
     this.tierCameraTimer = Math.max(0, this.tierCameraTimer - dt);
     this.combo = updateCombo(this.combo, dt);
     this.baitFeastTimer = Math.max(0, this.baitFeastTimer - dt);
@@ -524,6 +548,69 @@ class Game {
     if (mode !== this.cameraMode) {
       this.cameraMode = mode;
       this.camera.setMode(mode);
+    }
+  }
+
+  updateDayNight() {
+    const previous = this.daySegment;
+    this.dayNight = getDayNightState(this.elapsed);
+    this.daySegment = this.dayNight.segment;
+    if (previous !== "night" && this.daySegment === "night") {
+      this.showMessage("夜幕降临 · 夜间进食得分提升", 2.8);
+    }
+  }
+
+  updateEnvironment(dt) {
+    this.player.entangledTimer = Math.max(0, (this.player.entangledTimer || 0) - dt);
+    for (const item of this.environment) {
+      if (item.type === "trash") item.cooldown = Math.max(0, item.cooldown - dt);
+    }
+
+    this.environmentCheckTimer -= dt;
+    if (this.environmentCheckTimer > 0) return;
+    this.environmentCheckTimer = CONFIG.environment.interactionInterval;
+
+    const playerRadius = getVisualRadius(this.player.displayMass) * CONFIG.mass.collisionRadiusScale;
+    const playerBody = { x: this.player.x, y: this.player.y, radius: playerRadius };
+    this.player.environmentSlowScale = getSeaweedSlowScale(
+      playerBody,
+      this.environment,
+      CONFIG.world,
+      CONFIG.environment.seaweedPlayerSlowScale,
+    );
+
+    for (const fish of this.fish) {
+      if (!fish.active) continue;
+      fish.environmentSlowScale = getSeaweedSlowScale(
+        {
+          x: fish.x,
+          y: fish.y,
+          radius: getVisualRadius(fish.displayMass) * CONFIG.mass.collisionRadiusScale,
+        },
+        this.environment,
+        CONFIG.world,
+        CONFIG.environment.seaweedFishSlowScale,
+      );
+    }
+
+    for (const item of this.environment) {
+      if (!item.active) continue;
+      if (item.type === "trash" && item.cooldown <= 0 && wrappedCircleTouches(playerBody, item, CONFIG.world)) {
+        item.cooldown = CONFIG.environment.trashRetriggerSeconds;
+        this.player.entangledTimer = CONFIG.environment.trashSlowSeconds;
+        this.effects.burst(item.x, item.y, "#b8d7cb", 6, 70, { shape: "drop", lifeScale: 0.65 });
+        this.effects.floatText(item.x, item.y - 24, "缠住了!", "#d8eee5", 13);
+        this.effects.addShake(0.8);
+        this.audio.play("stun");
+      } else if (item.type === "shell" && wrappedCircleTouches(playerBody, item, CONFIG.world)) {
+        item.active = false;
+        this.collectedPearls += item.value;
+        const color = item.rare ? "#ffe37a" : "#d9c8ff";
+        this.effects.burst(item.x, item.y, color, item.rare ? 12 : 7, 100, { shape: "spark", lifeScale: 0.8 });
+        this.effects.ring(item.x, item.y, color, 6, item.rare ? 50 : 34, 0.32, 2);
+        this.effects.floatText(item.x, item.y - 22, `珍珠 +${item.value}`, color, item.rare ? 18 : 14);
+        this.audio.play("eat", { intensity: item.rare ? 1 : 0.45 });
+      }
     }
   }
 
@@ -644,6 +731,8 @@ class Game {
       if (player.dashing) speed *= CONFIG.dash.speedMultiplier;
       if ((player.dashBoostTime || 0) > 0) speed *= CONFIG.dash.boostSpeedMultiplier;
       if (player.stunned > 0) speed *= CONFIG.hazards.jellyfishSpeedScale;
+      speed *= player.environmentSlowScale ?? 1;
+      if (player.entangledTimer > 0) speed *= CONFIG.environment.trashSlowScale;
       const targetVx = Math.cos(player.angle) * speed;
       const targetVy = Math.sin(player.angle) * speed;
       const acceleration = CONFIG.movement.acceleration
@@ -813,6 +902,7 @@ class Game {
         dt,
       );
       let speed = getMoveSpeed(fish.displayMass) * species.speed * CONFIG.ai.globalSpeedScale;
+      speed *= fish.environmentSlowScale ?? 1;
       if (fish.state === "wander") speed *= CONFIG.ai.wanderSpeedScale;
       if (fish.state === "flee") speed *= CONFIG.ai.fleeSpeedScale;
       if (fish.state === "chase") {
@@ -964,7 +1054,21 @@ class Game {
         }
       } else if (item.type === "mine") {
         item.armTime = Math.max(0, item.armTime - dt);
-        item.y += Math.sin(this.time * 1.5 + item.phase) * 1.5 * dt;
+        const trackingTarget = getMineTrackingTarget(item, this.player, CONFIG.world);
+        item.vx = damp(
+          item.vx || 0,
+          trackingTarget.vx,
+          CONFIG.environment.mineTrackingResponse,
+          dt,
+        );
+        item.vy = damp(
+          item.vy || 0,
+          trackingTarget.vy,
+          CONFIG.environment.mineTrackingResponse,
+          dt,
+        );
+        item.x += item.vx * dt;
+        item.y += (item.vy + Math.sin(this.time * 1.5 + item.phase) * 1.5) * dt;
         if (CONFIG.world.wrap) this.wrapEntity(item);
         if (item.triggered) {
           item.fuseTime = Math.max(0, item.fuseTime - dt);
@@ -1124,6 +1228,7 @@ class Game {
     const score = getEatScore(this.player.mass, fish.mass, {
       comboMultiplier: nextCombo.multiplier,
       speciesScore: species.score,
+      environmentMultiplier: this.dayNight.scoreMultiplier,
     });
     this.combo = nextCombo;
     this.score += score;
@@ -1402,6 +1507,7 @@ class Game {
       victory,
       victoryElapsedMs: this.victoryElapsedMs,
       reachedTier: getTier(this.player.displayMass).id,
+      collectedPearls: this.collectedPearls,
     }));
     saveSave(this.save);
     this.runCommitted = true;
@@ -1631,12 +1737,15 @@ class Game {
     output.textContent = [
       `FPS ${this.debugFps} | DPR ${this.dpr.toFixed(2)} | seed ${this.director.seed}`,
       `state ${this.state} | t ${this.elapsed.toFixed(1)}s`,
+      `time ${this.dayNight.segment} | night ${this.dayNight.nightStrength.toFixed(2)} | score x${this.dayNight.scoreMultiplier.toFixed(2)}`,
       `mass ${this.player.displayMass.toFixed(1)} -> ${this.player.mass.toFixed(1)} | T${this.player.tier}`,
+      `pos ${this.player.x.toFixed(0)},${this.player.y.toFixed(0)} | camera ${this.camera.x.toFixed(0)},${this.camera.y.toFixed(0)}`,
       `speed ${Math.hypot(this.player.vx, this.player.vy).toFixed(0)} | stamina ${this.player.stamina.toFixed(0)}`,
       `fish ${this.fish.length} | P ${relationCounts.prey} N ${relationCounts.neutral} X ${relationCounts.threat}`,
       `bait ${baitSchools} school / ${baitMembers} fish | particles ${this.effects.particles.length}`,
+      `environment ${this.environment.filter((item) => item.active).length} | shells +${this.collectedPearls}`,
       `special ${this.specials.length} | no prey ${this.director.noPreyTime.toFixed(1)}s`,
-      "[ / ] 调档 · I 无敌 · ` 关闭",
+      "[ / ] 调档 · I 无敌 · N 昼夜 · ` 关闭",
     ].join("\n");
   }
 
@@ -1673,10 +1782,12 @@ class Game {
     const shake = this.effects.getShake(this.save.settings.screenShake && this.state !== STATE.TITLE);
     ctx.save();
     ctx.translate(shake.x, shake.y);
-    this.worldRenderer.draw(ctx, this.camera, this.time);
+    this.worldRenderer.draw(ctx, this.camera, this.time, this.dayNight);
+    this.worldRenderer.drawEnvironment(ctx, this.camera, this.time, this.environment, "ground", this.save.settings.quality);
     this.renderSpecials(ctx);
     this.renderFish(ctx);
     this.renderPlayer(ctx);
+    this.worldRenderer.drawEnvironment(ctx, this.camera, this.time, this.environment, "foreground", this.save.settings.quality);
     this.effects.drawWorld(ctx, this.camera, this.sprites);
     if (this.debug) this.renderDebugGeometry(ctx);
     ctx.restore();
@@ -1691,16 +1802,16 @@ class Game {
       ? CONFIG.visuals.glowBudgetLow
       : CONFIG.visuals.glowBudgetHigh;
     const showRelationHints = ![STATE.TITLE, STATE.SHOP].includes(this.state);
-    const hintDistance = this.save.settings.highContrast
+    const hintDistance = (this.save.settings.highContrast
       ? CONFIG.visuals.relationHintDistanceContrast
-      : CONFIG.visuals.relationHintDistance;
+      : CONFIG.visuals.relationHintDistance) * this.dayNight.hintDistanceScale;
     const threatDistance = this.save.settings.highContrast
       ? CONFIG.visuals.threatMarkerDistanceContrast
       : CONFIG.visuals.threatMarkerDistance;
     for (const fish of ordered) {
       const radius = getVisualRadius(fish.displayMass);
-      if (!this.camera.isWorldPointVisible(fish.x, fish.y, radius * 2.2)) continue;
-      const screen = this.camera.worldToScreen(fish.x, fish.y);
+      const screens = this.camera.getVisibleWrappedScreens(fish.x, fish.y, radius * 2.2);
+      if (screens.length === 0) continue;
       let relation = getRelation(this.player.mass, fish.mass);
       if (this.state === STATE.APEX && relation === RELATION.THREAT) relation = RELATION.NEUTRAL;
       const distance = Math.sqrt(this.wrapDistanceSq(this.player.x, this.player.y, fish.x, fish.y));
@@ -1720,41 +1831,46 @@ class Game {
         else glowBudget--;
       }
       const drawRadius = radius * this.camera.zoom * (fish.species === "gold" ? 1.08 : 1);
-      const depthShade = this.worldRenderer.getDepthShade(this.camera, screen.y);
       const spawnAlpha = fish.spawnGrace > 0 ? 0.58 + Math.sin(this.time * 12) * 0.18 : 1;
-      this.sprites.drawFish(ctx, fish, screen, drawRadius, {
-        relation: relationHint,
-        highContrast: this.save.settings.highContrast,
-        time: this.time,
-        alpha: spawnAlpha * depthShade,
-      });
-      if (showRelationHints && relation === RELATION.THREAT && distance < threatDistance) {
-        this.drawThreatMarker(ctx, screen, radius * this.camera.zoom, fish.spawnGrace);
+      for (const screen of screens) {
+        const depthShade = this.worldRenderer.getDepthShade(this.camera, screen.y);
+        this.sprites.drawFish(ctx, fish, screen, drawRadius, {
+          relation: relationHint,
+          highContrast: this.save.settings.highContrast,
+          time: this.time,
+          alpha: spawnAlpha * depthShade,
+          nightStrength: this.dayNight.nightStrength,
+        });
+        if (showRelationHints && relation === RELATION.THREAT && distance < threatDistance) {
+          this.drawThreatMarker(ctx, screen, radius * this.camera.zoom, fish.spawnGrace);
+        }
+        if (showRelationHints && this.save.settings.highContrast && relation === RELATION.PREY && distance < threatDistance) {
+          this.drawPreyMarker(ctx, screen, radius * this.camera.zoom, ratio >= 0.6);
+        }
+        if (fish.species === "gold") this.drawGoldMarker(ctx, screen, radius * this.camera.zoom);
       }
-      if (showRelationHints && this.save.settings.highContrast && relation === RELATION.PREY && distance < threatDistance) {
-        this.drawPreyMarker(ctx, screen, radius * this.camera.zoom, ratio >= 0.6);
-      }
-      if (fish.species === "gold") this.drawGoldMarker(ctx, screen, radius * this.camera.zoom);
     }
   }
 
   renderPlayer(ctx) {
     if (!this.player.alive && this.dyingTimer < 0.45) return;
-    const screen = this.camera.worldToScreen(this.player.x, this.player.y);
     const radius = getVisualRadius(this.player.displayMass) * this.camera.zoom;
     const flash = this.player.invulnerable > 0 && Math.sin(this.time * 16) < -0.15 ? 0.5 : 1;
-    const depthShade = this.worldRenderer.getDepthShade(this.camera, screen.y);
-    this.sprites.drawFish(ctx, this.player, screen, radius, {
-      isPlayer: true,
-      skin: this.save.selectedSkin,
-      time: this.time,
-      alpha: flash * Math.max(0.55, depthShade),
-    });
-    if (this.player.stunned > 0) {
-      ctx.fillStyle = "#e6b8ff";
-      for (let i = 0; i < 3; i++) {
-        const angle = this.time * 5 + i * Math.PI * 2 / 3;
-        ctx.fillRect(screen.x + Math.cos(angle) * radius - 2, screen.y - radius - 8 + Math.sin(angle) * 4, 4, 4);
+    const screens = this.camera.getVisibleWrappedScreens(this.player.x, this.player.y, radius / this.camera.zoom * 2);
+    for (const screen of screens) {
+      const depthShade = this.worldRenderer.getDepthShade(this.camera, screen.y);
+      this.sprites.drawFish(ctx, this.player, screen, radius, {
+        isPlayer: true,
+        skin: this.save.selectedSkin,
+        time: this.time,
+        alpha: flash * Math.max(0.55, depthShade),
+      });
+      if (this.player.stunned > 0) {
+        ctx.fillStyle = "#e6b8ff";
+        for (let i = 0; i < 3; i++) {
+          const angle = this.time * 5 + i * Math.PI * 2 / 3;
+          ctx.fillRect(screen.x + Math.cos(angle) * radius - 2, screen.y - radius - 8 + Math.sin(angle) * 4, 4, 4);
+        }
       }
     }
   }
@@ -1763,14 +1879,14 @@ class Game {
     for (const item of this.specials) {
       if (!item.active) continue;
       if (item.type === "jelly") {
-        if (!this.camera.isWorldPointVisible(item.x, item.y, item.radius * 2)) continue;
-        const screen = this.camera.worldToScreen(item.x, item.y);
-        this.sprites.drawJelly(ctx, screen.x, screen.y, item.radius * this.camera.zoom, this.time + item.phase);
+        for (const screen of this.camera.getVisibleWrappedScreens(item.x, item.y, item.radius * 2)) {
+          this.sprites.drawJelly(ctx, screen.x, screen.y, item.radius * this.camera.zoom, this.time + item.phase);
+        }
       } else if (item.type === "mine") {
-        if (!this.camera.isWorldPointVisible(item.x, item.y, item.radius * 2)) continue;
-        const screen = this.camera.worldToScreen(item.x, item.y);
-        this.sprites.drawMine(ctx, screen.x, screen.y, item.radius * this.camera.zoom, item.armTime <= 0, this.time + item.phase);
-        if (item.triggered) this.drawMineFuse(ctx, screen, item.radius * this.camera.zoom, item.fuseTime);
+        for (const screen of this.camera.getVisibleWrappedScreens(item.x, item.y, item.radius * 2)) {
+          this.sprites.drawMine(ctx, screen.x, screen.y, item.radius * this.camera.zoom, item.armTime <= 0, this.time + item.phase);
+          if (item.triggered) this.drawMineFuse(ctx, screen, item.radius * this.camera.zoom, item.fuseTime);
+        }
       } else if (item.type === "net") {
         this.drawNet(ctx, item);
       }
@@ -1778,21 +1894,28 @@ class Game {
   }
 
   drawNet(ctx, net) {
-    const left = this.camera.worldToScreen(net.x - net.width / 2, net.y);
-    const right = this.camera.worldToScreen(net.x + net.width / 2, net.y + net.height);
-    const width = right.x - left.x;
-    const height = Math.max(10, right.y - left.y);
+    const screens = this.camera.getVisibleWrappedScreens(
+      net.x,
+      net.y + net.height / 2,
+      Math.hypot(net.width, net.height) / 2,
+    );
+    for (const screen of screens) this.drawNetAt(ctx, net, screen);
+  }
+
+  drawNetAt(ctx, net, center) {
+    const width = net.width * this.camera.zoom;
+    const height = Math.max(10, net.height * this.camera.zoom);
+    const left = { x: center.x - width / 2, y: center.y - height / 2 };
     if (net.warningTime > 0) {
-      const bounds = this.camera.getVisibleWorldBounds();
-      const top = this.camera.worldToScreen(net.x, bounds.top + 10);
+      const topY = 10;
       ctx.save();
       ctx.globalAlpha = 0.18 + Math.sin(this.time * 10) * 0.08;
       ctx.fillStyle = "#ffba64";
-      ctx.fillRect(left.x, top.y, width, this.cssHeight - top.y);
+      ctx.fillRect(left.x, topY, width, this.cssHeight - topY);
       ctx.strokeStyle = "#ffd08a";
       ctx.lineWidth = 2;
       ctx.setLineDash([8, 8]);
-      ctx.strokeRect(left.x, top.y, width, this.cssHeight - top.y);
+      ctx.strokeRect(left.x, topY, width, this.cssHeight - topY);
       ctx.restore();
       return;
     }
