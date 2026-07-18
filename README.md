@@ -28,7 +28,7 @@ node tests/run-node.mjs
 
 ## 部署与 PWA
 
-推送到 `main` 后，[`.github/workflows/ci-pages.yml`](./.github/workflows/ci-pages.yml) 会先执行 Node 逻辑测试，通过后将仓库作为零构建静态站部署到 GitHub Pages。首次启用时，需要在仓库的 **Settings > Pages > Build and deployment** 中将 Source 设为 **GitHub Actions**。
+推送到 `main` 后，[`.github/workflows/ci-pages.yml`](./.github/workflows/ci-pages.yml) 会先执行 Node 逻辑测试，通过后自动启用 Pages，并将仓库作为零构建静态站部署。若仓库策略不允许 Actions 自动启用 Pages，再在 **Settings > Pages > Build and deployment** 中将 Source 设为 **GitHub Actions**。
 
 线上 HTTPS 环境由 `js/bootstrap.js` 注册模块化 Service Worker。本次访问成功缓存后，导航会优先尝试网络并可回退到离线首页；脚本、样式和图片使用 stale-while-revalidate，在启动速度与后台更新之间取平衡。`localhost`、`127.0.0.1` 和本机 IPv6 地址不会注册，调试时无需手动清缓存。
 
