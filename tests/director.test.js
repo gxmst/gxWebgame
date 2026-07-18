@@ -1,5 +1,6 @@
 import { CONFIG } from "../js/config.js";
 import { Director } from "../js/director.js";
+import { isPointInNetColumn } from "../js/hazards.js";
 
 const assert = (condition, message = "Assertion failed") => {
   if (!condition) throw new Error(message);
@@ -10,6 +11,7 @@ function createGame() {
     player: { x: 3200, y: 1900, mass: 10, displayMass: 10, tier: 1 },
     camera: {
       viewportWidth: 1280,
+      zoom: CONFIG.camera.sovereignZoom,
       isWorldPointVisible: (x, y) => x > 2700 && x < 3700 && y > 1600 && y < 2200,
       getVisibleWorldBounds: () => ({
         left: 2500,
@@ -23,6 +25,7 @@ function createGame() {
     fish: [],
     specials: [],
     elapsed: 0,
+    netReplenishDebt: 0,
   };
 }
 
@@ -109,6 +112,83 @@ export const tests = [
         nightLanterns += Number(nightDirector.chooseSpecies("prey", 20, 1) === "lantern");
       }
       assert(nightLanterns > dayLanterns * 1.8);
+    },
+  },
+  {
+    name: "net-cleared fish replenish gradually outside active net columns",
+    run() {
+      const director = new Director(CONFIG.world, 5150);
+      director.reset(5150);
+      director.goldCooldown = 999;
+      director.specialTimer = 999;
+      director.baitSchoolTimer = 999;
+      const game = createGame();
+      game.player.mass = CONFIG.mass.sovereignSoftCap;
+      game.player.displayMass = CONFIG.mass.sovereignSoftCap;
+      game.player.tier = CONFIG.tiers.length;
+      game.netReplenishDebt = 4;
+      game.specials.push({
+        type: "net",
+        active: true,
+        x: game.player.x,
+        y: 1200,
+        previousY: 1100,
+        width: 320,
+        height: CONFIG.net.height,
+      });
+
+      director.timer = 0;
+      director.update(0, game);
+      assert(game.fish.length === 1);
+      assert(game.netReplenishDebt === 3);
+      assert(game.fish.every((fish) => !isPointInNetColumn(
+        fish.x,
+        0,
+        game.specials[0],
+        game.camera.zoom,
+        CONFIG.world,
+        CONFIG.net.spawnAvoidanceMargin,
+      )));
+
+      director.update(CONFIG.net.replenishIntervalSeconds * 0.5, game);
+      assert(game.fish.length === 1, "replenishment must not burst within one interval");
+      director.update(CONFIG.net.replenishIntervalSeconds * 0.5 + 0.001, game);
+      assert(game.fish.length === 2 && game.netReplenishDebt === 2);
+
+      for (let index = 0; index < 40; index++) {
+        director.update(CONFIG.net.replenishIntervalSeconds + 0.001, game);
+      }
+      const target = director.targetFishCount(game.camera.viewportWidth);
+      const regularCount = game.fish.filter((fish) => fish.active && !fish.baitSchool).length;
+      assert(game.netReplenishDebt === 0);
+      assert(regularCount >= target, `${regularCount} should restore target ${target}`);
+      assert(game.fish.every((fish) => !isPointInNetColumn(
+        fish.x,
+        0,
+        game.specials[0],
+        game.camera.zoom,
+        CONFIG.world,
+        CONFIG.net.spawnAvoidanceMargin,
+      )));
+    },
+  },
+  {
+    name: "bait schools retry soon when active net columns block every spawn point",
+    run() {
+      const director = new Director(CONFIG.world, 9191);
+      director.reset(9191);
+      const game = createGame();
+      game.specials.push({
+        type: "net",
+        active: true,
+        x: game.player.x,
+        width: CONFIG.world.width,
+        height: CONFIG.net.height,
+      });
+      director.baitSchoolTimer = 0;
+      director.updateBaitSchools(game);
+      assert(game.fish.length === 0);
+      assert(director.baitSchoolTimer === CONFIG.baitSchool.retrySeconds);
     },
   },
 ];

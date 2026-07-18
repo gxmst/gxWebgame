@@ -7,6 +7,7 @@ import {
   isSovereignTier,
 } from "./difficulty.js";
 import { wrap, wrapDelta } from "./math.js";
+import { isPointInNetColumn } from "./hazards.js";
 
 function mulberry32(seed) {
   let value = seed >>> 0;
@@ -127,7 +128,6 @@ export class Director {
     this.noPreyTime = visiblePrey > 0 ? 0 : this.noPreyTime + dt;
 
     if (this.timer <= 0) {
-      this.timer = 0.28;
       this.reapDistant(game);
       const target = this.targetFishCount(game.camera.viewportWidth);
       const regularCount = game.fish.reduce(
@@ -136,7 +136,14 @@ export class Director {
       );
       let missing = Math.max(0, target - regularCount);
       if (this.noPreyTime > 6) missing = Math.max(missing, 2);
-      const batch = Math.min(3, missing);
+      const debt = Math.max(0, Math.floor(game.netReplenishDebt || 0));
+      game.netReplenishDebt = Math.min(debt, missing);
+      const replenishing = game.netReplenishDebt > 0;
+      this.timer = replenishing ? CONFIG.net.replenishIntervalSeconds : 0.28;
+      const batch = Math.min(
+        replenishing ? CONFIG.net.replenishBatchMax : 3,
+        missing,
+      );
       const weights = getRelationWeightEntries(game.player.tier);
       for (let i = 0; i < batch; i++) {
         const forcedPrey = this.noPreyTime > 6 || visiblePrey + i < 2;
@@ -144,7 +151,13 @@ export class Director {
           ? (this.noPreyTime > 9 ? "prey" : "fringe")
           : this.chooseWeighted(weights);
         const fish = this.makeFish(game, relation, false);
-        if (fish) game.fish.push(fish);
+        if (fish) {
+          game.fish.push(fish);
+          if (game.netReplenishDebt > 0) {
+            game.netReplenishDebt--;
+            if (game.metrics) game.metrics.netReplenished = (game.metrics.netReplenished || 0) + 1;
+          }
+        }
       }
     }
 
@@ -183,7 +196,11 @@ export class Director {
       return;
     }
 
-    this.spawnBaitSchool(game);
+    const school = this.spawnBaitSchool(game);
+    if (!school) {
+      this.baitSchoolTimer = CONFIG.baitSchool.retrySeconds;
+      return;
+    }
     this.baitSchoolTimer = this.randomRange(
       CONFIG.baitSchool.intervalMinSeconds,
       CONFIG.baitSchool.intervalMaxSeconds,
@@ -215,6 +232,7 @@ export class Director {
     ));
     const count = Math.min(requested, remaining);
     const center = this.baitSchoolSpawnPoint(game);
+    if (!center) return null;
     const towardPlayer = this.wrapEnabled
       ? {
         x: wrapDelta(game.player.x, center.x, this.world.width),
@@ -262,11 +280,18 @@ export class Director {
 
   baitSchoolSpawnPoint(game) {
     const bounds = game.camera.getVisibleWorldBounds(CONFIG.baitSchool.offscreenMargin);
-    const side = Math.floor(this.random() * 4);
-    if (side === 0) return this.wrapPoint(bounds.left, this.randomRange(bounds.top, bounds.bottom));
-    if (side === 1) return this.wrapPoint(bounds.right, this.randomRange(bounds.top, bounds.bottom));
-    if (side === 2) return this.wrapPoint(this.randomRange(bounds.left, bounds.right), bounds.top);
-    return this.wrapPoint(this.randomRange(bounds.left, bounds.right), bounds.bottom);
+    for (let attempt = 0; attempt < CONFIG.net.spawnAttempts; attempt++) {
+      const side = Math.floor(this.random() * 4);
+      const point = side === 0
+        ? this.wrapPoint(bounds.left, this.randomRange(bounds.top, bounds.bottom))
+        : side === 1
+          ? this.wrapPoint(bounds.right, this.randomRange(bounds.top, bounds.bottom))
+          : side === 2
+            ? this.wrapPoint(this.randomRange(bounds.left, bounds.right), bounds.top)
+            : this.wrapPoint(this.randomRange(bounds.left, bounds.right), bounds.bottom);
+      if (this.isSpawnPointClearOfNets(game, point, CONFIG.baitSchool.clusterRadius)) return point;
+    }
+    return null;
   }
 
   makeFish(game, relation, initial, forcedSpecies = null) {
@@ -363,11 +388,11 @@ export class Director {
     );
   }
 
-  spawnPoint(game, extraSafety = 0) {
+  spawnPoint(game, extraSafety = 0, radius = 0) {
     const bounds = game.camera.getVisibleWorldBounds(160);
     const relativeSpeed = 440;
     const safety = Math.max(380, relativeSpeed * 1.0) + extraSafety;
-    for (let attempt = 0; attempt < 12; attempt++) {
+    for (let attempt = 0; attempt < CONFIG.net.spawnAttempts; attempt++) {
       const side = Math.floor(this.random() * 4);
       let x;
       let y;
@@ -385,9 +410,28 @@ export class Director {
         y = bounds.bottom;
       }
       const point = this.wrapPoint(x, y);
-      if (this.distanceToPlayer(point.x, point.y, game.player) >= safety) return point;
+      if (this.distanceToPlayer(point.x, point.y, game.player) >= safety
+        && this.isSpawnPointClearOfNets(game, point, radius)) return point;
     }
-    return this.randomWorldPoint(game.player, safety, safety + 500);
+    for (let attempt = 0; attempt < CONFIG.net.spawnFallbackAttempts; attempt++) {
+      const point = this.randomWorldPoint(game.player, safety, safety + 500);
+      if (this.isSpawnPointClearOfNets(game, point, radius)) return point;
+    }
+    return null;
+  }
+
+  isSpawnPointClearOfNets(game, point, radius = 0) {
+    const zoom = game.camera.zoom ?? 1;
+    return !(game.specials || []).some((item) => item.active
+      && item.type === "net"
+      && isPointInNetColumn(
+        point.x,
+        radius,
+        item,
+        zoom,
+        this.world,
+        CONFIG.net.spawnAvoidanceMargin,
+      ));
   }
 
   reapDistant(game) {

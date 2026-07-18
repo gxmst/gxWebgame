@@ -9,7 +9,7 @@ import {
   wrap,
   wrapDelta,
 } from "./math.js";
-import { Camera } from "./camera.js?v=3";
+import { Camera } from "./camera.js?v=5";
 import {
   RELATION,
   canEat,
@@ -18,6 +18,7 @@ import {
   getVisualRadius,
   getMoveSpeed,
   getMassGain,
+  getSovereignMassAfterGain,
   getEatScore,
   createComboState,
   updateCombo,
@@ -58,6 +59,12 @@ import {
   getSovereignHazardTuning,
   isSovereignTier,
 } from "./difficulty.js";
+import {
+  circleIntersectsNetSweep,
+  getMineGeometry,
+  getNetGeometry,
+  getNetTravelLimit,
+} from "./hazards.js";
 
 const STATE = Object.freeze({
   TITLE: "title",
@@ -102,6 +109,7 @@ class Game {
     this.victoryElapsedMs = null;
     this.endlessElapsed = 0;
     this.endlessNetTimer = CONFIG.difficulty.sovereignHazards.initialNetDelaySeconds;
+    this.netReplenishDebt = 0;
     this.tutorialStep = 0;
     this.shopTab = "upgrades";
     this.clearProgressConfirmUntil = 0;
@@ -180,7 +188,7 @@ class Game {
       "hud", "score-value", "combo-wrap", "combo-value", "tier-name", "tier-progress",
       "sovereign-wrap", "sovereign-time", "pause-button", "stamina-fill", "dash-button",
       "pause-screen", "resume-button", "pause-settings-button", "quit-button",
-      "settings-screen", "volume-input", "mute-toggle", "vibration-toggle", "shake-toggle",
+      "settings-screen", "volume-input", "mute-toggle", "music-toggle", "vibration-toggle", "shake-toggle",
       "touch-mode", "quality-select", "contrast-toggle", "settings-back-button",
       "clear-progress-button", "clear-progress-status",
       "results-screen", "result-title", "result-reason", "result-score", "result-tier",
@@ -212,11 +220,15 @@ class Game {
     window.addEventListener("resize", () => this.resize());
     window.addEventListener("orientationchange", () => window.setTimeout(() => this.resize(), 80));
     window.addEventListener("blur", () => {
+      this.audio.setBackgrounded(true);
       if ([STATE.PLAYING, STATE.ENDLESS].includes(this.state)) this.pause();
     });
+    window.addEventListener("focus", () => this.audio.setBackgrounded(document.hidden));
     document.addEventListener("visibilitychange", () => {
+      this.audio.setBackgrounded(document.hidden);
       if (document.hidden && [STATE.PLAYING, STATE.ENDLESS].includes(this.state)) this.pause();
     });
+    window.addEventListener("pageshow", () => this.audio.setBackgrounded(document.hidden));
     window.addEventListener("pagehide", (event) => {
       const pausedSettings = this.state === STATE.SETTINGS
         && this.returnFromSettings === STATE.PAUSED
@@ -284,8 +296,10 @@ class Game {
       const output = document.querySelector("[data-volume-value]");
       if (output) output.textContent = `${Math.round(this.save.settings.volume * 100)}%`;
       saveSave(this.save);
+      this.audio.syncSettings();
     });
-    this.bindToggle(this.dom.muteToggle, "muted");
+    this.bindToggle(this.dom.muteToggle, "muted", () => this.audio.syncSettings());
+    this.bindToggle(this.dom.musicToggle, "music", () => this.audio.syncSettings());
     this.bindToggle(this.dom.vibrationToggle, "vibration");
     this.bindToggle(this.dom.shakeToggle, "screenShake");
     this.bindToggle(this.dom.contrastToggle, "highContrast", () => this.applyContrast());
@@ -315,12 +329,14 @@ class Game {
     const volumeOutput = document.querySelector("[data-volume-value]");
     if (volumeOutput) volumeOutput.textContent = `${Math.round(this.save.settings.volume * 100)}%`;
     if (this.dom.muteToggle) this.dom.muteToggle.checked = this.save.settings.muted;
+    if (this.dom.musicToggle) this.dom.musicToggle.checked = this.save.settings.music;
     if (this.dom.vibrationToggle) this.dom.vibrationToggle.checked = this.save.settings.vibration;
     if (this.dom.shakeToggle) this.dom.shakeToggle.checked = this.save.settings.screenShake;
     if (this.dom.touchMode) this.dom.touchMode.value = this.save.settings.touchMode;
     if (this.dom.qualitySelect) this.dom.qualitySelect.value = this.save.settings.quality;
     if (this.dom.contrastToggle) this.dom.contrastToggle.checked = this.save.settings.highContrast;
     this.applyContrast();
+    this.audio.syncSettings();
     this.updateTitleStats();
     this.updateAppearanceButton();
     this.updateShopUi();
@@ -342,6 +358,8 @@ class Game {
       tierTimes: {},
       eaten: 0,
       edgeEaten: 0,
+      netCaptured: 0,
+      netReplenished: 0,
       dashes: 0,
       longestNoPrey: 0,
       deaths: [],
@@ -444,6 +462,7 @@ class Game {
     this.victoryElapsedMs = null;
     this.endlessElapsed = 0;
     this.endlessNetTimer = CONFIG.difficulty.sovereignHazards.initialNetDelaySeconds;
+    this.netReplenishDebt = 0;
     this.deathReason = "";
     this.slowMotion = 1;
     this.resumeCountdown = 0;
@@ -1103,7 +1122,6 @@ class Game {
   }
 
   updateSpecials(dt) {
-    const bounds = this.camera.getVisibleWorldBounds(150);
     for (const item of this.specials) {
       if (!item.active) continue;
       if (item.type === "jelly") {
@@ -1141,11 +1159,22 @@ class Game {
           if (item.fuseTime <= 0) this.explodeMine(item);
         }
       } else if (item.type === "net") {
+        item.previousY = item.y;
         if (item.warningTime > 0) item.warningTime -= dt;
         else {
           item.activeTime += dt;
-          item.y += item.speed * dt;
-          if (item.y > bounds.bottom + 120) item.active = false;
+          const travel = item.speed * dt;
+          item.y += travel;
+          item.travelDistance = (item.travelDistance || 0) + travel;
+          if (item.activeTime >= CONFIG.net.fishCaptureDelaySeconds) {
+            this.captureFishInNet(item);
+          }
+          if (!Number.isFinite(item.maxTravelDistance)) {
+            item.maxTravelDistance = getNetTravelLimit(
+              this.camera.getVisibleWorldBounds().height,
+            );
+          }
+          if (item.travelDistance >= item.maxTravelDistance) item.active = false;
         }
       }
     }
@@ -1195,7 +1224,8 @@ class Game {
           vibrate(25, this.save.settings);
         }
       } else if (item.type === "mine" && item.armTime <= 0 && !item.triggered) {
-        const triggerCircle = { x: item.x, y: item.y, radius: item.radius * 0.78 };
+        const mineGeometry = getMineGeometry(item.radius, this.camera.zoom);
+        const triggerCircle = { x: item.x, y: item.y, radius: mineGeometry.triggerRadius };
         if (this.circlesOverlapWrapped(playerBody, triggerCircle)) this.triggerMine(item);
         if (!item.triggered) {
           for (const fish of this.fish) {
@@ -1207,18 +1237,43 @@ class Game {
           }
         }
       } else if (item.type === "net" && item.warningTime <= 0) {
-        const dx = CONFIG.world.wrap
-          ? wrapDelta(this.player.x, item.x, CONFIG.world.width)
-          : this.player.x - item.x;
-        const dy = this.player.y - item.y;
-        const insideX = Math.abs(dx) < item.width / 2 + playerBody.radius;
-        const insideY = dy + playerBody.radius > 0 && dy - playerBody.radius < item.height;
-        if (insideX && insideY) {
+        if (circleIntersectsNetSweep(playerBody, item, this.camera.zoom, CONFIG.world)) {
           this.die("被渔网捕获");
           return;
         }
       }
     }
+  }
+
+  captureFishInNet(net) {
+    let captured = 0;
+    for (const fish of this.fish) {
+      if (!fish.active) continue;
+      if (!circleIntersectsNetSweep(this.bodyCircle(fish), net, this.camera.zoom, CONFIG.world)) {
+        continue;
+      }
+      fish.active = false;
+      captured++;
+      this.metrics.netCaptured++;
+      if (!fish.baitSchool) this.netReplenishDebt++;
+      if (net.captureEffectCount < CONFIG.net.captureEffectFishLimit) {
+        net.captureEffectCount++;
+        this.effects.burst(
+          fish.x,
+          fish.y,
+          CONFIG.net.captureBubbleColor,
+          CONFIG.net.captureBubbleCount,
+          CONFIG.net.captureBubbleSpeed,
+          {
+            shape: "drop",
+            gravity: CONFIG.net.captureBubbleGravity,
+            lifeScale: CONFIG.net.captureBubbleLifeScale,
+            sizeScale: CONFIG.net.captureBubbleSizeScale,
+          },
+        );
+      }
+    }
+    return captured;
   }
 
   triggerMine(item) {
@@ -1298,7 +1353,12 @@ class Game {
     });
     this.combo = nextCombo;
     this.score += score;
-    this.player.mass += getMassGain(fish.mass, species.nutrition);
+    const massGain = getMassGain(fish.mass, species.nutrition);
+    const sovereignThreshold = CONFIG.tiers.at(-1).threshold;
+    this.player.mass = this.state === STATE.ENDLESS
+      || this.player.mass + massGain >= sovereignThreshold
+      ? getSovereignMassAfterGain(this.player.mass, massGain)
+      : this.player.mass + massGain;
     this.metrics.eaten++;
     if (preyRatio >= 0.6) this.metrics.edgeEaten++;
     if (this.metrics.firstEatTime === null) this.metrics.firstEatTime = this.elapsed;
@@ -1451,6 +1511,9 @@ class Game {
     this.victoryElapsedMs ??= Math.round(this.elapsed * 1000);
     this.endlessElapsed = 0;
     this.endlessNetTimer = CONFIG.difficulty.sovereignHazards.initialNetDelaySeconds;
+    this.player.mass = Math.min(this.player.mass, CONFIG.mass.sovereignSoftCap);
+    this.player.displayMass = Math.min(this.player.displayMass, CONFIG.mass.sovereignSoftCap);
+    this.player.cameraZoomOverride = CONFIG.camera.sovereignZoom;
     this.player.invulnerable = Math.max(
       this.player.invulnerable,
       CONFIG.difficulty.sovereignHazards.transitionInvulnerabilitySeconds,
@@ -1477,7 +1540,9 @@ class Game {
     let x = this.player.x + safeSide * (bounds.width * 0.28 + this.director.randomRange(0, bounds.width * 0.16));
     x = clamp(x, bounds.left + width / 2, bounds.right - width / 2);
     const net = createNetWarning(x, width);
-    net.y = bounds.top - 70;
+    net.y = bounds.top - CONFIG.net.spawnTopOffset;
+    net.previousY = net.y;
+    net.maxTravelDistance = getNetTravelLimit(bounds.height);
     this.specials.push(net);
     this.showMessage("渔网来袭", 1.2);
   }
@@ -1502,6 +1567,7 @@ class Game {
     this.player.dashing = false;
     this.deathReason = reason;
     this.state = STATE.DYING;
+    this.audio.setScene("dying");
     this.dyingTimer = 0.85;
     this.slowMotion = 0.28;
     this.hitStop = Math.max(this.hitStop, CONFIG.feel.hitStopDeath);
@@ -1717,6 +1783,7 @@ class Game {
 
   showState(state) {
     this.state = state;
+    this.audio.setScene(this.getMusicScene(state));
     document.body.dataset.state = state;
     if (![STATE.PLAYING, STATE.ENDLESS].includes(state)) {
       this.toastTimer = 0;
@@ -1743,6 +1810,20 @@ class Game {
     if (this.dom.hud) this.dom.hud.hidden = ![STATE.PLAYING, STATE.ENDLESS, STATE.DYING].includes(state);
     if (this.dom.dashButton) this.dom.dashButton.hidden = ![STATE.PLAYING, STATE.ENDLESS].includes(state);
     if (this.dom.debugPanel) this.dom.debugPanel.hidden = !this.debug;
+  }
+
+  getMusicScene(state) {
+    if (state === STATE.SETTINGS) {
+      return this.returnFromSettings === STATE.PAUSED ? "paused" : "settings";
+    }
+    if ([STATE.PLAYING, STATE.ENDLESS].includes(state)) return "playing";
+    return {
+      [STATE.TITLE]: "title",
+      [STATE.SHOP]: "shop",
+      [STATE.PAUSED]: "paused",
+      [STATE.DYING]: "dying",
+      [STATE.RESULTS]: "results",
+    }[state] || "title";
   }
 
   activateCosmetic(kind, id) {
@@ -1917,6 +1998,7 @@ class Game {
       `fish ${this.fish.length} | P ${relationCounts.prey} N ${relationCounts.neutral} X ${relationCounts.threat}`,
       `spawn P${percent(spawnWeights.prey)} F${percent(spawnWeights.fringe)} N${percent(spawnWeights.neutral)} X${percent(spawnWeights.predator)}`,
       `bait ${baitSchools} school / ${baitMembers} fish | particles ${this.effects.particles.length}`,
+      `net ${this.activeNetCount()} active | caught ${this.metrics.netCaptured} | refill ${this.metrics.netReplenished} | debt ${this.netReplenishDebt}`,
       `environment ${this.environment.filter((item) => item.active).length} | shells +${this.collectedPearls}`,
       `special ${this.specials.length} | no prey ${this.director.noPreyTime.toFixed(1)}s`,
       "[ / ] 调档 · I 无敌 · N 昼夜 · G 珍珠 · E 巡游 +60s · ` 关闭",
@@ -2059,9 +2141,10 @@ class Game {
           this.sprites.drawJelly(ctx, screen.x, screen.y, item.radius * this.camera.zoom, this.time + item.phase);
         }
       } else if (item.type === "mine") {
-        for (const screen of this.camera.getVisibleWrappedScreens(item.x, item.y, item.radius * 2)) {
-          this.sprites.drawMine(ctx, screen.x, screen.y, item.radius * this.camera.zoom, item.armTime <= 0, this.time + item.phase);
-          if (item.triggered) this.drawMineFuse(ctx, screen, item.radius * this.camera.zoom, item.fuseTime);
+        const geometry = getMineGeometry(item.radius, this.camera.zoom);
+        for (const screen of this.camera.getVisibleWrappedScreens(item.x, item.y, geometry.visualRadius * 1.25)) {
+          this.sprites.drawMine(ctx, screen.x, screen.y, geometry.screenRadius, item.armTime <= 0, this.time + item.phase);
+          if (item.triggered) this.drawMineFuse(ctx, screen, geometry.screenRadius, item.fuseTime);
         }
       } else if (item.type === "net") {
         this.drawNet(ctx, item);
@@ -2070,33 +2153,35 @@ class Game {
   }
 
   drawNet(ctx, net) {
+    const geometry = getNetGeometry(net, this.camera.zoom);
     const screens = this.camera.getVisibleWrappedScreens(
       net.x,
       net.y + net.height / 2,
-      Math.hypot(net.width, net.height) / 2,
+      Math.hypot(geometry.visualWidth, geometry.visualHeight) / 2,
     );
-    for (const screen of screens) this.drawNetAt(ctx, net, screen);
+    for (const screen of screens) this.drawNetAt(ctx, net, screen, geometry);
   }
 
-  drawNetAt(ctx, net, center) {
-    const width = net.width * this.camera.zoom;
-    const height = Math.max(10, net.height * this.camera.zoom);
+  drawNetAt(ctx, net, center, geometry = getNetGeometry(net, this.camera.zoom)) {
+    const width = geometry.screenWidth;
+    const height = geometry.screenHeight;
     const left = { x: center.x - width / 2, y: center.y - height / 2 };
     if (net.warningTime > 0) {
       const topY = 10;
       ctx.save();
-      ctx.globalAlpha = 0.18 + Math.sin(this.time * 10) * 0.08;
+      ctx.globalAlpha = CONFIG.net.warningFillAlpha
+        + Math.sin(this.time * 10) * CONFIG.net.warningPulseAlpha;
       ctx.fillStyle = "#ffba64";
       ctx.fillRect(left.x, topY, width, this.cssHeight - topY);
-      ctx.strokeStyle = "#ffd08a";
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = CONFIG.net.warningColor;
+      ctx.lineWidth = CONFIG.net.warningLineWidth;
       ctx.setLineDash([8, 8]);
       ctx.strokeRect(left.x, topY, width, this.cssHeight - topY);
       ctx.restore();
       return;
     }
     ctx.save();
-    ctx.fillStyle = "rgba(215, 224, 200, 0.38)";
+    ctx.fillStyle = CONFIG.net.activeFillColor;
     ctx.strokeStyle = "#d8cda6";
     ctx.lineWidth = Math.max(1, 2 * this.camera.zoom);
     ctx.fillRect(left.x, left.y, width, height);
@@ -2112,6 +2197,24 @@ class Game {
       ctx.moveTo(left.x, y);
       ctx.lineTo(left.x + width, y);
       ctx.stroke();
+    }
+    ctx.strokeStyle = CONFIG.net.activeBorderColor;
+    ctx.lineWidth = CONFIG.net.activeBorderWidth;
+    ctx.strokeRect(left.x, left.y, width, height);
+    ctx.fillStyle = CONFIG.net.edgeMarkerColor;
+    for (const x of [left.x, left.x + width]) {
+      ctx.beginPath();
+      ctx.arc(x, left.y + height / 2, CONFIG.net.edgeMarkerRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CONFIG.net.edgeMarkerHighlightColor;
+      const highlightSize = CONFIG.net.edgeMarkerHighlightSize;
+      ctx.fillRect(
+        x - highlightSize / 2,
+        left.y + height / 2 - highlightSize / 2,
+        highlightSize,
+        highlightSize,
+      );
+      ctx.fillStyle = CONFIG.net.edgeMarkerColor;
     }
     ctx.restore();
   }

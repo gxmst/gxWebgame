@@ -72,6 +72,58 @@ export const CONFIG = deepFreeze({
     maxDpr: 2,
   },
 
+  /**
+   * 程序化深海氛围音乐。全部声部由 Web Audio 实时合成，不依赖音频文件。
+   * 音量刻意偏低，sceneVolume 可分别调整标题、游玩、暂停与结算时的存在感。
+   */
+  music: {
+    /** 独立背景音乐开关的默认值；旧存档缺少该字段时也使用此值。 */
+    enabledByDefault: true,
+    /** 音乐总线相对总音量的基础增益。 */
+    baseVolume: 0.11,
+    /** 不同界面的音乐强度，切换时会平滑过渡。 */
+    sceneVolume: {
+      title: 0.52,
+      playing: 1,
+      paused: 0.32,
+      settings: 0.42,
+      shop: 0.48,
+      dying: 0.46,
+      results: 0.56,
+    },
+    /** 首次启动和重新启用时的淡入秒数。 */
+    fadeInSeconds: 1.8,
+    /** 关闭音乐或切后台时的淡出秒数。 */
+    fadeOutSeconds: 0.45,
+    /** 标题、游玩、暂停等场景音量互相切换时的淡变秒数。 */
+    sceneTransitionSeconds: 0.45,
+    /** 和弦之间滑音所需秒数，避免音高突变。 */
+    glideSeconds: 2.8,
+    /** 每个和弦停留秒数，数值越大越舒缓。 */
+    chordDurationSeconds: 11,
+    /** 根音频率（E2 附近），整体音高可从这里调整。 */
+    rootFrequency: 82.41,
+    /** 小调氛围和弦，相对根音的半音偏移；每行对应一个循环段落。 */
+    chordSemitones: [
+      [0, 3, 7],
+      [-2, 3, 7],
+      [-4, 0, 5],
+      [-5, -2, 3],
+    ],
+    /** 三个常驻声部的波形，保持轻量且避免尖锐锯齿波。 */
+    voiceWaveforms: ["sine", "triangle", "sine"],
+    /** 各声部增益；总和仍会再乘 baseVolume 与总音量。 */
+    voiceGains: [0.3, 0.2, 0.14],
+    /** 各声部的轻微失谐（音分），让持续音不显得僵硬。 */
+    voiceDetuneCents: [-5, 3, 7],
+    /** 低通滤波截止频率与共振，压住高频保持柔和。 */
+    filterFrequency: 620,
+    filterQ: 0.55,
+    /** 缓慢音量呼吸的频率（Hz）和深度。 */
+    breathFrequency: 0.055,
+    breathDepth: 0.16,
+  },
+
   mass: {
     start: 10,
     edibleRatio: 0.82,
@@ -82,6 +134,12 @@ export const CONFIG = deepFreeze({
     mouthOffsetScale: 0.86,
     gainFactor: 0.22,
     growthVisualDuration: 0.25,
+    /** 封神后的逻辑与视觉质量上限，避免巡游时继续无限膨胀。 */
+    sovereignSoftCap: 150,
+    /** 封神后保留的基础成长比例；得分不受此值影响。 */
+    sovereignGrowthScale: 0.06,
+    /** 越接近上限时成长衰减的指数，越大越早稳定。 */
+    sovereignHeadroomExponent: 1.35,
   },
 
   tiers: [
@@ -166,9 +224,12 @@ export const CONFIG = deepFreeze({
   },
 
   camera: {
-    minZoom: 0.48,
+    /** 成长期允许拉远到的下限，给 T5/T6 和大鱼群留出观察空间。 */
+    minZoom: 0.3,
     maxZoom: 1,
     massZoomExponent: 0.2,
+    /** 进入自由霸主模式后的稳定远景缩放。 */
+    sovereignZoom: 0.52,
     followResponsiveness: 7.2,
     zoomResponsiveness: 5.5,
     lookAheadSeconds: 0.2,
@@ -340,6 +401,63 @@ export const CONFIG = deepFreeze({
   hazards: {
     jellyfishStunSeconds: 0.65,
     jellyfishSpeedScale: 0.25,
+    /** 水雷在任何镜头缩放下至少显示到的屏幕像素半径。 */
+    mineMinScreenRadius: 12,
+    /** 水雷触发半径相对可见半径的比例，略小于视觉范围以保持宽容。 */
+    mineTriggerVisualScale: 0.74,
+  },
+
+  /**
+   * 渔网实体、清鱼反馈与补鱼节奏。宽度的难度曲线仍在
+   * difficulty.sovereignHazards 中，这里控制单张网自身的行为。
+   */
+  net: {
+    /** 网体的世界高度与下落速度。 */
+    height: 42,
+    speed: 580,
+    /** 网从视口上方出生的世界偏移，用于计算独立生命周期。 */
+    spawnTopOffset: 70,
+    /** 落网前的黄色路径预警时长。 */
+    warningSeconds: 1.2,
+    /** 远景下网带至少可见的屏幕宽高。 */
+    minScreenWidth: 64,
+    minScreenHeight: 22,
+    /** 预警带的基础/脉冲透明度与虚线宽度。 */
+    warningFillAlpha: 0.26,
+    warningPulseAlpha: 0.1,
+    warningLineWidth: 3,
+    warningColor: "#ffd078",
+    /** 活动网体的填充、醒目外框与两端浮标。 */
+    activeFillColor: "rgba(215, 224, 200, 0.5)",
+    activeBorderColor: "#ffd078",
+    activeBorderWidth: 2.5,
+    edgeMarkerColor: "#ffb45e",
+    edgeMarkerHighlightColor: "#fff1bc",
+    edgeMarkerRadius: 5,
+    edgeMarkerHighlightSize: 2,
+    /** 致死/捕获范围相对可见网体略收窄，避免擦边误判。 */
+    collisionVisualScale: 0.88,
+    /** 网开始下落后等待此时间再捕鱼，可设为 0 立即启用。 */
+    fishCaptureDelaySeconds: 0,
+    /** 单条被捕鱼产生的气泡数，以及每张网最多反馈的鱼数。 */
+    captureBubbleCount: 3,
+    captureEffectFishLimit: 6,
+    /** 被捕气泡的速度、上浮重力、寿命、尺寸与颜色。 */
+    captureBubbleSpeed: 58,
+    captureBubbleGravity: -28,
+    captureBubbleLifeScale: 0.58,
+    captureBubbleSizeScale: 0.66,
+    captureBubbleColor: "#d8f6ee",
+    /** 捕鱼产生的补鱼债务每批数量与批次间隔，避免眼前瞬间刷满。 */
+    replenishBatchMax: 1,
+    replenishIntervalSeconds: 0.58,
+    /** 新鱼生成点需要避开活动网带的额外世界距离。 */
+    spawnAvoidanceMargin: 90,
+    /** 在网带外寻找普通/备用生成点的最大尝试次数。 */
+    spawnAttempts: 16,
+    spawnFallbackAttempts: 12,
+    /** 网完全离开镜头后继续保留的世界距离。 */
+    despawnPadding: 120,
   },
 
   environment: {

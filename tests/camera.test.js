@@ -1,4 +1,5 @@
 import { Camera } from "../js/camera.js";
+import { CONFIG } from "../js/config.js";
 import { wrap, wrapDelta } from "../js/math.js";
 
 const assert = (condition, message = "Assertion failed") => {
@@ -71,6 +72,19 @@ export const tests = [
       assert(camera.targetZoom < 1);
       assert(camera.zoom > camera.targetZoom, "zoom should damp instead of snapping");
       assert(camera.x > target.x, "velocity should add look-ahead");
+    },
+  },
+  {
+    name: "camera supports distant growth views and a stable sovereign override",
+    run() {
+      const target = { x: 1000, y: 600, displayMass: 1e9, vx: 0, vy: 0 };
+      const camera = new Camera({ width: 800, height: 600, wrap: false });
+      camera.setTarget(target);
+      assert(camera.targetZoom === CONFIG.camera.minZoom);
+      target.displayMass = CONFIG.mass.sovereignSoftCap;
+      target.cameraZoomOverride = CONFIG.camera.sovereignZoom;
+      camera.update(1 / 60);
+      assert(camera.targetZoom === CONFIG.camera.sovereignZoom);
     },
   },
   {

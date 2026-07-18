@@ -292,6 +292,11 @@ export class Camera {
 
   #refreshMassZoom(displayMassOverride) {
     if (!this.target) return;
+    const zoomOverride = finitePositive(this.target.cameraZoomOverride, 0);
+    if (zoomOverride > 0) {
+      this.targetZoom = clamp(zoomOverride, this.minZoom, this.maxZoom);
+      return;
+    }
     const displayMass = finitePositive(
       displayMassOverride ?? this.target.displayMass ?? this.target.mass,
       CONFIG.mass.start,

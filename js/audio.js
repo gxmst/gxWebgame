@@ -1,27 +1,133 @@
+import { CONFIG } from "./config.js";
+
+const SILENCE = 0.0001;
+const SFX_BUS_GAIN = 0.26;
+
 export class AudioSystem {
-  constructor(settingsProvider = () => ({})) {
+  constructor(settingsProvider = () => ({}), options = {}) {
     this.settingsProvider = settingsProvider;
+    this.contextFactory = options.contextFactory || createDefaultContext;
+    this.setIntervalFn = options.setIntervalFn || globalThis.setInterval?.bind(globalThis);
+    this.clearIntervalFn = options.clearIntervalFn || globalThis.clearInterval?.bind(globalThis);
     this.context = null;
     this.master = null;
+    this.sfxBus = null;
+    this.musicBus = null;
+    this.musicSession = null;
+    this.retiringMusicSessions = new Set();
+    this.musicScene = "title";
+    this.musicGainTarget = null;
+    this.backgrounded = false;
+    this.backgroundGeneration = 0;
     this.lastDangerAt = 0;
   }
 
+  /** Unlocks Web Audio after a user gesture. Repeated calls reuse one context. */
   unlock() {
     if (!this.context) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return;
-      this.context = new AudioContext();
-      this.master = this.context.createGain();
-      this.master.connect(this.context.destination);
+      let context;
+      try {
+        context = this.contextFactory?.();
+      } catch {
+        return Promise.resolve(false);
+      }
+      if (!context) return Promise.resolve(false);
+      this.context = context;
+      this.master = context.createGain();
+      this.sfxBus = context.createGain();
+      this.musicBus = context.createGain();
+      this.sfxBus.gain.value = SFX_BUS_GAIN;
+      this.musicBus.gain.value = 0;
+      this.sfxBus.connect(this.master);
+      this.musicBus.connect(this.master);
+      this.master.connect(context.destination);
+      this.syncSettings();
     }
-    if (this.context.state === "suspended") this.context.resume().catch(() => {});
+
+    const resume = ["suspended", "interrupted"].includes(this.context.state)
+      ? safePromise(() => this.context.resume?.())
+      : Promise.resolve();
+    return resume
+      .catch(() => {})
+      .then(() => {
+        this.syncSettings();
+        return this.context?.state === "running";
+      });
+  }
+
+  /** Applies volume/mute/music settings immediately without requiring an SFX. */
+  syncSettings() {
+    if (!this.context || !this.master) return;
+    const settings = this.settingsProvider() || {};
+    const volume = clamp01(settings.volume ?? 0.7);
+    const audible = !this.backgrounded && !settings.muted ? volume : 0;
+    setParamNow(this.master.gain, audible, this.context.currentTime);
+
+    const sceneScale = CONFIG.music.sceneVolume[this.musicScene]
+      ?? CONFIG.music.sceneVolume.title;
+    const musicGainTarget = CONFIG.music.baseVolume * Math.max(0, sceneScale);
+    if (musicGainTarget !== this.musicGainTarget) {
+      this.musicGainTarget = musicGainTarget;
+      rampParam(
+        this.musicBus.gain,
+        musicGainTarget,
+        this.context.currentTime,
+        CONFIG.music.sceneTransitionSeconds,
+      );
+    }
+
+    if (this.shouldPlayMusic(settings)) this.startMusic();
+    else this.stopMusic(this.backgrounded);
+  }
+
+  setScene(scene = "title") {
+    this.musicScene = Object.hasOwn(CONFIG.music.sceneVolume, scene) ? scene : "title";
+    this.syncSettings();
+  }
+
+  /** Stops all music and suspends the context while the page is hidden. */
+  setBackgrounded(backgrounded) {
+    const next = backgrounded === true;
+    if (next === this.backgrounded) return Promise.resolve(false);
+    this.backgrounded = next;
+    const generation = ++this.backgroundGeneration;
+    if (!this.context) return Promise.resolve(false);
+
+    if (next) {
+      this.syncSettings();
+      this.stopMusic(true);
+      return safePromise(() => this.context.suspend?.())
+        .catch(() => false)
+        .then(() => {
+          if (generation !== this.backgroundGeneration && !this.backgrounded) {
+            return this.restoreForegroundAudio();
+          }
+          return this.backgrounded;
+        });
+    }
+
+    return this.restoreForegroundAudio(generation);
+  }
+
+  restoreForegroundAudio(generation = this.backgroundGeneration) {
+    if (!this.context || this.backgrounded) return Promise.resolve(false);
+    const resume = ["suspended", "interrupted"].includes(this.context.state)
+      ? safePromise(() => this.context.resume?.())
+      : Promise.resolve();
+    return resume
+      .then(() => {
+        if (generation !== this.backgroundGeneration || this.backgrounded) return false;
+        this.syncSettings();
+        return this.context?.state === "running";
+      })
+      .catch(() => false);
   }
 
   play(name, options = {}) {
-    const settings = this.settingsProvider();
-    if (settings.muted || !this.context || !this.master) return;
-    const volume = Math.max(0, Math.min(1, settings.volume ?? 0.7));
-    this.master.gain.setValueAtTime(volume * 0.26, this.context.currentTime);
+    const settings = this.settingsProvider() || {};
+    if (settings.muted || clamp01(settings.volume ?? 0.7) <= 0
+      || !this.context || !this.sfxBus || this.backgrounded) return;
+    this.syncSettings();
     const intensity = options.intensity ?? 0;
 
     switch (name) {
@@ -91,7 +197,7 @@ export class AudioSystem {
   }
 
   tone(frequency, duration, type, gainValue, delay = 0) {
-    if (!this.context || !this.master) return;
+    if (!this.context || !this.sfxBus) return;
     const now = this.context.currentTime + delay;
     const oscillator = this.context.createOscillator();
     const gain = this.context.createGain();
@@ -101,18 +207,18 @@ export class AudioSystem {
       Math.max(40, frequency * 0.78),
       now + duration,
     );
-    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.setValueAtTime(SILENCE, now);
     gain.gain.exponentialRampToValueAtTime(gainValue, now + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    gain.gain.exponentialRampToValueAtTime(SILENCE, now + duration);
     oscillator.connect(gain);
-    gain.connect(this.master);
+    gain.connect(this.sfxBus);
     oscillator.start(now);
     oscillator.stop(now + duration + 0.03);
   }
 
   /** Soft filtered noise for water / splash texture. */
   noiseBurst(duration, gainValue, delay = 0) {
-    if (!this.context || !this.master) return;
+    if (!this.context || !this.sfxBus) return;
     const sampleRate = this.context.sampleRate;
     const length = Math.max(1, Math.floor(sampleRate * duration));
     const buffer = this.context.createBuffer(1, length, sampleRate);
@@ -129,18 +235,186 @@ export class AudioSystem {
     filter.Q.value = 0.7;
     const gain = this.context.createGain();
     const now = this.context.currentTime + delay;
-    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.setValueAtTime(SILENCE, now);
     gain.gain.exponentialRampToValueAtTime(gainValue, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    gain.gain.exponentialRampToValueAtTime(SILENCE, now + duration);
     source.connect(filter);
     filter.connect(gain);
-    gain.connect(this.master);
+    gain.connect(this.sfxBus);
     source.start(now);
     source.stop(now + duration + 0.02);
+  }
+
+  shouldPlayMusic(settings = this.settingsProvider() || {}) {
+    return this.context?.state === "running"
+      && !this.backgrounded
+      && settings.music !== false
+      && !settings.muted
+      && clamp01(settings.volume ?? 0.7) > 0;
+  }
+
+  startMusic() {
+    if (!this.context || !this.musicBus || this.musicSession
+      || !this.shouldPlayMusic()) return;
+    this.forceStopRetiringSessions();
+
+    const now = this.context.currentTime;
+    const filter = this.context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = CONFIG.music.filterFrequency;
+    filter.Q.value = CONFIG.music.filterQ;
+
+    const breathGain = this.context.createGain();
+    breathGain.gain.value = 1 - CONFIG.music.breathDepth;
+    const sessionGain = this.context.createGain();
+    sessionGain.gain.setValueAtTime(SILENCE, now);
+    sessionGain.gain.linearRampToValueAtTime(1, now + CONFIG.music.fadeInSeconds);
+    filter.connect(breathGain);
+    breathGain.connect(sessionGain);
+    sessionGain.connect(this.musicBus);
+
+    const voices = CONFIG.music.voiceWaveforms.map((waveform, index) => {
+      const oscillator = this.context.createOscillator();
+      const voiceGain = this.context.createGain();
+      oscillator.type = waveform;
+      oscillator.detune.value = CONFIG.music.voiceDetuneCents[index] ?? 0;
+      voiceGain.gain.value = CONFIG.music.voiceGains[index] ?? 0;
+      oscillator.connect(voiceGain);
+      voiceGain.connect(filter);
+      oscillator.start(now);
+      return oscillator;
+    });
+
+    const lfo = this.context.createOscillator();
+    const lfoGain = this.context.createGain();
+    lfo.type = "sine";
+    lfo.frequency.value = CONFIG.music.breathFrequency;
+    lfoGain.gain.value = CONFIG.music.breathDepth;
+    lfo.connect(lfoGain);
+    lfoGain.connect(breathGain.gain);
+    lfo.start(now);
+
+    const session = {
+      voices,
+      lfo,
+      output: sessionGain,
+      chordIndex: 0,
+      intervalId: null,
+      stopped: false,
+    };
+    this.musicSession = session;
+    this.applyMusicChord(session, true);
+    if (this.setIntervalFn) {
+      session.intervalId = this.setIntervalFn(() => {
+        if (this.musicSession !== session || session.stopped) return;
+        session.chordIndex = (session.chordIndex + 1) % CONFIG.music.chordSemitones.length;
+        this.applyMusicChord(session, false);
+      }, CONFIG.music.chordDurationSeconds * 1000);
+    }
+  }
+
+  applyMusicChord(session, immediate) {
+    if (!this.context || session.stopped) return;
+    const chord = CONFIG.music.chordSemitones[session.chordIndex]
+      || CONFIG.music.chordSemitones[0];
+    const now = this.context.currentTime;
+    for (let index = 0; index < session.voices.length; index++) {
+      const semitones = chord[index % chord.length];
+      const frequency = CONFIG.music.rootFrequency * 2 ** (semitones / 12);
+      const param = session.voices[index].frequency;
+      param.cancelScheduledValues?.(now);
+      if (immediate || !param.setTargetAtTime) param.setValueAtTime(frequency, now);
+      else param.setTargetAtTime(frequency, now, Math.max(0.01, CONFIG.music.glideSeconds / 3));
+    }
+  }
+
+  stopMusic(immediate = false) {
+    const session = this.musicSession;
+    if (!session) return;
+    this.musicSession = null;
+    session.stopped = true;
+    if (session.intervalId != null) this.clearIntervalFn?.(session.intervalId);
+
+    const now = this.context?.currentTime ?? 0;
+    const release = immediate ? 0.02 : CONFIG.music.fadeOutSeconds;
+    holdParam(session.output.gain, now);
+    session.output.gain.linearRampToValueAtTime(0, now + release);
+    this.retiringMusicSessions.add(session);
+    this.scheduleMusicSessionStop(session, now + release + 0.03);
+  }
+
+  scheduleMusicSessionStop(session, stopAt) {
+    const nodes = [...session.voices, session.lfo];
+    let remaining = nodes.length;
+    const cleanup = () => {
+      remaining--;
+      if (remaining > 0) return;
+      this.retiringMusicSessions.delete(session);
+      session.output.disconnect?.();
+    };
+    for (const node of nodes) {
+      node.onended = cleanup;
+      try {
+        node.stop(stopAt);
+      } catch {
+        cleanup();
+      }
+    }
+  }
+
+  forceStopRetiringSessions() {
+    const now = this.context?.currentTime ?? 0;
+    for (const session of this.retiringMusicSessions) {
+      setParamNow(session.output.gain, 0, now);
+      for (const node of [...session.voices, session.lfo]) {
+        try {
+          node.stop(now + 0.01);
+        } catch {
+          // A scheduled or already stopped oscillator is harmless.
+        }
+      }
+    }
   }
 }
 
 export function vibrate(pattern, settings) {
   if (!settings?.vibration || typeof navigator.vibrate !== "function") return;
   navigator.vibrate(pattern);
+}
+
+function createDefaultContext() {
+  const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
+  return AudioContext ? new AudioContext() : null;
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+function safePromise(action) {
+  try {
+    return Promise.resolve(action?.());
+  } catch (error) {
+    return Promise.reject(error);
+  }
+}
+
+function setParamNow(param, value, now) {
+  param.cancelScheduledValues?.(now);
+  param.setValueAtTime(value, now);
+}
+
+function holdParam(param, now) {
+  if (param.cancelAndHoldAtTime) {
+    param.cancelAndHoldAtTime(now);
+    return;
+  }
+  const current = Number.isFinite(param.value) ? param.value : 1;
+  param.cancelScheduledValues?.(now);
+  param.setValueAtTime(Math.max(0, current), now);
+}
+
+function rampParam(param, value, now, duration) {
+  holdParam(param, now);
+  param.linearRampToValueAtTime(value, now + Math.max(0, duration));
 }

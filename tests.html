@@ -37,6 +37,8 @@
       import { tests as input } from "./tests/input.test.js";
       import { tests as dayNight } from "./tests/day-night.test.js";
       import { tests as environment } from "./tests/environment.test.js";
+      import { tests as audio } from "./tests/audio.test.js";
+      import { tests as hazards } from "./tests/hazards.test.js";
 
       const tests = [
         ...rules,
@@ -52,6 +54,8 @@
         ...input,
         ...dayNight,
         ...environment,
+        ...audio,
+        ...hazards,
       ];
       const results = document.querySelector("#results");
       let passed = 0;

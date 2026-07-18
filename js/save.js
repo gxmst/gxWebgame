@@ -22,6 +22,7 @@ export function createDefaultSave() {
     settings: {
       volume: 0.7,
       muted: false,
+      music: CONFIG.music.enabledByDefault,
       vibration: true,
       screenShake: true,
       touchMode: "relative",
@@ -213,6 +214,7 @@ function sanitizeSave(candidate) {
     settings: {
       volume: clampNumber(settings.volume, 0, 1, defaults.settings.volume),
       muted: booleanOr(settings.muted, defaults.settings.muted),
+      music: booleanOr(settings.music, defaults.settings.music),
       vibration: booleanOr(settings.vibration, defaults.settings.vibration),
       screenShake: booleanOr(settings.screenShake, defaults.settings.screenShake),
       touchMode: ["relative", "point"].includes(settings.touchMode)

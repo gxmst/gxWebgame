@@ -5,6 +5,7 @@ import {
   createComboState,
   getEatScore,
   getMassGain,
+  getSovereignMassAfterGain,
   getMoveSpeed,
   getRelation,
   getTier,
@@ -95,6 +96,25 @@ export const tests = [
       const b = Array.from({ length: 8 }, () => second());
       assert(JSON.stringify(a) === JSON.stringify(b));
       assert(a.every((value) => value >= 0 && value < 1));
+    },
+  },
+  {
+    name: "sovereign growth approaches its soft cap without reducing score",
+    run() {
+      const threshold = CONFIG.tiers.at(-1).threshold;
+      const cap = CONFIG.mass.sovereignSoftCap;
+      const crossed = getSovereignMassAfterGain(threshold - 1, 10);
+      assert(crossed > threshold && crossed < threshold + 9);
+
+      let mass = threshold;
+      const earlyGain = getSovereignMassAfterGain(mass, 10) - mass;
+      for (let index = 0; index < 2000; index++) {
+        mass = getSovereignMassAfterGain(mass, 10);
+      }
+      const lateGain = getSovereignMassAfterGain(mass, 10) - mass;
+      assert(mass <= cap && mass > threshold);
+      assert(lateGain < earlyGain);
+      assert(getEatScore(cap, 40) > 0, "score remains independent from capped growth");
     },
   },
 ];

@@ -35,6 +35,7 @@ export const tests = [
       assert(first.version === 1 && first.selectedSkin === "reef");
       assert(first.selectedAccessory === "none" && first.leaderboard.length === 0);
       assert(first.upgrades.coins === 0 && first.upgrades.levels.speed === 0);
+      assert(first.settings.music === true);
     },
   },
   {
@@ -64,6 +65,7 @@ export const tests = [
       assert(save.selectedSkin === "golden");
       assert(save.settings.volume === 1);
       assert(save.settings.touchMode === "relative");
+      assert(save.settings.music === true);
       assert(save.upgrades.coins === 0 && save.upgrades.levels.mouth === 0);
       assert(save.selectedAccessory === "none" && save.unlocks.accessories.length === 1);
       assert(save.leaderboard.length === 0);
@@ -86,6 +88,7 @@ export const tests = [
       assert(save.selectedAccessory === "none");
       assert(save.unlocks.accessories.length === 1);
       assert(save.leaderboard.length === 0);
+      assert(save.settings.music === true);
     },
   },
   {
@@ -119,6 +122,7 @@ export const tests = [
       save.milestones["tutorial.completed"] = true;
       save.settings.volume = 0.25;
       save.settings.highContrast = true;
+      save.settings.music = false;
       const cleared = clearProgress(save);
       assert(cleared.stats.highScore === 0);
       assert(cleared.wallet.pearls === 0);
@@ -131,6 +135,7 @@ export const tests = [
       assert(!cleared.milestones["tutorial.completed"]);
       assert(cleared.settings.volume === 0.25);
       assert(cleared.settings.highContrast === true);
+      assert(cleared.settings.music === false);
     },
   },
   {

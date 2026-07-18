@@ -9,6 +9,8 @@ import { tests as effects } from "./effects.test.js";
 import { tests as input } from "./input.test.js";
 import { tests as dayNight } from "./day-night.test.js";
 import { tests as environment } from "./environment.test.js";
+import { tests as audio } from "./audio.test.js";
+import { tests as hazards } from "./hazards.test.js";
 import { tests as difficulty } from "./difficulty.test.js";
 import { tests as cosmetics } from "./cosmetics.test.js";
 
@@ -26,6 +28,8 @@ const tests = [
   ...input,
   ...dayNight,
   ...environment,
+  ...audio,
+  ...hazards,
 ];
 let passed = 0;
 

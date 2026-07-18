@@ -39,6 +39,7 @@ export function createPlayer(x, y, skin = "reef", accessory = "none") {
     alive: true,
     animOffset: 0,
     bodyTwist: 0,
+    cameraZoomOverride: null,
   };
 }
 
@@ -124,10 +125,14 @@ export function createNetWarning(x, width) {
     x,
     y: 0,
     width,
-    height: 42,
-    warningTime: 1.2,
+    height: CONFIG.net.height,
+    warningTime: CONFIG.net.warningSeconds,
     activeTime: 0,
-    speed: 580,
+    speed: CONFIG.net.speed,
+    previousY: 0,
+    travelDistance: 0,
+    maxTravelDistance: null,
+    captureEffectCount: 0,
     active: true,
   };
 }

@@ -61,6 +61,34 @@ export function getMassGain(prey, nutrition = undefined) {
   return preyMass * CONFIG.mass.gainFactor * nutritionValue;
 }
 
+/**
+ * Applies normal growth up to T6, then retains only a shrinking fraction of
+ * each gain so sovereign size approaches (and never crosses) the soft cap.
+ */
+export function getSovereignMassAfterGain(currentMass, rawGain) {
+  const start = CONFIG.tiers.at(-1).threshold;
+  const cap = Math.max(start, CONFIG.mass.sovereignSoftCap);
+  let mass = clamp(
+    Number.isFinite(currentMass) ? currentMass : CONFIG.mass.start,
+    0,
+    cap,
+  );
+  let gain = Math.max(0, Number.isFinite(rawGain) ? rawGain : 0);
+  if (mass >= cap || gain <= 0) return mass;
+
+  if (mass < start) {
+    const normalGain = Math.min(gain, start - mass);
+    mass += normalGain;
+    gain -= normalGain;
+  }
+  if (gain <= 0 || mass >= cap) return mass;
+
+  const headroom = clamp((cap - mass) / Math.max(1, cap - start), 0, 1);
+  const retainedScale = CONFIG.mass.sovereignGrowthScale
+    * headroom ** CONFIG.mass.sovereignHeadroomExponent;
+  return Math.min(cap, mass + gain * retainedScale);
+}
+
 /** Risk reward rises linearly from easy-prey ratio 0.25 to the edible limit. */
 export function getRiskMultiplier(predator, prey) {
   const predatorMass = readMass(predator);
