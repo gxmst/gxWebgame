@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>大鱼吃小鱼 · 逻辑测试</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; background: #071f2b; color: #f5fbf7; }
+      main { width: min(760px, calc(100% - 32px)); margin: 40px auto; }
+      h1 { font-size: 24px; letter-spacing: 0; }
+      #summary { color: #b6ced0; }
+      ol { padding: 0; list-style: none; display: grid; gap: 8px; }
+      li { padding: 10px 12px; border-left: 4px solid #73e0a2; background: #0b3441; }
+      li.fail { border-color: #f06c67; }
+      .detail { display: block; margin-top: 5px; color: #ffc3bf; white-space: pre-wrap; }
+      body[data-test-status="failed"] h1 { color: #ff8d85; }
+    </style>
+  </head>
+  <body data-test-status="running">
+    <main>
+      <h1>纯逻辑测试</h1>
+      <p id="summary">正在运行...</p>
+      <ol id="results"></ol>
+    </main>
+    <script type="module">
+      import { tests as rules } from "./tests/rules.test.js";
+      import { tests as camera } from "./tests/camera.test.js";
+      import { tests as save } from "./tests/save.test.js";
+      import { tests as run } from "./tests/run.test.js";
+      import { tests as director } from "./tests/director.test.js";
+      import { tests as quality } from "./tests/quality.test.js";
+      import { tests as upgrades } from "./tests/upgrades.test.js";
+
+      const tests = [...rules, ...camera, ...save, ...run, ...director, ...quality, ...upgrades];
+      const results = document.querySelector("#results");
+      let passed = 0;
+
+      for (const test of tests) {
+        const item = document.createElement("li");
+        try {
+          await test.run();
+          passed += 1;
+          item.textContent = `通过 · ${test.name}`;
+        } catch (error) {
+          item.className = "fail";
+          item.textContent = `失败 · ${test.name}`;
+          const detail = document.createElement("span");
+          detail.className = "detail";
+          detail.textContent = error?.stack ?? String(error);
+          item.append(detail);
+        }
+        results.append(item);
+      }
+
+      const failed = tests.length - passed;
+      document.body.dataset.testStatus = failed === 0 ? "passed" : "failed";
+      document.querySelector("#summary").textContent =
+        `${passed}/${tests.length} 通过${failed ? `，${failed} 项失败` : ""}`;
+    </script>
+  </body>
+</html>
