@@ -1,4 +1,5 @@
 import { clamp } from "./math.js";
+import { CONFIG } from "./config.js";
 
 export const UPGRADE_TYPES = Object.freeze({
   SPEED: "speed",
@@ -123,12 +124,14 @@ export function getMouthMultiplier(stateOrLevel) {
   return 1 + level * UPGRADE_DEFINITIONS.mouth.multiplierPerLevel;
 }
 
-export function getUpgradeEffects(state) {
+export function getUpgradeEffects(state, accessory = "none") {
+  const base = CONFIG.cosmeticBonus[accessory] || CONFIG.cosmeticBonus.none;
   return {
-    speedMultiplier: getSpeedMultiplier(state),
-    staminaBonus: getStaminaBonus(state),
-    staminaRecoveryMultiplier: getStaminaRecoveryMultiplier(state),
-    mouthMultiplier: getMouthMultiplier(state),
+    speedMultiplier: getSpeedMultiplier(state) * (1 + base.speedPercent),
+    staminaBonus: getStaminaBonus(state) + CONFIG.dash.maxStamina * base.staminaPercent,
+    staminaRecoveryMultiplier: getStaminaRecoveryMultiplier(state) * (1 + base.staminaRecoveryPercent),
+    mouthMultiplier: getMouthMultiplier(state) * (1 + base.mouthPercent),
+    accessory,
   };
 }
 

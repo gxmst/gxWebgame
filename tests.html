@@ -29,10 +29,30 @@
       import { tests as save } from "./tests/save.test.js";
       import { tests as run } from "./tests/run.test.js";
       import { tests as director } from "./tests/director.test.js";
+      import { tests as difficulty } from "./tests/difficulty.test.js";
+      import { tests as cosmetics } from "./tests/cosmetics.test.js";
       import { tests as quality } from "./tests/quality.test.js";
       import { tests as upgrades } from "./tests/upgrades.test.js";
+      import { tests as effects } from "./tests/effects.test.js";
+      import { tests as input } from "./tests/input.test.js";
+      import { tests as dayNight } from "./tests/day-night.test.js";
+      import { tests as environment } from "./tests/environment.test.js";
 
-      const tests = [...rules, ...camera, ...save, ...run, ...director, ...quality, ...upgrades];
+      const tests = [
+        ...rules,
+        ...camera,
+        ...save,
+        ...run,
+        ...director,
+        ...difficulty,
+        ...cosmetics,
+        ...quality,
+        ...upgrades,
+        ...effects,
+        ...input,
+        ...dayNight,
+        ...environment,
+      ];
       const results = document.querySelector("#results");
       let passed = 0;
 

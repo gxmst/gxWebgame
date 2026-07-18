@@ -162,7 +162,6 @@ export const CONFIG = deepFreeze({
     goldZoomPunch: 0.09,
     tierZoomPunch: 0.12,
     deathZoomPunch: 0.16,
-    victoryZoomPunch: 0.1,
     punchDecay: 10,
   },
 
@@ -272,6 +271,46 @@ export const CONFIG = deepFreeze({
     scatterDistance: 54,
   },
 
+  /**
+   * 成长难度曲线。T1 到 T5 线性插值，T6 使用 sovereignWeights。
+   * 每个比例、追击上限、体型上限和饵鱼衰减都可独立调整。
+   */
+  difficulty: {
+    curveStartTier: 1,
+    curveEndTier: 5,
+    relationWeights: {
+      tier1: { prey: 0.48, fringe: 0.22, neutral: 0.2, predator: 0.1 },
+      tier5: { prey: 0.27, fringe: 0.2, neutral: 0.23, predator: 0.3 },
+      sovereign: { prey: 0.44, fringe: 0.32, neutral: 0.24, predator: 0 },
+    },
+    preyWeightFloor: 0.25,
+    fringeWeightFloor: 0.16,
+    predatorRatioMin: 1.28,
+    predatorRatioMaxTier1: 1.58,
+    predatorRatioMaxTier5: 1.82,
+    maxChasersByTier: [1, 1, 2, 2, 3, 3],
+    baitSchool: {
+      tier1IntervalScale: 1,
+      tier5IntervalScale: 1.7,
+      sovereignIntervalScale: 1.9,
+      tier1SizeScale: 1,
+      tier5SizeScale: 0.65,
+      sovereignSizeScale: 0.55,
+    },
+    sovereignHazards: {
+      transitionInvulnerabilitySeconds: 1.5,
+      initialNetDelaySeconds: 5.5,
+      netIntervalStartSeconds: 5.2,
+      netIntervalMinSeconds: 2.1,
+      netIntervalRampSeconds: 210,
+      maxActiveNetsStart: 1,
+      maxActiveNetsEnd: 3,
+      maxActiveNetsRampSeconds: 240,
+      netWidthViewportRatio: 0.24,
+      netWidthMax: 320,
+    },
+  },
+
   director: {
     targetEntityCount: 56,
     minEntityCount: 44,
@@ -301,7 +340,6 @@ export const CONFIG = deepFreeze({
   hazards: {
     jellyfishStunSeconds: 0.65,
     jellyfishSpeedScale: 0.25,
-    apexDurationSeconds: 30,
   },
 
   environment: {
@@ -333,6 +371,85 @@ export const CONFIG = deepFreeze({
     firstTierPearls: { T2: 1, T3: 2, T4: 3, T5: 5, T6: 8 },
   },
 
+  /** 外观目录同时作为商店价格、像素配色和花纹的唯一数据源。 */
+  cosmetics: {
+    skins: {
+      reef: {
+        name: "珊瑚青",
+        cost: 0,
+        pattern: "scales",
+        palette: { body: "#3fd4a8", light: "#c4ffe6", dark: "#0f6e78", fin: "#ffc84a", eye: "#0c2230", accent: "#9dffe0" },
+      },
+      coral: {
+        name: "赤珊瑚",
+        cost: 12,
+        pattern: "spots",
+        palette: { body: "#ff6f68", light: "#ffd2b0", dark: "#9a3658", fin: "#ffe066", eye: "#2a1528", accent: "#ffb0a0" },
+      },
+      midnight: {
+        name: "午夜蓝",
+        cost: 22,
+        pattern: "stars",
+        palette: { body: "#5aa8ff", light: "#c4e8ff", dark: "#344888", fin: "#d070ff", eye: "#0c1028", accent: "#a8d0ff" },
+      },
+      koi: {
+        name: "锦鲤白",
+        cost: 36,
+        pattern: "patches",
+        palette: { body: "#f2ebe0", light: "#ffffff", dark: "#cc4a3c", fin: "#1a2030", eye: "#101418", accent: "#ffb0a0" },
+      },
+      kelp: {
+        name: "海藻绿",
+        cost: 30,
+        pattern: "bands",
+        palette: { body: "#76ad55", light: "#d8ed89", dark: "#315f4c", fin: "#e0b84f", eye: "#13221b", accent: "#a9d66f" },
+      },
+      ember: {
+        name: "熔火红",
+        cost: 42,
+        pattern: "zigzag",
+        palette: { body: "#d94d45", light: "#ffd18c", dark: "#6e273b", fin: "#293343", eye: "#fff3d2", accent: "#ff8a4c" },
+      },
+      glacier: {
+        name: "冰川银",
+        cost: 48,
+        pattern: "diamonds",
+        palette: { body: "#b7dce0", light: "#f4ffff", dark: "#477792", fin: "#4fabc1", eye: "#102230", accent: "#83edf0" },
+      },
+      royal: {
+        name: "鎏金紫",
+        cost: 58,
+        pattern: "royal",
+        palette: { body: "#765a9e", light: "#ead5ff", dark: "#3c315f", fin: "#e6bd4a", eye: "#181326", accent: "#ffe58a" },
+      },
+    },
+    accessories: {
+      none: { name: "不佩戴", cost: 0, art: "none", bonusLabel: "纯粹本色" },
+      crown: { name: "潮汐王冠", cost: 28, art: "crown", bonusLabel: "吞噬范围 +2%" },
+      sailor: { name: "水手帽", cost: 20, art: "sailor", bonusLabel: "游动速度 +2%" },
+      bowtie: { name: "泡泡领结", cost: 24, art: "bowtie", bonusLabel: "体力上限 +3%" },
+      pearl: { name: "珍珠挂坠", cost: 32, art: "pearl", bonusLabel: "体力恢复 +3%" },
+    },
+  },
+
+  /**
+   * 配件的永久微加成。数值均为小数比例，并通过 upgradeEffects 与成长升级叠加。
+   * 默认配件必须保持全零，确保不购买外观也能按原难度正常封神。
+   */
+  cosmeticBonus: {
+    none: { speedPercent: 0, staminaPercent: 0, staminaRecoveryPercent: 0, mouthPercent: 0 },
+    crown: { speedPercent: 0, staminaPercent: 0, staminaRecoveryPercent: 0, mouthPercent: 0.02 },
+    sailor: { speedPercent: 0.02, staminaPercent: 0, staminaRecoveryPercent: 0, mouthPercent: 0 },
+    bowtie: { speedPercent: 0, staminaPercent: 0.03, staminaRecoveryPercent: 0, mouthPercent: 0 },
+    pearl: { speedPercent: 0, staminaPercent: 0, staminaRecoveryPercent: 0.03, mouthPercent: 0 },
+  },
+
+  leaderboard: {
+    limit: 10,
+    minScore: 1,
+    minDurationMs: 5000,
+  },
+
   save: {
     key: "bigfish.save.v1",
     version: 1,
@@ -346,6 +463,7 @@ export const CONFIG = deepFreeze({
     glowBudgetHigh: 18,
     glowBudgetLow: 6,
     fishAnimFrames: 8,
+    spriteCacheMaxEntries: 512,
     backgroundParallax: 0.018,
     backgroundOverscan: 1.08,
     parallaxFar: 0.22,
@@ -353,6 +471,8 @@ export const CONFIG = deepFreeze({
     parallaxNear: 0.9,
     currentDriftX: 3.6,
     currentDriftY: -0.8,
+    titlePlayerScreenXRatio: 0.5,
+    titlePlayerScreenYRatio: 0.18,
   },
 
   effects: {

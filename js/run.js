@@ -3,10 +3,13 @@ export function createRunResult({
   elapsedSeconds = 0,
   victory = false,
   victoryElapsedMs = null,
+  sovereignElapsedSeconds = 0,
   reachedTier = "T1",
   collectedPearls = 0,
+  date = null,
 } = {}) {
   const survivalMs = Math.max(0, Math.round(elapsedSeconds * 1000));
+  const sovereignDurationMs = Math.max(0, Math.round(sovereignElapsedSeconds * 1000));
   const capturedClearTime = Number.isFinite(victoryElapsedMs)
     ? Math.max(0, Math.round(victoryElapsedMs))
     : survivalMs;
@@ -15,8 +18,10 @@ export function createRunResult({
     survivalMs,
     victory: victory === true,
     clearTimeMs: victory ? capturedClearTime : null,
+    sovereignDurationMs,
     reachedTier,
     collectedPearls: Math.max(0, Math.round(collectedPearls)),
+    date,
   };
 }
 

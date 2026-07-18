@@ -12,7 +12,7 @@
       content="大鱼吃小鱼：在珊瑚浅海中捕食、成长并成为海洋霸主。"
     />
     <title>大鱼吃小鱼</title>
-    <link rel="stylesheet" href="./styles.css?v=3" />
+    <link rel="stylesheet" href="./styles.css?v=4" />
   </head>
   <body>
     <main id="game-shell" class="game-shell">
@@ -50,7 +50,7 @@
           <div class="title-secondary-actions">
             <button id="skin-button" class="button button--secondary" type="button">
               <span class="fin-icon" aria-hidden="true"></span>
-              <span>选择皮肤</span>
+              <span>外观商店</span>
             </button>
             <button id="settings-button" class="button button--secondary" type="button">
               <span class="gear-icon" aria-hidden="true">⚙</span>
@@ -58,6 +58,20 @@
             </button>
           </div>
         </div>
+
+        <section class="leaderboard-panel" aria-labelledby="leaderboard-title">
+          <header>
+            <div>
+              <p>本设备记录</p>
+              <h2 id="leaderboard-title">个人最佳 Top 10</h2>
+            </div>
+          </header>
+          <div class="leaderboard-columns" aria-hidden="true">
+            <span>#</span><span>得分</span><span>档位</span><span>时长</span><span>日期</span>
+          </div>
+          <ol id="leaderboard-list" class="leaderboard-list"></ol>
+          <p id="leaderboard-empty" class="leaderboard-empty">还没有记录，去创造第一条吧</p>
+        </section>
 
         <p class="record-line">
           <span>最高纪录</span>
@@ -86,48 +100,72 @@
         <div class="dialog-panel shop-panel">
           <header class="panel-header">
             <div>
-              <p class="panel-kicker">每一局都在变强</p>
-              <h2 id="shop-title">成长商店</h2>
+              <p class="panel-kicker">成长与收藏</p>
+              <h2 id="shop-title">海湾商店</h2>
             </div>
-            <div class="shop-balance" aria-label="当前金币">
-              <span class="coin-icon" aria-hidden="true"></span>
-              <output id="shop-coins">0</output>
+            <div class="shop-balances">
+              <div class="shop-balance" aria-label="当前金币">
+                <span class="coin-icon" aria-hidden="true"></span>
+                <output id="shop-coins">0</output>
+              </div>
+              <div class="shop-balance shop-balance--pearls" aria-label="当前珍珠">
+                <span class="pearl-icon" aria-hidden="true"></span>
+                <output id="shop-pearls">0</output>
+              </div>
             </div>
             <button id="shop-back-button" class="icon-button close-button" type="button" aria-label="关闭商店并返回">
               <span aria-hidden="true">×</span>
             </button>
           </header>
 
-          <div class="shop-grid">
-            <article class="upgrade-card" data-upgrade-card="speed">
-              <div class="upgrade-icon upgrade-icon--speed" aria-hidden="true">»</div>
-              <h3>游动速度</h3>
-              <p>提高普通游动与转向后的追击能力。</p>
-              <div class="upgrade-level"><span>等级</span><output id="shop-speed-level">0 / 5</output></div>
-              <button id="shop-speed-buy" class="button button--secondary" type="button">
-                升级 · <span class="coin-icon coin-icon--small" aria-hidden="true"></span><output id="shop-speed-cost">20</output>
-              </button>
-            </article>
+          <div class="shop-tabs" role="tablist" aria-label="商店分类">
+            <button id="shop-upgrades-tab" class="shop-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="shop-upgrades-panel">成长能力</button>
+            <button id="shop-cosmetics-tab" class="shop-tab" type="button" role="tab" aria-selected="false" aria-controls="shop-cosmetics-panel">外观收藏</button>
+          </div>
 
-            <article class="upgrade-card" data-upgrade-card="stamina">
-              <div class="upgrade-icon upgrade-icon--stamina" aria-hidden="true">⚡</div>
-              <h3>冲刺体力</h3>
-              <p>扩大体力槽，并略微提高体力恢复速度。</p>
-              <div class="upgrade-level"><span>等级</span><output id="shop-stamina-level">0 / 5</output></div>
-              <button id="shop-stamina-buy" class="button button--secondary" type="button">
-                升级 · <span class="coin-icon coin-icon--small" aria-hidden="true"></span><output id="shop-stamina-cost">20</output>
-              </button>
-            </article>
+          <div id="shop-upgrades-panel" role="tabpanel" aria-labelledby="shop-upgrades-tab">
+            <div class="shop-grid">
+              <article class="upgrade-card" data-upgrade-card="speed">
+                <div class="upgrade-icon upgrade-icon--speed" aria-hidden="true">»</div>
+                <h3>游动速度</h3>
+                <p>提高普通游动与转向后的追击能力。</p>
+                <div class="upgrade-level"><span>等级</span><output id="shop-speed-level">0 / 5</output></div>
+                <button id="shop-speed-buy" class="button button--secondary" type="button">
+                  升级 · <span class="coin-icon coin-icon--small" aria-hidden="true"></span><output id="shop-speed-cost">20</output>
+                </button>
+              </article>
 
-            <article class="upgrade-card" data-upgrade-card="mouth">
-              <div class="upgrade-icon upgrade-icon--mouth" aria-hidden="true">◖</div>
-              <h3>吞噬范围</h3>
-              <p>扩大嘴部判定，让追上猎物后的吞食更宽容。</p>
-              <div class="upgrade-level"><span>等级</span><output id="shop-mouth-level">0 / 5</output></div>
-              <button id="shop-mouth-buy" class="button button--secondary" type="button">
-                升级 · <span class="coin-icon coin-icon--small" aria-hidden="true"></span><output id="shop-mouth-cost">20</output>
-              </button>
-            </article>
+              <article class="upgrade-card" data-upgrade-card="stamina">
+                <div class="upgrade-icon upgrade-icon--stamina" aria-hidden="true">⚡</div>
+                <h3>冲刺体力</h3>
+                <p>扩大体力槽，并略微提高体力恢复速度。</p>
+                <div class="upgrade-level"><span>等级</span><output id="shop-stamina-level">0 / 5</output></div>
+                <button id="shop-stamina-buy" class="button button--secondary" type="button">
+                  升级 · <span class="coin-icon coin-icon--small" aria-hidden="true"></span><output id="shop-stamina-cost">20</output>
+                </button>
+              </article>
+
+              <article class="upgrade-card" data-upgrade-card="mouth">
+                <div class="upgrade-icon upgrade-icon--mouth" aria-hidden="true">◖</div>
+                <h3>吞噬范围</h3>
+                <p>扩大嘴部判定，让追上猎物后的吞食更宽容。</p>
+                <div class="upgrade-level"><span>等级</span><output id="shop-mouth-level">0 / 5</output></div>
+                <button id="shop-mouth-buy" class="button button--secondary" type="button">
+                  升级 · <span class="coin-icon coin-icon--small" aria-hidden="true"></span><output id="shop-mouth-cost">20</output>
+                </button>
+              </article>
+            </div>
+          </div>
+
+          <div id="shop-cosmetics-panel" class="cosmetics-panel" role="tabpanel" aria-labelledby="shop-cosmetics-tab" hidden>
+            <section class="cosmetic-section" aria-labelledby="skin-shop-title">
+              <h3 id="skin-shop-title">鱼身配色</h3>
+              <div id="cosmetic-skins-grid" class="cosmetic-grid"></div>
+            </section>
+            <section class="cosmetic-section" aria-labelledby="accessory-shop-title">
+              <h3 id="accessory-shop-title">帽子与挂件</h3>
+              <div id="cosmetic-accessories-grid" class="cosmetic-grid"></div>
+            </section>
           </div>
         </div>
       </section>
@@ -157,9 +195,9 @@
           >
             <span id="tier-progress"></span>
           </div>
-          <div id="apex-wrap" class="apex-wrap" aria-live="polite" hidden>
-            <span>霸主考验</span>
-            <output id="apex-time">30.0</output>
+          <div id="sovereign-wrap" class="sovereign-wrap" aria-live="polite" hidden>
+            <span>霸主巡游</span>
+            <output id="sovereign-time">0:00</output>
           </div>
         </div>
 
@@ -351,6 +389,10 @@
               <dt>存活时间</dt>
               <dd id="result-time">00:00</dd>
             </div>
+            <div id="result-sovereign-stat" hidden>
+              <dt>霸主巡游</dt>
+              <dd id="result-sovereign-time">00:00</dd>
+            </div>
             <div>
               <dt>最高连吃</dt>
               <dd id="result-combo">×1.0</dd>
@@ -372,43 +414,6 @@
             <button id="results-home-button" class="button button--secondary" type="button">
               <span class="home-icon" aria-hidden="true"></span>
               <span>返回标题</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section
-        id="victory-screen"
-        class="screen modal-screen victory-screen"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="victory-title"
-        hidden
-      >
-        <div class="victory-rays" aria-hidden="true"></div>
-        <div class="dialog-panel victory-panel">
-          <div class="crown-mark" aria-hidden="true"><i></i><i></i><i></i></div>
-          <p class="panel-kicker">霸主考验完成</p>
-          <h2 id="victory-title">海洋属于你</h2>
-          <p id="victory-record" class="record-badge" hidden>最快通关新纪录</p>
-          <div class="victory-summary">
-            <p>
-              <span>霸主得分</span>
-              <output id="victory-score">0</output>
-            </p>
-            <p>
-              <span>完成时间</span>
-              <output id="victory-time">00:00</output>
-            </p>
-          </div>
-          <div class="result-actions">
-            <button id="endless-button" class="button button--gold" type="button">
-              <span class="infinity-icon" aria-hidden="true">∞</span>
-              <span>继续称霸</span>
-            </button>
-            <button id="victory-home-button" class="button button--secondary" type="button">
-              <span class="home-icon" aria-hidden="true"></span>
-              <span>收下奖励</span>
             </button>
           </div>
         </div>
@@ -438,6 +443,6 @@
       </aside>
     </main>
 
-    <script type="module" src="./js/game.js"></script>
+    <script type="module" src="./js/game.js?v=4"></script>
   </body>
 </html>

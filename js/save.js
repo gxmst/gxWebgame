@@ -8,13 +8,16 @@ export function createDefaultSave() {
       highScore: 0,
       bestClearTimeMs: null,
       longestSurvivalMs: 0,
+      longestSovereignMs: 0,
       gamesPlayed: 0,
       victories: 0,
     },
     wallet: { pearls: 0 },
     upgrades: createDefaultUpgradeState(),
-    unlocks: { skins: ["reef"] },
+    unlocks: { skins: ["reef"], accessories: ["none"] },
     selectedSkin: "reef",
+    selectedAccessory: "none",
+    leaderboard: [],
     milestones: {},
     settings: {
       volume: 0.7,
@@ -61,7 +64,8 @@ export function clearProgress(save) {
 
 /**
  * Applies one completed run without mutating the input save. Supported result
- * fields: score, survivalMs/survivedMs, victory/won, clearTimeMs, reachedTier.
+ * fields: score, survivalMs/survivedMs, victory/won, clearTimeMs,
+ * sovereignDurationMs, reachedTier, collectedPearls, and date.
  */
 export function updateResults(save, result = {}) {
   const next = sanitizeSave(migrateSave(save));
@@ -71,12 +75,18 @@ export function updateResults(save, result = {}) {
   );
   const victory = result.victory === true || result.won === true;
   const clearTimeMs = nonNegativeIntegerOrNull(result.clearTimeMs);
+  const sovereignDurationMs = nonNegativeInteger(result.sovereignDurationMs);
+  const reachedTier = normalizeTierId(result.reachedTier ?? result.tier) || CONFIG.tiers[0].id;
 
   next.stats.gamesPlayed += 1;
   next.stats.highScore = Math.max(next.stats.highScore, score);
   next.stats.longestSurvivalMs = Math.max(
     next.stats.longestSurvivalMs,
     survivalMs,
+  );
+  next.stats.longestSovereignMs = Math.max(
+    next.stats.longestSovereignMs,
+    sovereignDurationMs,
   );
 
   if (victory) {
@@ -92,7 +102,6 @@ export function updateResults(save, result = {}) {
     + nonNegativeInteger(result.collectedPearls);
   if (victory) earnedPearls += CONFIG.progression.victoryPearls;
 
-  const reachedTier = normalizeTierId(result.reachedTier ?? result.tier);
   if (reachedTier) {
     const maxIndex = CONFIG.tiers.findIndex((tier) => tier.id === reachedTier);
     for (let index = 1; index <= maxIndex; index += 1) {
@@ -103,6 +112,19 @@ export function updateResults(save, result = {}) {
         earnedPearls += CONFIG.progression.firstTierPearls[tierId] ?? 0;
       }
     }
+  }
+
+  if (score >= CONFIG.leaderboard.minScore
+    || survivalMs >= CONFIG.leaderboard.minDurationMs) {
+    next.leaderboard = sanitizeLeaderboard([
+      ...next.leaderboard,
+      {
+        score,
+        tier: reachedTier,
+        durationMs: survivalMs,
+        date: normalizeDate(result.date) || new Date().toISOString(),
+      },
+    ]);
   }
 
   next.wallet.pearls += earnedPearls;
@@ -130,8 +152,13 @@ function migrateSave(candidate) {
       },
       wallet: candidate.wallet ?? { pearls: candidate.pearls },
       upgrades: candidate.upgrades,
-      unlocks: candidate.unlocks ?? { skins: candidate.skins },
+      unlocks: candidate.unlocks ?? {
+        skins: candidate.skins,
+        accessories: candidate.accessories,
+      },
       selectedSkin: candidate.selectedSkin,
+      selectedAccessory: candidate.selectedAccessory,
+      leaderboard: candidate.leaderboard,
       milestones: candidate.milestones,
       settings: candidate.settings,
     };
@@ -156,6 +183,13 @@ function sanitizeSave(candidate) {
   const selectedSkin = skins.includes(source.selectedSkin)
     ? source.selectedSkin
     : defaults.selectedSkin;
+  const rawAccessories = Array.isArray(source.unlocks?.accessories)
+    ? source.unlocks.accessories.filter((item) => typeof item === "string" && item.length > 0)
+    : [];
+  const accessories = [...new Set(["none", ...rawAccessories])];
+  const selectedAccessory = accessories.includes(source.selectedAccessory)
+    ? source.selectedAccessory
+    : defaults.selectedAccessory;
 
   return {
     version: CONFIG.save.version,
@@ -163,6 +197,7 @@ function sanitizeSave(candidate) {
       highScore: nonNegativeInteger(stats.highScore),
       bestClearTimeMs: nonNegativeIntegerOrNull(stats.bestClearTimeMs),
       longestSurvivalMs: nonNegativeInteger(stats.longestSurvivalMs),
+      longestSovereignMs: nonNegativeInteger(stats.longestSovereignMs),
       gamesPlayed: nonNegativeInteger(stats.gamesPlayed),
       victories: nonNegativeInteger(stats.victories),
     },
@@ -170,8 +205,10 @@ function sanitizeSave(candidate) {
       pearls: nonNegativeInteger(source.wallet?.pearls),
     },
     upgrades: normalizeUpgradeState(source.upgrades),
-    unlocks: { skins },
+    unlocks: { skins, accessories },
     selectedSkin,
+    selectedAccessory,
+    leaderboard: sanitizeLeaderboard(source.leaderboard),
     milestones: sanitizeMilestones(source.milestones),
     settings: {
       volume: clampNumber(settings.volume, 0, 1, defaults.settings.volume),
@@ -187,6 +224,42 @@ function sanitizeSave(candidate) {
       highContrast: booleanOr(settings.highContrast, defaults.settings.highContrast),
     },
   };
+}
+
+function sanitizeLeaderboard(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+      const score = nonNegativeInteger(entry.score);
+      const durationMs = nonNegativeInteger(entry.durationMs);
+      const date = normalizeDate(entry.date);
+      if (!date || (score < CONFIG.leaderboard.minScore
+        && durationMs < CONFIG.leaderboard.minDurationMs)) return null;
+      return {
+        score,
+        tier: normalizeTierId(entry.tier) || CONFIG.tiers[0].id,
+        durationMs,
+        date,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score
+      || tierIndex(b.tier) - tierIndex(a.tier)
+      || b.durationMs - a.durationMs
+      || Date.parse(b.date) - Date.parse(a.date))
+    .slice(0, CONFIG.leaderboard.limit);
+}
+
+function normalizeDate(value) {
+  const timestamp = typeof value === "string"
+    ? Date.parse(value)
+    : Number.isFinite(value) ? value : NaN;
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
+function tierIndex(tierId) {
+  return CONFIG.tiers.findIndex((tier) => tier.id === tierId);
 }
 
 function sanitizeMilestones(value) {

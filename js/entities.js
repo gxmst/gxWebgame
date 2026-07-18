@@ -9,12 +9,13 @@ export function resetEntityIds(start = 1) {
 // Speeds stay below the player; threats pressure by angle rather than raw pace.
 export const SPECIES = CONFIG.species;
 
-export function createPlayer(x, y, skin = "reef") {
+export function createPlayer(x, y, skin = "reef", accessory = "none") {
   return {
     id: "player",
     type: "player",
     species: "silver",
     skin,
+    accessory,
     x,
     y,
     previousX: x,

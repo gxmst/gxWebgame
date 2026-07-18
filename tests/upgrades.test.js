@@ -108,6 +108,20 @@ export const tests = [
     },
   },
   {
+    name: "cosmetic bonuses stay small and compose through upgrade effects",
+    run() {
+      const state = { levels: { speed: 2, stamina: 2, mouth: 2 } };
+      const base = getUpgradeEffects(state);
+      const sailor = getUpgradeEffects(state, "sailor");
+      const bowtie = getUpgradeEffects(state, "bowtie");
+      const crown = getUpgradeEffects(state, "crown");
+      near(sailor.speedMultiplier, base.speedMultiplier * 1.02);
+      near(bowtie.staminaBonus, base.staminaBonus + 3);
+      near(crown.mouthMultiplier, base.mouthMultiplier * 1.02);
+      assert(sailor.staminaBonus === base.staminaBonus);
+    },
+  },
+  {
     name: "unknown upgrade types fail explicitly",
     run() {
       let threw = false;

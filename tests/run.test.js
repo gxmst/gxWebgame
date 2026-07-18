@@ -13,10 +13,12 @@ export const tests = [
         elapsedSeconds: 410,
         victory: true,
         victoryElapsedMs: 245000,
+        sovereignElapsedSeconds: 165,
         reachedTier: "T6",
       });
       assert(result.survivalMs === 410000);
       assert(result.clearTimeMs === 245000);
+      assert(result.sovereignDurationMs === 165000);
       assert(result.victory === true);
       assert(createRunResult({ collectedPearls: 3 }).collectedPearls === 3);
     },

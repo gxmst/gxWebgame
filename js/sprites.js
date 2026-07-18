@@ -78,41 +78,6 @@ const SPECIES_PALETTES = {
   },
 };
 
-const PLAYER_SKINS = {
-  reef: {
-    body: "#3fd4a8",
-    light: "#c4ffe6",
-    dark: "#0f6e78",
-    fin: "#ffc84a",
-    eye: "#0c2230",
-    accent: "#9dffe0",
-  },
-  coral: {
-    body: "#ff6f68",
-    light: "#ffd2b0",
-    dark: "#9a3658",
-    fin: "#ffe066",
-    eye: "#2a1528",
-    accent: "#ffb0a0",
-  },
-  midnight: {
-    body: "#5aa8ff",
-    light: "#c4e8ff",
-    dark: "#344888",
-    fin: "#d070ff",
-    eye: "#0c1028",
-    accent: "#a8d0ff",
-  },
-  koi: {
-    body: "#f2ebe0",
-    light: "#ffffff",
-    dark: "#cc4a3c",
-    fin: "#1a2030",
-    eye: "#101418",
-    accent: "#ffb0a0",
-  },
-};
-
 /** Species body plans in logical pixel space. */
 const SPECIES_SHAPE = {
   silver: {
@@ -242,7 +207,7 @@ function profileHalf(shape, normalized, tier) {
   return half;
 }
 
-function paintFishGrid(palette, species, frame, tier) {
+function paintFishGrid(palette, species, frame, tier, pattern = null, accessory = "none") {
   const grid = createGrid();
   const shape = SPECIES_SHAPE[species] || SPECIES_SHAPE.silver;
   const wave = Math.sin((frame / FRAMES) * Math.PI * 2);
@@ -325,7 +290,8 @@ function paintFishGrid(palette, species, frame, tier) {
   setPx(grid, pecX + 2, pecY + 1 + (wave > 0 ? 1 : 0), palette.light);
 
   // --- Species markings ---
-  paintMarkings(grid, species, palette, bodyStart, bodyEnd, centerY, tier, wave);
+  if (pattern) paintPlayerMarkings(grid, pattern, palette, bodyStart, bodyEnd, centerY, tier);
+  else paintMarkings(grid, species, palette, bodyStart, bodyEnd, centerY, tier, wave);
 
   if (species === "puffer") {
     for (let x = bodyStart + 2; x < bodyEnd - 2; x += 4) {
@@ -379,7 +345,85 @@ function paintFishGrid(palette, species, frame, tier) {
     setPx(grid, bodyEnd - 9, centerY + 6, palette.fin);
   }
 
+  paintAccessory(grid, accessory, wave);
+
   return outlineGrid(grid, OUTLINE);
+}
+
+function paintPlayerMarkings(grid, pattern, palette, bodyStart, bodyEnd, centerY, tier) {
+  const accent = palette.accent || palette.light;
+  if (pattern === "spots") {
+    for (const [x, y] of [[19, 11], [24, 16], [29, 10], [34, 17]]) {
+      fillRect(grid, x, y, 2, 2, (x + tier) % 2 ? palette.dark : accent);
+    }
+  } else if (pattern === "stars") {
+    for (const [x, y] of [[20, 11], [25, 16], [30, 9], [34, 14]]) {
+      setPx(grid, x, y, palette.light);
+      setPx(grid, x - 1, y, accent);
+      setPx(grid, x + 1, y, accent);
+      setPx(grid, x, y - 1, accent);
+      setPx(grid, x, y + 1, accent);
+    }
+  } else if (pattern === "patches") {
+    fillRect(grid, bodyStart + 4, centerY - 5, 6, 4, palette.dark);
+    fillRect(grid, bodyStart + 13, centerY + 1, 5, 5, palette.dark);
+    fillRect(grid, bodyEnd - 7, centerY - 5, 3, 3, accent);
+  } else if (pattern === "bands") {
+    for (let x = bodyStart + 5; x < bodyEnd - 5; x += 7) {
+      for (let y = centerY - 4; y <= centerY + 4; y++) setPx(grid, x, y, palette.dark);
+      for (let y = centerY - 3; y <= centerY + 3; y++) setPx(grid, x + 1, y, accent);
+    }
+  } else if (pattern === "zigzag") {
+    for (let x = bodyStart + 3; x < bodyEnd - 3; x++) {
+      const y = centerY - 2 + (x % 6 < 3 ? x % 3 : 5 - (x % 6));
+      setPx(grid, x, y, accent);
+      setPx(grid, x, y + 1, palette.dark);
+    }
+  } else if (pattern === "diamonds") {
+    for (let x = bodyStart + 5; x < bodyEnd - 5; x += 6) {
+      setPx(grid, x, centerY - 2, accent);
+      setPx(grid, x - 1, centerY - 1, palette.light);
+      setPx(grid, x + 1, centerY - 1, palette.light);
+      setPx(grid, x, centerY, palette.dark);
+    }
+  } else if (pattern === "royal") {
+    for (let x = bodyStart + 3; x < bodyEnd - 3; x += 4) {
+      setPx(grid, x, centerY - 3, accent);
+      setPx(grid, x + 1, centerY + 3, palette.light);
+    }
+    fillRect(grid, bodyStart + 9, centerY - 1, 8, 2, accent);
+  } else {
+    for (let x = bodyStart + 4; x < bodyEnd - 4; x += 3) {
+      const y = centerY - 1 + ((x + tier) % 3) - 1;
+      setPx(grid, x, y, (x + tier) % 2 ? palette.light : accent);
+    }
+  }
+}
+
+function paintAccessory(grid, accessory, wave) {
+  const sway = Math.round(wave);
+  if (accessory === "crown") {
+    fillRect(grid, 30 + sway, 5, 9, 2, "#e4a82f");
+    fillRect(grid, 31 + sway, 3, 2, 2, "#ffe47a");
+    fillRect(grid, 34 + sway, 1, 2, 4, "#fff0a0");
+    fillRect(grid, 37 + sway, 3, 2, 2, "#ffe47a");
+    setPx(grid, 35 + sway, 5, "#dc6552");
+  } else if (accessory === "sailor") {
+    fillRect(grid, 29 + sway, 4, 10, 3, "#f1f6e8");
+    fillRect(grid, 32 + sway, 2, 7, 2, "#2b6680");
+    fillRect(grid, 37 + sway, 1, 3, 2, "#d6edf0");
+    fillRect(grid, 27 + sway, 7, 13, 1, "#183d58");
+  } else if (accessory === "bowtie") {
+    fillRect(grid, 34, 19 + sway, 2, 2, "#82e5ed");
+    fillRect(grid, 31, 18 + sway, 3, 4, "#4eb8c9");
+    fillRect(grid, 36, 18 + sway, 3, 4, "#4eb8c9");
+    setPx(grid, 32, 19 + sway, "#d8ffff");
+    setPx(grid, 38, 19 + sway, "#d8ffff");
+  } else if (accessory === "pearl") {
+    for (let x = 28; x <= 36; x += 2) setPx(grid, x, 19 + Math.abs(32 - x) / 2, "#f5e9ff");
+    fillRect(grid, 31 + sway, 22, 3, 3, "#d9b5f2");
+    setPx(grid, 32 + sway, 22, "#ffffff");
+  }
 }
 
 function paintMarkings(grid, species, palette, bodyStart, bodyEnd, centerY, tier, wave) {
@@ -490,8 +534,21 @@ function gridToCanvas(grid) {
   return canvas;
 }
 
-function paintPixelFish(palette, species, frame, tier) {
-  return gridToCanvas(paintFishGrid(palette, species, frame, tier));
+function paintPixelFish(palette, species, frame, tier, pattern, accessory) {
+  return gridToCanvas(paintFishGrid(palette, species, frame, tier, pattern, accessory));
+}
+
+export function getFishCacheKey({
+  species = "silver",
+  frame = 0,
+  tier = 1,
+  skin = "reef",
+  isPlayer = false,
+  accessory = "none",
+} = {}) {
+  const equippedAccessory = CONFIG.cosmetics.accessories[accessory] ? accessory : "none";
+  const identity = isPlayer ? `player-${skin}-${equippedAccessory}` : species;
+  return `${identity}-${frame}-${tier}`;
 }
 
 export class SpriteFactory {
@@ -499,14 +556,32 @@ export class SpriteFactory {
     this.cache = new Map();
   }
 
-  getFish(species, frame = 0, tier = 1, skin = "reef", isPlayer = false) {
+  getFish(species, frame = 0, tier = 1, skin = "reef", isPlayer = false, accessory = "none") {
+    const skinDefinition = CONFIG.cosmetics.skins[skin] || CONFIG.cosmetics.skins.reef;
     const palette = isPlayer
-      ? (PLAYER_SKINS[skin] || PLAYER_SKINS.reef)
+      ? skinDefinition.palette
       : (SPECIES_PALETTES[species] || SPECIES_PALETTES.silver);
     const artSpecies = isPlayer ? "silver" : species;
-    const key = `${isPlayer ? `player-${skin}` : species}-${frame}-${tier}`;
+    const equippedAccessory = CONFIG.cosmetics.accessories[accessory] ? accessory : "none";
+    const key = getFishCacheKey({ species, frame, tier, skin, isPlayer, accessory });
+    if (this.cache.has(key)) {
+      const cached = this.cache.get(key);
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      return cached;
+    }
     if (!this.cache.has(key)) {
-      this.cache.set(key, paintPixelFish(palette, artSpecies, frame, tier));
+      this.cache.set(key, paintPixelFish(
+        palette,
+        artSpecies,
+        frame,
+        tier,
+        isPlayer ? skinDefinition.pattern : null,
+        isPlayer ? equippedAccessory : "none",
+      ));
+      while (this.cache.size > CONFIG.visuals.spriteCacheMaxEntries) {
+        this.cache.delete(this.cache.keys().next().value);
+      }
     }
     return this.cache.get(key);
   }
@@ -519,7 +594,14 @@ export class SpriteFactory {
     const frame = Math.floor(animationPhase) % FRAMES;
     const species = fish.species || "silver";
     const shape = SPECIES_SHAPE[species] || SPECIES_SHAPE.silver;
-    const sprite = this.getFish(species, frame, fish.tier || 1, options.skin, options.isPlayer);
+    const sprite = this.getFish(
+      species,
+      frame,
+      fish.tier || 1,
+      options.skin,
+      options.isPlayer,
+      options.accessory,
+    );
 
     const width = radius * 3.55 * shape.length;
     const height = radius * 2.05 * shape.height;
@@ -679,4 +761,5 @@ export class SpriteFactory {
   }
 }
 
-export const AVAILABLE_SKINS = Object.keys(PLAYER_SKINS);
+export const AVAILABLE_SKINS = Object.keys(CONFIG.cosmetics.skins);
+export const AVAILABLE_ACCESSORIES = Object.keys(CONFIG.cosmetics.accessories);

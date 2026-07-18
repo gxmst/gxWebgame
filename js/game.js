@@ -24,7 +24,7 @@ import {
 } from "./rules.js";
 import { clearProgress, loadSave, saveSave, updateResults } from "./save.js";
 import { InputController } from "./input.js";
-import { SpriteFactory, AVAILABLE_SKINS } from "./sprites.js";
+import { SpriteFactory } from "./sprites.js";
 import { AudioSystem, vibrate } from "./audio.js";
 import { Effects } from "./effects.js";
 import { SPECIES, createPlayer, createNetWarning } from "./entities.js";
@@ -47,26 +47,28 @@ import {
   getUpgradeLevel,
   purchaseUpgrade,
 } from "./upgrades.js";
+import {
+  COSMETIC_KINDS,
+  getCosmeticCatalog,
+  purchaseOrEquipCosmetic,
+} from "./cosmetics.js";
+import {
+  getMaxChasers,
+  getRelationWeights,
+  getSovereignHazardTuning,
+  isSovereignTier,
+} from "./difficulty.js";
 
 const STATE = Object.freeze({
   TITLE: "title",
   PLAYING: "playing",
-  APEX: "apex",
   ENDLESS: "endless",
   DYING: "dying",
   PAUSED: "paused",
   SETTINGS: "settings",
   SHOP: "shop",
   RESULTS: "results",
-  VICTORY: "victory",
 });
-
-const SKIN_META = {
-  reef: { name: "珊瑚青", cost: 0 },
-  coral: { name: "赤珊瑚", cost: 12 },
-  midnight: { name: "午夜蓝", cost: 22 },
-  koi: { name: "锦鲤白", cost: 36 },
-};
 
 const $ = (id) => document.getElementById(id);
 
@@ -78,7 +80,7 @@ class Game {
     this.dom = this.collectDom();
 
     this.save = loadSave();
-    this.upgradeEffects = getUpgradeEffects(this.save.upgrades);
+    this.upgradeEffects = getUpgradeEffects(this.save.upgrades, this.save.selectedAccessory);
     this.state = STATE.TITLE;
     this.previousState = STATE.TITLE;
     this.returnFromSettings = STATE.TITLE;
@@ -99,15 +101,14 @@ class Game {
     this.runWasVictory = false;
     this.victoryElapsedMs = null;
     this.endlessElapsed = 0;
-    this.endlessNetTimer = 4;
+    this.endlessNetTimer = CONFIG.difficulty.sovereignHazards.initialNetDelaySeconds;
     this.tutorialStep = 0;
+    this.shopTab = "upgrades";
     this.clearProgressConfirmUntil = 0;
     this.deathReason = "";
     this.score = 0;
     this.maxCombo = 0;
     this.combo = createComboState();
-    this.apexRemaining = CONFIG.hazards.apexDurationSeconds;
-    this.apexNetTimer = 2.4;
     this.lastDangerDistance = Infinity;
     this.hitStop = 0;
     this.tierCameraTimer = 0;
@@ -137,7 +138,12 @@ class Game {
     this.audio = new AudioSystem(() => this.save.settings);
     this.director = new Director(CONFIG.world, this.getSeed());
 
-    this.player = createPlayer(CONFIG.world.width / 2, CONFIG.world.height / 2, this.save.selectedSkin);
+    this.player = createPlayer(
+      CONFIG.world.width / 2,
+      CONFIG.world.height / 2,
+      this.save.selectedSkin,
+      this.save.selectedAccessory,
+    );
     this.camera.setTarget(this.player);
     this.fish = [];
     this.specials = [];
@@ -150,7 +156,7 @@ class Game {
       cameraProvider: () => this.camera,
       playerProvider: () => this.player,
       touchModeProvider: () => this.save.settings.touchMode,
-      enabledProvider: () => [STATE.PLAYING, STATE.APEX, STATE.ENDLESS].includes(this.state),
+      enabledProvider: () => [STATE.PLAYING, STATE.ENDLESS].includes(this.state),
     });
 
     this.bindUi();
@@ -164,19 +170,21 @@ class Game {
   collectDom() {
     const ids = [
       "title-screen", "start-button", "shop-button", "skin-button", "settings-button", "high-score", "best-clear-time",
-      "shop-screen", "shop-coins", "shop-back-button",
+      "leaderboard-list", "leaderboard-empty",
+      "shop-screen", "shop-coins", "shop-pearls", "shop-back-button",
+      "shop-upgrades-tab", "shop-cosmetics-tab", "shop-upgrades-panel", "shop-cosmetics-panel",
+      "cosmetic-skins-grid", "cosmetic-accessories-grid",
       "shop-speed-level", "shop-speed-cost", "shop-speed-buy",
       "shop-stamina-level", "shop-stamina-cost", "shop-stamina-buy",
       "shop-mouth-level", "shop-mouth-cost", "shop-mouth-buy",
       "hud", "score-value", "combo-wrap", "combo-value", "tier-name", "tier-progress",
-      "apex-wrap", "apex-time", "pause-button", "stamina-fill", "dash-button",
+      "sovereign-wrap", "sovereign-time", "pause-button", "stamina-fill", "dash-button",
       "pause-screen", "resume-button", "pause-settings-button", "quit-button",
       "settings-screen", "volume-input", "mute-toggle", "vibration-toggle", "shake-toggle",
       "touch-mode", "quality-select", "contrast-toggle", "settings-back-button",
       "clear-progress-button", "clear-progress-status",
       "results-screen", "result-title", "result-reason", "result-score", "result-tier",
-      "result-time", "result-combo", "result-coins", "result-pearls", "result-record", "retry-button", "results-home-button",
-      "victory-screen", "victory-score", "victory-time", "victory-record", "endless-button", "victory-home-button",
+      "result-time", "result-sovereign-stat", "result-sovereign-time", "result-combo", "result-coins", "result-pearls", "result-record", "retry-button", "results-home-button",
       "rotate-overlay", "tier-toast", "message-toast", "debug-panel",
     ];
     const dom = {};
@@ -204,20 +212,27 @@ class Game {
     window.addEventListener("resize", () => this.resize());
     window.addEventListener("orientationchange", () => window.setTimeout(() => this.resize(), 80));
     window.addEventListener("blur", () => {
-      if ([STATE.PLAYING, STATE.APEX, STATE.ENDLESS].includes(this.state)) this.pause();
+      if ([STATE.PLAYING, STATE.ENDLESS].includes(this.state)) this.pause();
     });
     document.addEventListener("visibilitychange", () => {
-      if (document.hidden && [STATE.PLAYING, STATE.APEX, STATE.ENDLESS].includes(this.state)) this.pause();
+      if (document.hidden && [STATE.PLAYING, STATE.ENDLESS].includes(this.state)) this.pause();
     });
     window.addEventListener("pagehide", (event) => {
-      if (!event.persisted && this.runWasVictory && !this.runCommitted) this.commitRun(true);
+      const pausedSettings = this.state === STATE.SETTINGS
+        && this.returnFromSettings === STATE.PAUSED
+        && [STATE.PLAYING, STATE.ENDLESS].includes(this.previousState);
+      if (!event.persisted && this.elapsed > 0 && !this.runCommitted
+        && ([STATE.PLAYING, STATE.ENDLESS, STATE.PAUSED].includes(this.state)
+          || pausedSettings)) {
+        this.commitRun(this.runWasVictory);
+      }
     });
     window.addEventListener("keydown", (event) => {
       if (event.code === "Backquote") {
         this.debug = !this.debug;
         this.dom.debugPanel.hidden = !this.debug;
       }
-      if (!this.debug || ![STATE.PLAYING, STATE.APEX, STATE.ENDLESS].includes(this.state)) return;
+      if (!this.debug || ![STATE.PLAYING, STATE.ENDLESS].includes(this.state)) return;
       if (event.code === "BracketRight") this.debugTier(1);
       if (event.code === "BracketLeft") this.debugTier(-1);
       if (event.code === "KeyI") this.player.invulnerable = this.player.invulnerable > 20 ? 0 : 999;
@@ -225,15 +240,28 @@ class Game {
         this.elapsed += CONFIG.dayNight.periodSeconds / 4;
         this.updateDayNight();
       }
+      if (event.code === "KeyG") {
+        this.save.wallet.pearls += 100;
+        saveSave(this.save);
+        this.updateTitleStats();
+        this.showMessage("调试珍珠 +100", 1.6);
+      }
+      if (event.code === "KeyE" && this.state === STATE.ENDLESS) {
+        this.endlessElapsed += 60;
+        this.elapsed += 60;
+        this.endlessNetTimer = 0;
+      }
     });
 
     click(this.dom.startButton, () => this.startGame());
-    click(this.dom.shopButton, () => this.openShop());
+    click(this.dom.shopButton, () => this.openShop("upgrades"));
     click(this.dom.shopBackButton, () => this.closeShop());
+    click(this.dom.shopUpgradesTab, () => this.setShopTab("upgrades"));
+    click(this.dom.shopCosmeticsTab, () => this.setShopTab("cosmetics"));
     click(this.dom.shopSpeedBuy, () => this.buyUpgrade(UPGRADE_TYPES.SPEED));
     click(this.dom.shopStaminaBuy, () => this.buyUpgrade(UPGRADE_TYPES.STAMINA));
     click(this.dom.shopMouthBuy, () => this.buyUpgrade(UPGRADE_TYPES.MOUTH));
-    click(this.dom.skinButton, () => this.cycleSkin());
+    click(this.dom.skinButton, () => this.openShop("cosmetics"));
     click(this.dom.settingsButton, () => this.openSettings(STATE.TITLE));
     click(this.dom.pauseButton, () => this.pause());
     click(this.dom.resumeButton, () => this.resume());
@@ -243,10 +271,10 @@ class Game {
     click(this.dom.clearProgressButton, () => this.requestClearProgress());
     click(this.dom.retryButton, () => this.startGame());
     click(this.dom.resultsHomeButton, () => this.goHome());
-    click(this.dom.endlessButton, () => this.continueEndless());
-    click(this.dom.victoryHomeButton, () => {
-      this.commitRun(true);
-      this.goHome();
+    this.dom.shopCosmeticsPanel?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-cosmetic-kind][data-cosmetic-id]");
+      if (!button) return;
+      this.activateCosmetic(button.dataset.cosmeticKind, button.dataset.cosmeticId);
     });
 
     this.dom.volumeInput?.addEventListener("input", () => {
@@ -294,7 +322,7 @@ class Game {
     if (this.dom.contrastToggle) this.dom.contrastToggle.checked = this.save.settings.highContrast;
     this.applyContrast();
     this.updateTitleStats();
-    this.updateSkinButton();
+    this.updateAppearanceButton();
     this.updateShopUi();
   }
 
@@ -338,22 +366,35 @@ class Game {
     this.portraitBlocked = this.cssWidth < this.cssHeight;
     if (this.dom.rotateOverlay) this.dom.rotateOverlay.hidden = !this.portraitBlocked;
     if (this.portraitBlocked && !wasBlocked) this.input?.reset();
-    if (!this.portraitBlocked && wasBlocked && [STATE.PLAYING, STATE.APEX, STATE.ENDLESS].includes(this.state)) {
+    if (!this.portraitBlocked && wasBlocked && [STATE.PLAYING, STATE.ENDLESS].includes(this.state)) {
       this.resumeCountdown = 2.4;
     }
   }
 
   buildTitleScene() {
-    this.player = createPlayer(CONFIG.world.width / 2, CONFIG.world.height / 2, this.save.selectedSkin);
+    this.player = createPlayer(
+      CONFIG.world.width / 2,
+      CONFIG.world.height / 2,
+      this.save.selectedSkin,
+      this.save.selectedAccessory,
+    );
     this.player.stamina = this.getMaxStamina();
     this.player.mass = 34;
     this.player.displayMass = 34;
     this.player.tier = 3;
     this.player.invulnerable = 999;
-    this.camera.x = this.player.x;
-    this.camera.y = this.player.y;
     this.camera.zoom = 0.84;
-    this.camera.setTarget(this.player);
+    this.titleCameraTarget = {
+      x: this.player.x,
+      y: this.player.y,
+      vx: this.player.vx,
+      vy: this.player.vy,
+      displayMass: this.player.displayMass,
+    };
+    this.updateTitleCameraTarget();
+    this.camera.x = this.titleCameraTarget.x;
+    this.camera.y = this.titleCameraTarget.y;
+    this.camera.setTarget(this.titleCameraTarget);
     this.fish = [];
     this.specials = [];
     this.director.reset(this.getSeed());
@@ -362,9 +403,13 @@ class Game {
   }
 
   startGame() {
-    if (this.state === STATE.VICTORY && !this.runCommitted) this.commitRun(true);
     const seed = this.getSeed();
-    this.player = createPlayer(CONFIG.world.width / 2, CONFIG.world.height / 2, this.save.selectedSkin);
+    this.player = createPlayer(
+      CONFIG.world.width / 2,
+      CONFIG.world.height / 2,
+      this.save.selectedSkin,
+      this.save.selectedAccessory,
+    );
     this.player.stamina = this.getMaxStamina();
     this.camera.wrap = CONFIG.world.wrap;
     this.camera.x = this.player.x;
@@ -394,13 +439,11 @@ class Game {
     this.trailTimer = 0;
     this.baitFeastCount = 0;
     this.baitFeastTimer = 0;
-    this.apexRemaining = CONFIG.hazards.apexDurationSeconds;
-    this.apexNetTimer = 2.6;
     this.runCommitted = false;
     this.runWasVictory = false;
     this.victoryElapsedMs = null;
     this.endlessElapsed = 0;
-    this.endlessNetTimer = 4;
+    this.endlessNetTimer = CONFIG.difficulty.sovereignHazards.initialNetDelaySeconds;
     this.deathReason = "";
     this.slowMotion = 1;
     this.resumeCountdown = 0;
@@ -456,7 +499,7 @@ class Game {
     const average = this.frameSamples.reduce((sum, value) => sum + value, 0) / this.frameSamples.length;
     this.debugFps = average > 0 ? Math.round(1 / average) : 60;
     const active = this.save.settings.quality === "auto"
-      && [STATE.PLAYING, STATE.APEX, STATE.ENDLESS].includes(this.state)
+      && [STATE.PLAYING, STATE.ENDLESS].includes(this.state)
       && !this.portraitBlocked;
     const qualityChange = this.autoQuality.update(frame, this.debugFps, active);
     if (qualityChange) {
@@ -486,7 +529,7 @@ class Game {
 
     if (this.input.consumePause()) {
       if (this.state === STATE.PAUSED) this.resume();
-      else if ([STATE.PLAYING, STATE.APEX, STATE.ENDLESS].includes(this.state)) this.pause();
+      else if ([STATE.PLAYING, STATE.ENDLESS].includes(this.state)) this.pause();
     }
 
     if (this.resumeCountdown > 0) {
@@ -498,6 +541,7 @@ class Game {
       this.updateTitleScene(dt);
       this.effects.update(dt);
       this.camera.update(dt);
+      this.updateDebug();
       return;
     }
 
@@ -511,7 +555,7 @@ class Game {
       return;
     }
 
-    if (![STATE.PLAYING, STATE.APEX, STATE.ENDLESS].includes(this.state)) return;
+    if (![STATE.PLAYING, STATE.ENDLESS].includes(this.state)) return;
 
     this.elapsed += dt;
     this.updateDayNight();
@@ -532,8 +576,7 @@ class Game {
     this.camera.update(dt);
     this.director.update(dt, this);
 
-    if (this.state === STATE.APEX) this.updateApex(dt);
-    else if (this.state === STATE.ENDLESS) this.updateEndless(dt);
+    if (this.state === STATE.ENDLESS) this.updateEndless(dt);
     this.metrics.longestNoPrey = Math.max(this.metrics.longestNoPrey, this.director.noPreyTime);
     this.updateHud();
     this.updateDebug();
@@ -621,7 +664,20 @@ class Game {
     this.player.x += this.player.vx * dt;
     this.player.y += this.player.vy * dt;
     this.wrapEntity(this.player);
+    this.updateTitleCameraTarget();
     this.updateFish(dt, true);
+  }
+
+  updateTitleCameraTarget() {
+    if (!this.titleCameraTarget) return;
+    const zoom = Math.max(0.1, this.camera.zoom);
+    const offsetX = (0.5 - CONFIG.visuals.titlePlayerScreenXRatio) * this.cssWidth / zoom;
+    const offsetY = (0.5 - CONFIG.visuals.titlePlayerScreenYRatio) * this.cssHeight / zoom;
+    this.titleCameraTarget.x = wrap(this.player.x + offsetX, CONFIG.world.width);
+    this.titleCameraTarget.y = wrap(this.player.y + offsetY, CONFIG.world.height);
+    this.titleCameraTarget.vx = this.player.vx;
+    this.titleCameraTarget.vy = this.player.vy;
+    this.titleCameraTarget.displayMass = this.player.displayMass;
   }
 
   wrapEntity(entity) {
@@ -646,6 +702,17 @@ class Game {
       return distanceSq(ax, ay, bx, by, CONFIG.world.width, CONFIG.world.height);
     }
     return distanceSq(ax, ay, bx, by);
+  }
+
+  isSovereign() {
+    return this.state === STATE.ENDLESS || isSovereignTier(this.player.tier);
+  }
+
+  getEffectiveRelation(fish) {
+    const relation = getRelation(this.player.mass, fish.mass);
+    return this.isSovereign() && relation === RELATION.THREAT
+      ? RELATION.NEUTRAL
+      : relation;
   }
 
   updatePlayer(dt) {
@@ -802,7 +869,7 @@ class Game {
 
   updateFish(dt, demoOnly) {
     let activeChasers = 0;
-    const maxChasers = this.player.tier <= 2 ? 1 : this.player.tier <= 4 ? 2 : 3;
+    const maxChasers = getMaxChasers(this.player.tier);
     this.lastDangerDistance = Infinity;
 
     for (const fish of this.fish) {
@@ -824,8 +891,7 @@ class Game {
       const dx = toPlayer.x;
       const dy = toPlayer.y;
       const distance = Math.hypot(dx, dy);
-      let relation = getRelation(this.player.mass, fish.mass);
-      if (this.state === STATE.APEX && relation === RELATION.THREAT) relation = RELATION.NEUTRAL;
+      const relation = this.getEffectiveRelation(fish);
       const species = SPECIES[fish.species] || SPECIES.silver;
 
       if (fish.decisionTimer <= 0) {
@@ -1100,7 +1166,7 @@ class Game {
         continue;
       }
 
-      const fishCanKill = this.state !== STATE.APEX
+      const fishCanKill = !this.isSovereign()
         && fish.spawnGrace <= 0
         && this.player.invulnerable <= 0
         && canEat(fish.mass, this.player.mass);
@@ -1374,32 +1440,39 @@ class Game {
     this.showTierToast(`${tier.id} · ${tier.name}`);
     if (tier.index === 3) this.showMessage("水母不可食，紫色电光要避开", 2.6);
     if (tier.index === 5) this.showMessage("水雷已出现，变大也不能大意", 2.8);
-    if (tier.index === 6 && this.state === STATE.PLAYING) this.beginApex();
+    if (tier.index === CONFIG.tiers.length && this.state === STATE.PLAYING) {
+      this.beginSovereign();
+    }
   }
 
-  beginApex() {
-    this.state = STATE.APEX;
-    this.apexRemaining = CONFIG.hazards.apexDurationSeconds;
-    this.apexNetTimer = 2.5;
-    this.player.invulnerable = Math.max(this.player.invulnerable, 1.2);
-    this.showMessage("霸主时刻：坚持 30 秒！", 3);
+  beginSovereign() {
+    if (this.state === STATE.ENDLESS) return;
+    this.runWasVictory = true;
+    this.victoryElapsedMs ??= Math.round(this.elapsed * 1000);
+    this.endlessElapsed = 0;
+    this.endlessNetTimer = CONFIG.difficulty.sovereignHazards.initialNetDelaySeconds;
+    this.player.invulnerable = Math.max(
+      this.player.invulnerable,
+      CONFIG.difficulty.sovereignHazards.transitionInvulnerabilitySeconds,
+    );
+    for (const fish of this.fish) {
+      if (getRelation(this.player.mass, fish.mass) === RELATION.THREAT) {
+        fish.state = "wander";
+        fish.stateTime = 0;
+      }
+    }
+    this.state = STATE.ENDLESS;
+    this.showMessage("你已成为海洋霸主 · 自由巡游开始", 3.4);
     document.body.dataset.state = this.state;
   }
 
-  updateApex(dt) {
-    this.apexRemaining = Math.max(0, this.apexRemaining - dt);
-    this.apexNetTimer -= dt;
-    if (this.apexNetTimer <= 0) {
-      if (this.activeNetCount() < 2) this.spawnApexNet();
-      const progress = 1 - this.apexRemaining / CONFIG.hazards.apexDurationSeconds;
-      this.apexNetTimer = 3.1 - progress * 1.15;
-    }
-    if (this.apexRemaining <= 0) this.showVictory();
-  }
-
-  spawnApexNet() {
+  spawnSovereignNet() {
     const bounds = this.camera.getVisibleWorldBounds();
-    const width = Math.min(bounds.width * 0.26, 340);
+    const settings = CONFIG.difficulty.sovereignHazards;
+    const width = Math.min(
+      bounds.width * settings.netWidthViewportRatio,
+      settings.netWidthMax,
+    );
     const safeSide = this.player.x < this.camera.x ? 1 : -1;
     let x = this.player.x + safeSide * (bounds.width * 0.28 + this.director.randomRange(0, bounds.width * 0.16));
     x = clamp(x, bounds.left + width / 2, bounds.right - width / 2);
@@ -1417,8 +1490,9 @@ class Game {
     this.endlessElapsed += dt;
     this.endlessNetTimer -= dt;
     if (this.endlessNetTimer <= 0) {
-      if (this.activeNetCount() < 2) this.spawnApexNet();
-      this.endlessNetTimer = Math.max(1.8, 4.2 - this.endlessElapsed * 0.014);
+      const hazard = getSovereignHazardTuning(this.endlessElapsed);
+      if (this.activeNetCount() < hazard.maxActiveNets) this.spawnSovereignNet();
+      this.endlessNetTimer = hazard.netIntervalSeconds;
     }
   }
 
@@ -1454,6 +1528,10 @@ class Game {
     if (this.dom.resultScore) this.dom.resultScore.textContent = formatNumber(this.score);
     if (this.dom.resultTier) this.dom.resultTier.textContent = getTier(this.player.displayMass).name;
     if (this.dom.resultTime) this.dom.resultTime.textContent = formatTime(this.elapsed);
+    if (this.dom.resultSovereignStat) this.dom.resultSovereignStat.hidden = !wasVictory;
+    if (this.dom.resultSovereignTime) {
+      this.dom.resultSovereignTime.textContent = formatTime(this.endlessElapsed);
+    }
     if (this.dom.resultCombo) this.dom.resultCombo.textContent = `${this.maxCombo} 连`;
     if (this.dom.resultCoins) this.dom.resultCoins.textContent = `+${earned.coins}`;
     if (this.dom.resultPearls) this.dom.resultPearls.textContent = `+${earned.pearls}`;
@@ -1462,39 +1540,6 @@ class Game {
       this.dom.resultRecord.textContent = records.join(" · ");
     }
     this.showState(STATE.RESULTS);
-  }
-
-  showVictory() {
-    if (this.state === STATE.VICTORY) return;
-    this.runWasVictory = true;
-    this.victoryElapsedMs ??= Math.round(this.elapsed * 1000);
-    this.player.dashing = false;
-    this.camera.punchZoom(CONFIG.feel.victoryZoomPunch);
-    this.effects.burst(this.player.x, this.player.y, "#f7efad", 40, 200, { shape: "scale", gravity: 8 });
-    this.effects.splash(this.player.x, this.player.y, "#ffe98a", 1.5);
-    this.effects.ring(this.player.x, this.player.y, "#fff3b0", 18, 140, 0.6, 5);
-    this.effects.ring(this.player.x, this.player.y, "#7ee7df", 10, 90, 0.4, 3);
-    this.effects.addShake(8);
-    if (this.dom.victoryScore) this.dom.victoryScore.textContent = formatNumber(this.score);
-    if (this.dom.victoryTime) this.dom.victoryTime.textContent = formatTime(this.elapsed);
-    const records = this.getRunRecords(true);
-    if (this.dom.victoryRecord) {
-      this.dom.victoryRecord.hidden = records.length === 0;
-      this.dom.victoryRecord.textContent = records.join(" · ");
-    }
-    this.audio.play("victory");
-    vibrate([30, 30, 30, 30, 70], this.save.settings);
-    this.showState(STATE.VICTORY);
-  }
-
-  continueEndless() {
-    this.runWasVictory = true;
-    this.player.alive = true;
-    this.player.invulnerable = 1.5;
-    this.endlessElapsed = 0;
-    this.endlessNetTimer = 4;
-    this.showState(STATE.ENDLESS);
-    this.showMessage("无尽模式：看看你能称霸多久", 2.8);
   }
 
   commitRun(victory) {
@@ -1506,6 +1551,7 @@ class Game {
       elapsedSeconds: this.elapsed,
       victory,
       victoryElapsedMs: this.victoryElapsedMs,
+      sovereignElapsedSeconds: this.endlessElapsed,
       reachedTier: getTier(this.player.displayMass).id,
       collectedPearls: this.collectedPearls,
     }));
@@ -1529,7 +1575,7 @@ class Game {
   }
 
   pause() {
-    if (![STATE.PLAYING, STATE.APEX, STATE.ENDLESS].includes(this.state)) return;
+    if (![STATE.PLAYING, STATE.ENDLESS].includes(this.state)) return;
     this.previousState = this.state;
     this.input.reset();
     this.showState(STATE.PAUSED);
@@ -1553,13 +1599,25 @@ class Game {
     this.showState(this.returnFromSettings);
   }
 
-  openShop() {
+  openShop(tab = "upgrades") {
+    this.setShopTab(tab);
     this.updateShopUi();
     this.showState(STATE.SHOP);
   }
 
   closeShop() {
     this.showState(STATE.TITLE);
+  }
+
+  setShopTab(tab) {
+    this.shopTab = tab === "cosmetics" ? "cosmetics" : "upgrades";
+    const cosmeticsActive = this.shopTab === "cosmetics";
+    if (this.dom.shopUpgradesPanel) this.dom.shopUpgradesPanel.hidden = cosmeticsActive;
+    if (this.dom.shopCosmeticsPanel) this.dom.shopCosmeticsPanel.hidden = !cosmeticsActive;
+    this.dom.shopUpgradesTab?.classList.toggle("is-active", !cosmeticsActive);
+    this.dom.shopCosmeticsTab?.classList.toggle("is-active", cosmeticsActive);
+    this.dom.shopUpgradesTab?.setAttribute("aria-selected", String(!cosmeticsActive));
+    this.dom.shopCosmeticsTab?.setAttribute("aria-selected", String(cosmeticsActive));
   }
 
   buyUpgrade(type) {
@@ -1577,7 +1635,10 @@ class Game {
   }
 
   refreshUpgradeEffects() {
-    this.upgradeEffects = getUpgradeEffects(this.save.upgrades);
+    this.upgradeEffects = getUpgradeEffects(
+      this.save.upgrades,
+      this.save.selectedAccessory,
+    );
   }
 
   getMaxStamina() {
@@ -1586,6 +1647,7 @@ class Game {
 
   updateShopUi() {
     if (this.dom.shopCoins) this.dom.shopCoins.textContent = formatNumber(this.save.upgrades.coins);
+    if (this.dom.shopPearls) this.dom.shopPearls.textContent = formatNumber(this.save.wallet.pearls);
     const controls = {
       [UPGRADE_TYPES.SPEED]: [this.dom.shopSpeedLevel, this.dom.shopSpeedCost, this.dom.shopSpeedBuy],
       [UPGRADE_TYPES.STAMINA]: [this.dom.shopStaminaLevel, this.dom.shopStaminaCost, this.dom.shopStaminaBuy],
@@ -1603,6 +1665,8 @@ class Game {
         card?.classList.toggle("is-maxed", price === null);
       }
     }
+    this.renderCosmeticCatalog(COSMETIC_KINDS.SKINS, this.dom.cosmeticSkinsGrid);
+    this.renderCosmeticCatalog(COSMETIC_KINDS.ACCESSORIES, this.dom.cosmeticAccessoriesGrid);
   }
 
   requestClearProgress() {
@@ -1610,7 +1674,7 @@ class Game {
     if (now > this.clearProgressConfirmUntil) {
       this.clearProgressConfirmUntil = now + 4000;
       if (this.dom.clearProgressButton) this.dom.clearProgressButton.textContent = "再次点击确认";
-      if (this.dom.clearProgressStatus) this.dom.clearProgressStatus.textContent = "4 秒内再次点击将清除纪录、珍珠和皮肤";
+      if (this.dom.clearProgressStatus) this.dom.clearProgressStatus.textContent = "4 秒内再次点击将清除榜单、货币、升级与外观";
       window.setTimeout(() => {
         if (performance.now() >= this.clearProgressConfirmUntil) this.resetClearProgressPrompt();
       }, 4100);
@@ -1622,6 +1686,7 @@ class Game {
     this.player.stamina = Math.min(this.player.stamina, this.getMaxStamina());
     saveSave(this.save);
     this.player.skin = this.save.selectedSkin;
+    this.player.accessory = this.save.selectedAccessory;
     this.applySettingsToUi();
     this.resetClearProgressPrompt("进度已清除，设置已保留");
     this.showMessage("本地进度已清除", 2);
@@ -1634,8 +1699,13 @@ class Game {
   }
 
   quitRun() {
-    if (!this.runCommitted && this.elapsed > 0) this.commitRun(this.runWasVictory);
-    this.goHome();
+    if (this.elapsed <= 0) {
+      this.goHome();
+      return;
+    }
+    this.player.dashing = false;
+    this.deathReason = this.runWasVictory ? "主动结束霸主巡游" : "主动结束本局";
+    this.showResults();
   }
 
   goHome() {
@@ -1648,48 +1718,127 @@ class Game {
   showState(state) {
     this.state = state;
     document.body.dataset.state = state;
+    if (![STATE.PLAYING, STATE.ENDLESS].includes(state)) {
+      this.toastTimer = 0;
+      this.tierToastTimer = 0;
+      if (this.dom.messageToast) {
+        this.dom.messageToast.hidden = true;
+        this.dom.messageToast.setAttribute("aria-hidden", "true");
+      }
+      if (this.dom.tierToast) {
+        this.dom.tierToast.hidden = true;
+        this.dom.tierToast.setAttribute("aria-hidden", "true");
+      }
+    }
     const map = {
       [STATE.TITLE]: this.dom.titleScreen,
       [STATE.PAUSED]: this.dom.pauseScreen,
       [STATE.SETTINGS]: this.dom.settingsScreen,
       [STATE.SHOP]: this.dom.shopScreen,
       [STATE.RESULTS]: this.dom.resultsScreen,
-      [STATE.VICTORY]: this.dom.victoryScreen,
     };
-    for (const screen of [this.dom.titleScreen, this.dom.shopScreen, this.dom.pauseScreen, this.dom.settingsScreen, this.dom.resultsScreen, this.dom.victoryScreen]) {
+    for (const screen of [this.dom.titleScreen, this.dom.shopScreen, this.dom.pauseScreen, this.dom.settingsScreen, this.dom.resultsScreen]) {
       if (screen) screen.hidden = screen !== map[state];
     }
-    if (this.dom.hud) this.dom.hud.hidden = ![STATE.PLAYING, STATE.APEX, STATE.ENDLESS, STATE.DYING].includes(state);
-    if (this.dom.dashButton) this.dom.dashButton.hidden = ![STATE.PLAYING, STATE.APEX, STATE.ENDLESS].includes(state);
+    if (this.dom.hud) this.dom.hud.hidden = ![STATE.PLAYING, STATE.ENDLESS, STATE.DYING].includes(state);
+    if (this.dom.dashButton) this.dom.dashButton.hidden = ![STATE.PLAYING, STATE.ENDLESS].includes(state);
     if (this.dom.debugPanel) this.dom.debugPanel.hidden = !this.debug;
   }
 
-  cycleSkin() {
-    const currentIndex = AVAILABLE_SKINS.indexOf(this.save.selectedSkin);
-    const next = AVAILABLE_SKINS[(currentIndex + 1) % AVAILABLE_SKINS.length];
-    const meta = SKIN_META[next];
-    if (!this.save.unlocks.skins.includes(next)) {
-      if (this.save.wallet.pearls < meta.cost) {
-        this.showMessage(`${meta.name} 需要 ${meta.cost} 珍珠`, 2);
-        return;
-      }
-      this.save.wallet.pearls -= meta.cost;
-      this.save.unlocks.skins.push(next);
-      this.showMessage(`已解锁 ${meta.name}`, 2);
+  activateCosmetic(kind, id) {
+    const previousMaxStamina = this.getMaxStamina();
+    const result = purchaseOrEquipCosmetic(this.save, kind, id);
+    if (!result.success) {
+      this.showMessage(
+        result.reason === "insufficient-pearls" ? "珍珠不足，再探索贝壳或完成一局吧" : "此外观暂不可用",
+        2.2,
+      );
+      return;
     }
-    this.save.selectedSkin = next;
-    this.player.skin = next;
+    this.save = result.save;
+    this.refreshUpgradeEffects();
+    const nextMaxStamina = this.getMaxStamina();
+    this.player.stamina = clamp(
+      this.player.stamina + Math.max(0, nextMaxStamina - previousMaxStamina),
+      0,
+      nextMaxStamina,
+    );
+    this.player.skin = this.save.selectedSkin;
+    this.player.accessory = this.save.selectedAccessory;
     saveSave(this.save);
-    this.updateSkinButton();
+    this.updateShopUi();
     this.updateTitleStats();
+    const definition = getCosmeticCatalog(kind)[id];
+    this.showMessage(`${result.purchased ? "已解锁并装备" : "已装备"} ${definition.name}`, 2);
   }
 
-  updateSkinButton() {
+  renderCosmeticCatalog(kind, container) {
+    if (!container) return;
+    const selected = kind === COSMETIC_KINDS.SKINS
+      ? this.save.selectedSkin
+      : this.save.selectedAccessory;
+    const catalog = getCosmeticCatalog(kind);
+    const fragment = document.createDocumentFragment();
+    for (const [id, definition] of Object.entries(catalog)) {
+      const unlocked = this.save.unlocks[kind].includes(id);
+      const equipped = selected === id;
+      const card = document.createElement("article");
+      card.className = "cosmetic-card";
+      card.classList.toggle("is-equipped", equipped);
+      card.classList.toggle("is-locked", !unlocked);
+
+      const preview = document.createElement("canvas");
+      preview.className = "cosmetic-preview";
+      preview.width = 120;
+      preview.height = 70;
+      preview.setAttribute("aria-hidden", "true");
+      const previewContext = preview.getContext("2d");
+      previewContext.imageSmoothingEnabled = false;
+      const skin = kind === COSMETIC_KINDS.SKINS ? id : this.save.selectedSkin;
+      const accessory = kind === COSMETIC_KINDS.ACCESSORIES ? id : this.save.selectedAccessory;
+      const sprite = this.sprites.getFish("silver", 2, 3, skin, true, accessory);
+      previewContext.drawImage(sprite, 0, 0, preview.width, preview.height);
+
+      const heading = document.createElement("h3");
+      heading.textContent = definition.name;
+      const detail = document.createElement("small");
+      detail.textContent = kind === COSMETIC_KINDS.ACCESSORIES
+        ? definition.bonusLabel
+        : unlocked ? "已收藏" : "珍珠收藏";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button button--secondary cosmetic-action";
+      button.dataset.cosmeticKind = kind;
+      button.dataset.cosmeticId = id;
+      button.disabled = equipped;
+      if (equipped) button.textContent = "已装备";
+      else if (unlocked) button.textContent = "装备";
+      else {
+        button.append("解锁 · ");
+        const pearl = document.createElement("span");
+        pearl.className = "pearl-icon pearl-icon--small";
+        pearl.setAttribute("aria-hidden", "true");
+        button.append(pearl, document.createTextNode(formatNumber(definition.cost)));
+        button.classList.toggle("is-low-funds", this.save.wallet.pearls < definition.cost);
+      }
+      card.append(preview, heading, detail, button);
+      fragment.append(card);
+    }
+    container.replaceChildren(fragment);
+  }
+
+  updateAppearanceButton() {
     if (!this.dom.skinButton) return;
-    const meta = SKIN_META[this.save.selectedSkin] || SKIN_META.reef;
+    const skin = CONFIG.cosmetics.skins[this.save.selectedSkin] || CONFIG.cosmetics.skins.reef;
+    const accessory = CONFIG.cosmetics.accessories[this.save.selectedAccessory]
+      || CONFIG.cosmetics.accessories.none;
     const label = this.dom.skinButton.querySelector(".button-label, span:last-child");
-    if (label) label.textContent = meta.name;
-    else this.dom.skinButton.setAttribute("aria-label", `切换皮肤，当前${meta.name}`);
+    if (label) label.textContent = "外观商店";
+    this.dom.skinButton.setAttribute(
+      "aria-label",
+      `打开外观商店，当前${skin.name}与${accessory.name}`,
+    );
   }
 
   updateTitleStats() {
@@ -1703,6 +1852,27 @@ class Game {
     if (pearlTarget) pearlTarget.textContent = formatNumber(this.save.wallet.pearls);
     const coinTarget = document.querySelector("[data-coins]");
     if (coinTarget) coinTarget.textContent = formatNumber(this.save.upgrades.coins);
+    this.updateAppearanceButton();
+    this.updateLeaderboardUi();
+  }
+
+  updateLeaderboardUi() {
+    if (!this.dom.leaderboardList || !this.dom.leaderboardEmpty) return;
+    const entries = this.save.leaderboard || [];
+    this.dom.leaderboardEmpty.hidden = entries.length > 0;
+    const fragment = document.createDocumentFragment();
+    entries.forEach((entry, index) => {
+      const item = document.createElement("li");
+      item.innerHTML = [
+        `<span class="leaderboard-rank">${index + 1}</span>`,
+        `<strong>${formatNumber(entry.score)}</strong>`,
+        `<span>${entry.tier}</span>`,
+        `<time datetime="${entry.date}">${formatTime(entry.durationMs / 1000)}</time>`,
+        `<time datetime="${entry.date}">${formatRecordDate(entry.date)}</time>`,
+      ].join("");
+      fragment.append(item);
+    });
+    this.dom.leaderboardList.replaceChildren(fragment);
   }
 
   updateHud() {
@@ -1723,16 +1893,18 @@ class Game {
       this.dom.dashButton.classList.toggle("is-active", this.player.dashing);
       this.dom.dashButton.classList.toggle("is-exhausted", this.player.stamina < CONFIG.dash.activationThreshold);
     }
-    if (this.dom.apexWrap) this.dom.apexWrap.hidden = this.state !== STATE.APEX;
-    if (this.dom.apexTime) this.dom.apexTime.textContent = this.apexRemaining.toFixed(1);
+    if (this.dom.sovereignWrap) this.dom.sovereignWrap.hidden = this.state !== STATE.ENDLESS;
+    if (this.dom.sovereignTime) this.dom.sovereignTime.textContent = formatTime(this.endlessElapsed);
   }
 
   updateDebug() {
     if (!this.debug || !this.dom.debugPanel) return;
     const relationCounts = { prey: 0, neutral: 0, threat: 0 };
-    for (const fish of this.fish) relationCounts[getRelation(this.player.mass, fish.mass)]++;
+    for (const fish of this.fish) relationCounts[this.getEffectiveRelation(fish)]++;
+    const spawnWeights = getRelationWeights(this.player.tier);
     const baitMembers = this.director.countBaitMembers(this);
     const baitSchools = this.director.countBaitSchools(this);
+    const playerScreen = this.camera.worldToScreen(this.player.x, this.player.y);
     const output = this.dom.debugPanel.querySelector("[data-debug-output]") || this.dom.debugPanel;
     output.textContent = [
       `FPS ${this.debugFps} | DPR ${this.dpr.toFixed(2)} | seed ${this.director.seed}`,
@@ -1740,12 +1912,14 @@ class Game {
       `time ${this.dayNight.segment} | night ${this.dayNight.nightStrength.toFixed(2)} | score x${this.dayNight.scoreMultiplier.toFixed(2)}`,
       `mass ${this.player.displayMass.toFixed(1)} -> ${this.player.mass.toFixed(1)} | T${this.player.tier}`,
       `pos ${this.player.x.toFixed(0)},${this.player.y.toFixed(0)} | camera ${this.camera.x.toFixed(0)},${this.camera.y.toFixed(0)}`,
+      `screen ${playerScreen.x.toFixed(0)},${playerScreen.y.toFixed(0)} | zoom ${this.camera.zoom.toFixed(2)}`,
       `speed ${Math.hypot(this.player.vx, this.player.vy).toFixed(0)} | stamina ${this.player.stamina.toFixed(0)}`,
       `fish ${this.fish.length} | P ${relationCounts.prey} N ${relationCounts.neutral} X ${relationCounts.threat}`,
+      `spawn P${percent(spawnWeights.prey)} F${percent(spawnWeights.fringe)} N${percent(spawnWeights.neutral)} X${percent(spawnWeights.predator)}`,
       `bait ${baitSchools} school / ${baitMembers} fish | particles ${this.effects.particles.length}`,
       `environment ${this.environment.filter((item) => item.active).length} | shells +${this.collectedPearls}`,
       `special ${this.specials.length} | no prey ${this.director.noPreyTime.toFixed(1)}s`,
-      "[ / ] 调档 · I 无敌 · N 昼夜 · ` 关闭",
+      "[ / ] 调档 · I 无敌 · N 昼夜 · G 珍珠 · E 巡游 +60s · ` 关闭",
     ].join("\n");
   }
 
@@ -1755,7 +1929,9 @@ class Game {
     this.player.mass = CONFIG.tiers[nextIndex].threshold + 0.05;
     this.player.displayMass = this.player.mass;
     this.player.tier = CONFIG.tiers[nextIndex].index;
-    if (this.player.tier >= 6 && this.state === STATE.PLAYING) this.beginApex();
+    if (isSovereignTier(this.player.tier) && this.state === STATE.PLAYING) {
+      this.beginSovereign();
+    }
   }
 
   showMessage(message, duration = 2) {
@@ -1812,8 +1988,7 @@ class Game {
       const radius = getVisualRadius(fish.displayMass);
       const screens = this.camera.getVisibleWrappedScreens(fish.x, fish.y, radius * 2.2);
       if (screens.length === 0) continue;
-      let relation = getRelation(this.player.mass, fish.mass);
-      if (this.state === STATE.APEX && relation === RELATION.THREAT) relation = RELATION.NEUTRAL;
+      const relation = this.getEffectiveRelation(fish);
       const distance = Math.sqrt(this.wrapDistanceSq(this.player.x, this.player.y, fish.x, fish.y));
       const ratio = fish.mass / this.player.mass;
       // Only glow nearby meaningful relations — far fish stay visually quiet.
@@ -1862,6 +2037,7 @@ class Game {
       this.sprites.drawFish(ctx, this.player, screen, radius, {
         isPlayer: true,
         skin: this.save.selectedSkin,
+        accessory: this.save.selectedAccessory,
         time: this.time,
         alpha: flash * Math.max(0.55, depthShade),
       });
@@ -2075,6 +2251,17 @@ function formatTime(seconds) {
   const minutes = Math.floor(seconds / 60);
   const rest = Math.floor(seconds % 60).toString().padStart(2, "0");
   return `${minutes}:${rest}`;
+}
+
+function formatRecordDate(value) {
+  const date = new Date(value);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${month}-${day}`;
+}
+
+function percent(value) {
+  return `${Math.round(value * 100)}%`;
 }
 
 new Game();

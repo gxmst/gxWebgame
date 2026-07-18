@@ -1,5 +1,11 @@
 import { createFish, createJelly, createMine, resetEntityIds } from "./entities.js";
 import { CONFIG } from "./config.js";
+import {
+  getBaitSchoolTuning,
+  getPredatorRatioRange,
+  getRelationWeightEntries,
+  isSovereignTier,
+} from "./difficulty.js";
 import { wrap, wrapDelta } from "./math.js";
 
 function mulberry32(seed) {
@@ -12,13 +18,6 @@ function mulberry32(seed) {
     return ((result ^ (result >>> 14)) >>> 0) / 4294967296;
   };
 }
-
-const RELATION_WEIGHTS = [
-  ["prey", 0.42],
-  ["fringe", 0.19],
-  ["neutral", 0.21],
-  ["predator", 0.18],
-];
 
 export class Director {
   constructor(world, seed = Date.now()) {
@@ -95,8 +94,9 @@ export class Director {
   populateInitial(game) {
     const count = this.targetFishCount(game.camera.viewportWidth);
     const guaranteed = ["prey", "prey", "prey", "fringe", "neutral", "predator"];
+    const weights = getRelationWeightEntries(game.player.tier);
     for (let i = 0; i < count; i++) {
-      const relation = guaranteed[i] || this.chooseWeighted(RELATION_WEIGHTS);
+      const relation = guaranteed[i] || this.chooseWeighted(weights);
       const fish = this.makeFish(game, relation, true);
       if (!fish) continue;
       game.fish.push(fish);
@@ -137,9 +137,12 @@ export class Director {
       let missing = Math.max(0, target - regularCount);
       if (this.noPreyTime > 6) missing = Math.max(missing, 2);
       const batch = Math.min(3, missing);
+      const weights = getRelationWeightEntries(game.player.tier);
       for (let i = 0; i < batch; i++) {
         const forcedPrey = this.noPreyTime > 6 || visiblePrey + i < 2;
-        const relation = forcedPrey ? (this.noPreyTime > 9 ? "prey" : "fringe") : this.chooseWeighted(RELATION_WEIGHTS);
+        const relation = forcedPrey
+          ? (this.noPreyTime > 9 ? "prey" : "fringe")
+          : this.chooseWeighted(weights);
         const fish = this.makeFish(game, relation, false);
         if (fish) game.fish.push(fish);
       }
@@ -170,10 +173,12 @@ export class Director {
 
   updateBaitSchools(game) {
     if (!CONFIG.baitSchool.enabled || this.baitSchoolTimer > 0) return;
+    const tuning = getBaitSchoolTuning(game.player.tier);
+    const size = this.baitSchoolSizeRange(game.player.tier);
     const schoolCount = this.countBaitSchools(game);
     const memberCount = this.countBaitMembers(game);
     if (schoolCount >= CONFIG.baitSchool.maxSchools
-      || memberCount > CONFIG.baitSchool.maxMembers - CONFIG.baitSchool.sizeMin) {
+      || memberCount > CONFIG.baitSchool.maxMembers - size.min) {
       this.baitSchoolTimer = CONFIG.baitSchool.retrySeconds;
       return;
     }
@@ -182,7 +187,7 @@ export class Director {
     this.baitSchoolTimer = this.randomRange(
       CONFIG.baitSchool.intervalMinSeconds,
       CONFIG.baitSchool.intervalMaxSeconds,
-    );
+    ) * tuning.intervalScale;
   }
 
   countBaitMembers(game) {
@@ -201,11 +206,12 @@ export class Director {
   }
 
   spawnBaitSchool(game) {
+    const size = this.baitSchoolSizeRange(game.player.tier);
     const remaining = CONFIG.baitSchool.maxMembers - this.countBaitMembers(game);
-    if (remaining < CONFIG.baitSchool.sizeMin) return null;
+    if (remaining < size.min) return null;
     const requested = Math.floor(this.randomRange(
-      CONFIG.baitSchool.sizeMin,
-      CONFIG.baitSchool.sizeMax + 1,
+      size.min,
+      size.max + 1,
     ));
     const count = Math.min(requested, remaining);
     const center = this.baitSchoolSpawnPoint(game);
@@ -247,6 +253,13 @@ export class Director {
     return { schoolId, count, center };
   }
 
+  baitSchoolSizeRange(tier) {
+    const scale = getBaitSchoolTuning(tier).sizeScale;
+    const min = Math.max(1, Math.round(CONFIG.baitSchool.sizeMin * scale));
+    const max = Math.max(min, Math.round(CONFIG.baitSchool.sizeMax * scale));
+    return { min, max };
+  }
+
   baitSchoolSpawnPoint(game) {
     const bounds = game.camera.getVisibleWorldBounds(CONFIG.baitSchool.offscreenMargin);
     const side = Math.floor(this.random() * 4);
@@ -257,12 +270,18 @@ export class Director {
   }
 
   makeFish(game, relation, initial, forcedSpecies = null) {
+    if (isSovereignTier(game.player.tier) && relation === "predator") {
+      relation = this.chooseWeighted(getRelationWeightEntries(game.player.tier));
+    }
     const playerMass = game.player.mass;
     let ratio;
     if (relation === "prey") ratio = this.randomRange(0.28, 0.57);
     else if (relation === "fringe") ratio = this.randomRange(0.61, 0.8);
     else if (relation === "neutral") ratio = this.randomRange(0.87, 1.13);
-    else ratio = this.randomRange(1.28, game.player.tier <= 2 ? 1.58 : 1.82);
+    else {
+      const [minRatio, maxRatio] = getPredatorRatioRange(game.player.tier);
+      ratio = this.randomRange(minRatio, maxRatio);
+    }
 
     const species = forcedSpecies || this.chooseSpecies(
       relation,

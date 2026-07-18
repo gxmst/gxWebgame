@@ -119,10 +119,10 @@ input:focus-visible,
 
 .title-screen {
   display: grid;
-  grid-template-columns: minmax(270px, 0.9fr) minmax(270px, 0.7fr);
+  grid-template-columns: minmax(250px, 1fr) minmax(230px, 0.72fr) minmax(250px, 0.82fr);
   grid-template-rows: 1fr auto;
   align-items: center;
-  gap: 20px 7vw;
+  gap: 20px 3vw;
   padding:
     max(28px, var(--safe-top))
     max(6vw, var(--safe-right))
@@ -136,7 +136,7 @@ input:focus-visible,
   content: "";
   position: absolute;
   right: 8%;
-  bottom: -10px;
+  bottom: 0;
   width: clamp(150px, 25vw, 340px);
   height: clamp(58px, 14vh, 120px);
   z-index: -1;
@@ -203,6 +203,95 @@ input:focus-visible,
 .title-actions {
   align-self: center;
   width: min(100%, 390px);
+}
+
+.leaderboard-panel {
+  align-self: center;
+  min-width: 0;
+  max-height: min(48vh, 350px);
+  overflow: hidden;
+  padding: 4px 0 4px 14px;
+  border-left: 3px solid var(--gold);
+  filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.45));
+}
+
+.leaderboard-panel header {
+  margin-bottom: 9px;
+}
+
+.leaderboard-panel header p,
+.leaderboard-panel h2,
+.leaderboard-empty {
+  margin: 0;
+}
+
+.leaderboard-panel header p {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.leaderboard-panel h2 {
+  color: var(--gold);
+  font-size: 18px;
+}
+
+.leaderboard-columns,
+.leaderboard-list li {
+  display: grid;
+  grid-template-columns: 22px minmax(62px, 1fr) 36px 46px 42px;
+  gap: 5px;
+  align-items: center;
+}
+
+.leaderboard-columns {
+  padding: 0 5px 4px;
+  color: #8fb9b6;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.leaderboard-list {
+  max-height: min(37vh, 282px);
+  margin: 0;
+  overflow: auto;
+  padding: 0 5px 0 0;
+  scrollbar-color: rgba(255, 209, 102, 0.58) transparent;
+  scrollbar-width: thin;
+}
+
+.leaderboard-list li {
+  min-height: 27px;
+  padding: 4px 5px;
+  border-top: 1px solid rgba(188, 240, 227, 0.16);
+  color: #cfe4df;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-list li:first-child {
+  color: #fff1ad;
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.leaderboard-list strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.leaderboard-rank {
+  color: var(--gold);
+  font-weight: 900;
+}
+
+.leaderboard-empty {
+  padding: 22px 6px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .shop-entry-button {
@@ -344,6 +433,7 @@ input:focus-visible,
   margin: 0;
   color: var(--muted);
   font-weight: 700;
+  grid-column: 1 / -1;
 }
 
 #high-score,
@@ -467,7 +557,7 @@ input:focus-visible,
   background: linear-gradient(90deg, var(--teal), #8cf5c8 62%, var(--gold));
 }
 
-.apex-wrap {
+.sovereign-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -477,7 +567,7 @@ input:focus-visible,
   font-weight: 900;
 }
 
-#apex-time {
+#sovereign-time {
   min-width: 4.5ch;
   font-size: 24px;
   font-variant-numeric: tabular-nums;
@@ -577,8 +667,7 @@ input:focus-visible,
   border-color: #6d8f91;
 }
 
-body[data-state="apex"] .tier-heading,
-body[data-state="apex"] .tier-meter {
+body[data-state="endless"] .tier-meter {
   display: none;
 }
 
@@ -644,7 +733,14 @@ body[data-state="apex"] .tier-meter {
 }
 
 .shop-panel {
-  width: min(880px, 100%);
+  width: min(1040px, 100%);
+}
+
+.shop-balances {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .shop-balance {
@@ -652,7 +748,6 @@ body[data-state="apex"] .tier-meter {
   min-height: 42px;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
   padding: 7px 12px;
   color: #4a3000;
   background: var(--gold);
@@ -661,6 +756,12 @@ body[data-state="apex"] .tier-meter {
   box-shadow: 3px 3px 0 var(--shadow);
   font-size: 18px;
   font-weight: 900;
+}
+
+.shop-balance--pearls {
+  color: #291b3d;
+  background: #d9b5f2;
+  border-color: #ffffff;
 }
 
 .coin-icon {
@@ -681,6 +782,40 @@ body[data-state="apex"] .tier-meter {
   height: 13px;
   border-width: 1px;
   box-shadow: inset -2px -2px 0 #bb6d23, 1px 1px 0 rgba(0, 0, 0, 0.38);
+}
+
+.pearl-icon--small {
+  width: 12px;
+  height: 12px;
+  border-width: 1px;
+  box-shadow: 1px 1px 0 #624981;
+}
+
+.shop-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 16px;
+  border: 2px solid rgba(168, 238, 221, 0.3);
+  border-radius: 5px;
+}
+
+.shop-tab {
+  min-height: 42px;
+  padding: 8px 14px;
+  border: 0;
+  color: var(--muted);
+  background: rgba(5, 46, 57, 0.72);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.shop-tab + .shop-tab {
+  border-left: 1px solid var(--line);
+}
+
+.shop-tab.is-active {
+  color: #062d36;
+  background: var(--teal);
 }
 
 .shop-grid {
@@ -765,6 +900,81 @@ body[data-state="apex"] .tier-meter {
 
 .upgrade-card .button.is-low-funds {
   filter: saturate(0.55) brightness(0.86);
+}
+
+.cosmetics-panel {
+  display: grid;
+  gap: 20px;
+}
+
+.cosmetic-section > h3 {
+  margin: 0 0 9px;
+  color: var(--gold);
+  font-size: 15px;
+}
+
+.cosmetic-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.cosmetic-card {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: 70px auto auto auto;
+  gap: 5px;
+  padding: 10px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.cosmetic-card.is-equipped {
+  background: rgba(25, 211, 177, 0.1);
+  box-shadow: inset 0 0 0 2px rgba(126, 231, 223, 0.42);
+}
+
+.cosmetic-card.is-locked .cosmetic-preview {
+  filter: saturate(0.45) brightness(0.72);
+}
+
+.cosmetic-preview {
+  display: block;
+  width: 120px;
+  max-width: 100%;
+  height: 70px;
+  justify-self: center;
+  image-rendering: pixelated;
+}
+
+.cosmetic-card h3,
+.cosmetic-card small {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.cosmetic-card h3 {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.cosmetic-card small {
+  min-height: 2.6em;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.3;
+}
+
+.cosmetic-action {
+  width: 100%;
+  min-height: 36px;
+  gap: 5px;
+  padding: 6px 8px;
+  box-shadow: 2px 2px 0 var(--shadow);
+  font-size: 10px;
 }
 
 .close-button {
@@ -976,7 +1186,7 @@ select {
 
 .result-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   margin: 0 0 26px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
@@ -1011,7 +1221,7 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 6px;
   color: #f2ddff;
 }
 
@@ -1020,6 +1230,7 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
 }
 
 .pearl-icon {
@@ -1030,84 +1241,6 @@ select {
   border-radius: 50%;
   background: #d7a8ff;
   box-shadow: 2px 2px 0 #624981;
-}
-
-.victory-screen {
-  background: rgba(2, 30, 31, 0.76);
-}
-
-.victory-rays {
-  position: absolute;
-  inset: 0;
-  opacity: 0.14;
-  pointer-events: none;
-  background: repeating-conic-gradient(from 0deg at 50% 52%, var(--gold) 0 8deg, transparent 8deg 19deg);
-  animation: victory-turn 30s linear infinite;
-}
-
-@keyframes victory-turn {
-  to { transform: rotate(360deg); }
-}
-
-.victory-panel {
-  width: min(620px, 100%);
-  border-color: rgba(255, 220, 119, 0.64);
-  text-align: center;
-}
-
-.victory-panel::before {
-  background: var(--gold);
-}
-
-.crown-mark {
-  display: flex;
-  width: 64px;
-  height: 42px;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 3px;
-  margin: 0 auto 12px;
-  padding: 6px 8px;
-  border-bottom: 8px solid var(--gold-dark);
-  background: var(--gold);
-  clip-path: polygon(0 0, 25% 42%, 50% 0, 75% 42%, 100% 0, 88% 100%, 12% 100%);
-}
-
-.crown-mark i {
-  width: 6px;
-  height: 6px;
-  background: var(--coral-dark);
-}
-
-.victory-summary {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin: 26px 0;
-  border-top: 1px solid rgba(255, 220, 119, 0.35);
-  border-bottom: 1px solid rgba(255, 220, 119, 0.35);
-}
-
-.victory-summary p {
-  display: grid;
-  gap: 7px;
-  margin: 0;
-  padding: 16px;
-}
-
-.victory-summary p:first-child {
-  border-right: 1px solid rgba(255, 220, 119, 0.35);
-}
-
-.victory-summary span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.victory-summary output {
-  color: var(--gold);
-  font-size: 28px;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
 }
 
 .rotate-overlay {
@@ -1280,9 +1413,12 @@ body.high-contrast .ocean-vignette {
 
 @media (max-height: 600px) and (orientation: landscape) {
   .title-screen {
-    gap: 12px 5vw;
+    grid-template-columns: minmax(0, 0.95fr) minmax(190px, 0.75fr) minmax(210px, 0.9fr);
+    gap: 12px 2vw;
     padding-top: max(16px, var(--safe-top));
+    padding-right: max(3vw, var(--safe-right));
     padding-bottom: max(12px, var(--safe-bottom));
+    padding-left: max(3vw, var(--safe-left));
   }
 
   #game-title {
@@ -1298,6 +1434,14 @@ body.high-contrast .ocean-vignette {
     width: 100%;
     gap: 3px 8px;
     font-size: 11px;
+  }
+
+  .leaderboard-panel {
+    max-height: 58vh;
+  }
+
+  .leaderboard-list {
+    max-height: 43vh;
   }
 
   #high-score,
@@ -1346,6 +1490,14 @@ body.high-contrast .ocean-vignette {
     margin-bottom: 10px;
   }
 
+  .shop-tabs {
+    margin-bottom: 10px;
+  }
+
+  .cosmetics-panel {
+    gap: 12px;
+  }
+
   .setting-row {
     min-height: 54px;
     padding: 8px 12px;
@@ -1360,13 +1512,11 @@ body.high-contrast .ocean-vignette {
   }
 
   .result-scoreline,
-  .result-stats,
-  .victory-summary {
+  .result-stats {
     margin-bottom: 14px;
   }
 
-  .result-stats div,
-  .victory-summary p {
+  .result-stats div {
     padding-top: 9px;
     padding-bottom: 9px;
   }
@@ -1384,7 +1534,7 @@ body.high-contrast .ocean-vignette {
 
 @media (max-width: 720px) and (orientation: landscape) {
   .title-screen {
-    grid-template-columns: minmax(230px, 1fr) minmax(235px, 0.8fr);
+    grid-template-columns: minmax(0, 0.9fr) minmax(180px, 0.8fr) minmax(190px, 0.9fr);
   }
 
   .title-kicker,
@@ -1426,6 +1576,10 @@ body.high-contrast .ocean-vignette {
 
   .shop-grid {
     grid-template-columns: repeat(3, minmax(150px, 1fr));
+  }
+
+  .cosmetic-grid {
+    grid-template-columns: repeat(4, minmax(118px, 1fr));
   }
 
   .shop-panel {
