@@ -13,6 +13,11 @@ import { tests as audio } from "./audio.test.js";
 import { tests as hazards } from "./hazards.test.js";
 import { tests as difficulty } from "./difficulty.test.js";
 import { tests as cosmetics } from "./cosmetics.test.js";
+import { tests as biomes } from "./biomes.test.js";
+import { tests as telemetry } from "./telemetry.test.js";
+import { tests as runBuilds } from "./run-builds.test.js";
+import { tests as sovereignGoals } from "./sovereign-goals.test.js";
+import { tests as gameState } from "./game-state.test.js";
 
 const tests = [
   ...rules,
@@ -30,6 +35,11 @@ const tests = [
   ...environment,
   ...audio,
   ...hazards,
+  ...biomes,
+  ...telemetry,
+  ...runBuilds,
+  ...sovereignGoals,
+  ...gameState,
 ];
 let passed = 0;
 

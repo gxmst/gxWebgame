@@ -1,3 +1,5 @@
+import { APP_VERSION } from "./version.js";
+
 /**
  * Central gameplay and presentation tuning. Runtime systems should read values
  * from here instead of carrying local copies of balance constants.
@@ -5,7 +7,7 @@
 export const CONFIG = deepFreeze({
   game: {
     title: "大鱼吃小鱼",
-    version: 1,
+    version: APP_VERSION,
   },
 
   world: {
@@ -195,6 +197,62 @@ export const CONFIG = deepFreeze({
     boostImpulse: 95,
   },
 
+  /**
+   * 每局在 T2、T4、T6 触发一次确定性三选一；能力仅在本局生效。
+   * 乘数以 1 为基准，staminaBonus 与 comboWindowBonusSeconds 为加法。
+   */
+  runBuilds: {
+    milestoneTiers: ["T2", "T4", "T6"],
+    choicesPerMilestone: 3,
+    abilities: {
+      "swift-current": {
+        name: "逐流鳍",
+        description: "普通游动速度提高 10%",
+        effects: { speedMultiplier: 1.1 },
+      },
+      "deep-lungs": {
+        name: "深潜肺",
+        description: "体力上限增加 20",
+        effects: { staminaBonus: 20 },
+      },
+      "second-wind": {
+        name: "回潮",
+        description: "体力恢复速度提高 18%",
+        effects: { staminaRecoveryMultiplier: 1.18 },
+      },
+      "wide-jaw": {
+        name: "宽吻",
+        description: "吞噬判定范围扩大 12%",
+        effects: { mouthMultiplier: 1.12 },
+      },
+      "golden-instinct": {
+        name: "猎金本能",
+        description: "所有猎食得分提高 15%",
+        effects: { scoreMultiplier: 1.15 },
+      },
+      "dense-nutrition": {
+        name: "高效消化",
+        description: "猎食获得的成长提高 14%",
+        effects: { massGainMultiplier: 1.14 },
+      },
+      "torpedo-dash": {
+        name: "鱼雷冲刺",
+        description: "冲刺速度提高 16%",
+        effects: { dashSpeedMultiplier: 1.16 },
+      },
+      "efficient-dash": {
+        name: "节能肌群",
+        description: "冲刺体力消耗降低 18%",
+        effects: { dashDrainMultiplier: 0.82 },
+      },
+      "feeding-frenzy": {
+        name: "盛宴节奏",
+        description: "连吃判定时间延长 0.9 秒",
+        effects: { comboWindowBonusSeconds: 0.9 },
+      },
+    },
+  },
+
   input: {
     relativeDeadzone: 6,
     relativeRadius: 64,
@@ -370,6 +428,82 @@ export const CONFIG = deepFreeze({
       netWidthViewportRatio: 0.24,
       netWidthMax: 320,
     },
+  },
+
+  /**
+   * 环形世界按连续深度划分生态区；边界会在 transitionDepth 内平滑混合。
+   * spawnMultipliers 影响生态关系、稀有鱼、鱼群与危险物的相对出现率。
+   */
+  biomes: {
+    /** 新局出生在浅海一侧，给玩家留出熟悉操作的低风险窗口。 */
+    startYRatio: 0.04,
+    transitionDepth: 0.08,
+    zones: [
+      {
+        id: "coral",
+        name: "珊瑚浅海",
+        maxDepth: 0.3,
+        riskMultiplier: 0.78,
+        rewardMultiplier: 0.9,
+        arrivalMessage: "猎物密集，风险较低，但得分略少",
+        tintColor: "#43c69f",
+        tintAlpha: 0.075,
+        spawnMultipliers: {
+          prey: 1.3,
+          fringe: 1.12,
+          neutral: 0.98,
+          predator: 0.64,
+          bait: 1.22,
+          hazard: 0.65,
+          rare: 0.72,
+        },
+      },
+      {
+        id: "current",
+        name: "开阔洋流",
+        maxDepth: 0.68,
+        riskMultiplier: 1,
+        rewardMultiplier: 1,
+        arrivalMessage: "生态均衡，适合稳定成长",
+        tintColor: "#167f9b",
+        tintAlpha: 0.035,
+        spawnMultipliers: {
+          prey: 1,
+          fringe: 1,
+          neutral: 1,
+          predator: 1,
+          bait: 1,
+          hazard: 1,
+          rare: 1,
+        },
+      },
+      {
+        id: "abyss",
+        name: "深海暗区",
+        maxDepth: 1,
+        riskMultiplier: 1.28,
+        rewardMultiplier: 1.32,
+        arrivalMessage: "危险与稀有鱼更多，猎食收益提高",
+        tintColor: "#291f55",
+        tintAlpha: 0.13,
+        spawnMultipliers: {
+          prey: 0.78,
+          fringe: 0.92,
+          neutral: 0.9,
+          predator: 1.42,
+          bait: 0.76,
+          hazard: 1.48,
+          rare: 1.72,
+        },
+      },
+    ],
+  },
+
+  /** 封神后按累计数据推进合同，完成一阶段即可主动返航。 */
+  sovereignGoals: {
+    extractAfterStages: 1,
+    baseTargets: { elapsed: 20, eaten: 12, score: 600, netsDodged: 2 },
+    targetGrowth: { elapsed: 5, eaten: 4, score: 300, netsDodged: 1 },
   },
 
   director: {

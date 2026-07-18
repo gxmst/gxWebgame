@@ -8,6 +8,7 @@ import {
 } from "./difficulty.js";
 import { wrap, wrapDelta } from "./math.js";
 import { isPointInNetColumn } from "./hazards.js";
+import { applyBiomeSpawnMultipliers } from "./biomes.js";
 
 function mulberry32(seed) {
   let value = seed >>> 0;
@@ -95,7 +96,7 @@ export class Director {
   populateInitial(game) {
     const count = this.targetFishCount(game.camera.viewportWidth);
     const guaranteed = ["prey", "prey", "prey", "fringe", "neutral", "predator"];
-    const weights = getRelationWeightEntries(game.player.tier);
+    const weights = this.getSpawnWeights(game);
     for (let i = 0; i < count; i++) {
       const relation = guaranteed[i] || this.chooseWeighted(weights);
       const fish = this.makeFish(game, relation, true);
@@ -144,7 +145,7 @@ export class Director {
         replenishing ? CONFIG.net.replenishBatchMax : 3,
         missing,
       );
-      const weights = getRelationWeightEntries(game.player.tier);
+      const weights = this.getSpawnWeights(game);
       for (let i = 0; i < batch; i++) {
         const forcedPrey = this.noPreyTime > 6 || visiblePrey + i < 2;
         const relation = forcedPrey
@@ -164,11 +165,17 @@ export class Director {
     if (this.goldCooldown <= 0 && !game.fish.some((fish) => fish.species === "gold")) {
       const fish = this.makeFish(game, "fringe", false, "gold");
       if (fish) game.fish.push(fish);
-      this.goldCooldown = this.randomRange(16, 24);
+      const rarePressure = Math.max(0.35, game.currentBiome?.spawnMultipliers?.rare ?? 1);
+      this.goldCooldown = this.randomRange(16, 24) / rarePressure;
     }
 
     if (this.specialTimer <= 0) {
-      this.specialTimer = this.randomRange(4, 7);
+      const hazardPressure = Math.max(
+        0.45,
+        (game.currentBiome?.spawnMultipliers?.hazard ?? 1)
+          * (game.currentBiome?.riskMultiplier ?? 1),
+      );
+      this.specialTimer = this.randomRange(4, 7) / hazardPressure;
       const jellyCount = game.specials.filter((item) => item.type === "jelly").length;
       if (game.player.tier >= 3 && jellyCount < 5) {
         const point = this.spawnPoint(game, 150);
@@ -204,7 +211,8 @@ export class Director {
     this.baitSchoolTimer = this.randomRange(
       CONFIG.baitSchool.intervalMinSeconds,
       CONFIG.baitSchool.intervalMaxSeconds,
-    ) * tuning.intervalScale;
+    ) * tuning.intervalScale
+      / Math.max(0.45, game.currentBiome?.spawnMultipliers?.bait ?? 1);
   }
 
   countBaitMembers(game) {
@@ -296,7 +304,7 @@ export class Director {
 
   makeFish(game, relation, initial, forcedSpecies = null) {
     if (isSovereignTier(game.player.tier) && relation === "predator") {
-      relation = this.chooseWeighted(getRelationWeightEntries(game.player.tier));
+      relation = this.chooseWeighted(this.getSpawnWeights(game));
     }
     const playerMass = game.player.mass;
     let ratio;
@@ -312,6 +320,7 @@ export class Director {
       relation,
       game.elapsed,
       game.dayNight?.nightStrength ?? 0,
+      game.currentBiome,
     );
     const mass = Math.max(4.5, playerMass * ratio);
     let point;
@@ -359,24 +368,34 @@ export class Director {
     });
   }
 
-  chooseSpecies(relation, elapsed, nightStrength = 0) {
-    if (relation === "predator" && elapsed > 8 && this.random() < 0.42) return "barracuda";
-    const roll = this.random();
+  chooseSpecies(relation, elapsed, nightStrength = 0, biome = null) {
+    const abyssWeight = biome?.weights?.abyss ?? Number(biome?.id === "abyss");
+    if (relation === "predator" && elapsed > 8 && this.random() < 0.42 + abyssWeight * 0.18) {
+      return "barracuda";
+    }
     const night = Math.max(0, Math.min(1, nightStrength));
     const entries = [
       ["silver", 0.31 - night * 0.08],
       ["bluefin", 0.23 - night * 0.03],
       ["grouper", 0.17 - night * 0.02],
       ["puffer", 0.12 - night * 0.01],
-      ["lantern", 0.1 + night * CONFIG.dayNight.lanternNightWeightBonus],
-      [elapsed > 8 ? "barracuda" : "silver", 0.07],
+      ["lantern", 0.1 + night * CONFIG.dayNight.lanternNightWeightBonus + abyssWeight * 0.12],
+      [elapsed > 8 ? "barracuda" : "silver", 0.07 + abyssWeight * 0.05],
     ];
-    let cursor = roll;
+    let cursor = this.random()
+      * entries.reduce((sum, [, weight]) => sum + Math.max(0, weight), 0);
     for (const [species, weight] of entries) {
       cursor -= weight;
       if (cursor <= 0) return species;
     }
     return entries[entries.length - 1][0];
+  }
+
+  getSpawnWeights(game) {
+    return applyBiomeSpawnMultipliers(
+      getRelationWeightEntries(game.player.tier),
+      game.currentBiome,
+    );
   }
 
   randomWorldPoint(player, minDistance, maxDistance) {

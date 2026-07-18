@@ -531,6 +531,17 @@ input:focus-visible,
   font-weight: 900;
 }
 
+.biome-name {
+  max-width: 15ch;
+  padding: 3px 6px;
+  border-left: 3px solid var(--teal);
+  color: #dcfff5;
+  background: rgba(3, 36, 46, 0.78);
+  font-size: 11px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
 .tier-meter,
 .stamina-track {
   display: block;
@@ -558,19 +569,65 @@ input:focus-visible,
 }
 
 .sovereign-wrap {
-  display: flex;
+  position: absolute;
+  top: 32px;
+  left: 50%;
+  display: grid;
+  width: clamp(430px, 58vw, 660px);
+  min-height: 58px;
+  grid-template-columns: auto minmax(180px, 1fr) auto;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
+  gap: 8px 12px;
+  padding: 7px 9px;
+  border: 2px solid rgba(255, 209, 102, 0.58);
+  color: var(--ink);
+  background: rgba(3, 30, 39, 0.9);
+  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.48);
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.sovereign-summary {
+  display: grid;
+  gap: 1px;
   color: var(--gold);
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 900;
 }
 
 #sovereign-time {
   min-width: 4.5ch;
-  font-size: 24px;
+  font-size: 21px;
   font-variant-numeric: tabular-nums;
+}
+
+.sovereign-contract {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.sovereign-contract strong {
+  color: var(--gold);
+  font-size: 11px;
+}
+
+#sovereign-goal-detail {
+  color: #c7e5df;
+  overflow-wrap: anywhere;
+}
+
+.extract-button {
+  width: 128px;
+  min-height: 40px;
+  padding: 7px 9px;
+  border-color: #fff0a6;
+  color: #3e2900;
+  background: var(--gold);
+  box-shadow: 2px 2px 0 var(--shadow);
+  font-size: 10px;
 }
 
 .icon-button {
@@ -683,6 +740,71 @@ body[data-state="endless"] .tier-meter {
     max(20px, var(--safe-left));
   background: rgba(2, 17, 24, 0.74);
   backdrop-filter: blur(3px);
+}
+
+.build-draft-screen {
+  z-index: 35;
+  background: rgba(2, 15, 22, 0.8);
+}
+
+.build-draft-panel {
+  width: min(900px, 100%);
+}
+
+.build-choice-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.build-choice {
+  display: grid;
+  min-width: 0;
+  min-height: 150px;
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+  border: 2px solid rgba(164, 235, 218, 0.4);
+  border-radius: 4px;
+  color: var(--ink);
+  background: rgba(7, 55, 66, 0.94);
+  box-shadow: 4px 4px 0 var(--shadow);
+  text-align: left;
+  cursor: pointer;
+}
+
+.build-choice:hover,
+.build-choice:focus-visible {
+  border-color: var(--gold);
+  background: rgba(10, 77, 84, 0.96);
+}
+
+.build-choice:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--shadow);
+}
+
+.build-choice__marker {
+  width: max-content;
+  padding: 3px 6px;
+  color: #3e2900;
+  background: var(--gold);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.build-choice strong {
+  color: #eafff8;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.build-choice > span:last-child {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .dialog-panel {
@@ -1005,6 +1127,33 @@ body[data-state="endless"] .tier-meter {
 .setting-row--danger {
   align-items: center;
   border-color: rgba(255, 116, 95, 0.35);
+}
+
+.setting-row--telemetry {
+  cursor: default;
+}
+
+.telemetry-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+#telemetry-count {
+  color: var(--gold);
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.telemetry-actions .button {
+  width: auto;
+  min-height: 38px;
+  padding: 7px 10px;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .button--danger {
@@ -1524,6 +1673,21 @@ body.high-contrast .ocean-vignette {
   #result-score {
     font-size: 42px;
   }
+
+  .sovereign-wrap {
+    top: 28px;
+    min-height: 52px;
+  }
+
+  .build-choice {
+    min-height: 124px;
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .build-choice strong {
+    font-size: 15px;
+  }
 }
 
 @media (max-height: 360px) and (orientation: landscape) {
@@ -1564,6 +1728,46 @@ body.high-contrast .ocean-vignette {
 
   .tier-cluster {
     width: 210px;
+  }
+
+  .sovereign-wrap {
+    width: min(430px, calc(100vw - 120px));
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .sovereign-contract {
+    font-size: 9px;
+  }
+
+  .extract-button {
+    width: 100px;
+    min-height: 36px;
+    padding: 5px 6px;
+    font-size: 9px;
+  }
+
+  .build-choice-list {
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .build-choice {
+    min-height: 112px;
+    padding: 9px;
+  }
+
+  .build-choice strong {
+    font-size: 13px;
+  }
+
+  .build-choice > span:last-child {
+    font-size: 10px;
+  }
+
+  .setting-row--telemetry {
+    grid-column: 1 / -1;
   }
 
   .settings-list {

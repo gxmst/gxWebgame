@@ -141,7 +141,7 @@ export class WorldRenderer {
   /**
    * depthT 0 = surface (bright), 1 = abyss (dark). Driven by camera Y.
    */
-  draw(ctx, camera, time, dayNight = null) {
+  draw(ctx, camera, time, dayNight = null, biome = null) {
     const width = camera.viewportWidth;
     const height = camera.viewportHeight;
     const L = CONFIG.lighting;
@@ -253,6 +253,15 @@ export class WorldRenderer {
     }
 
     this.drawDayNightOverlay(ctx, width, height, dayNight);
+
+    for (const layer of biome?.tintLayers ?? []) {
+      ctx.save();
+      ctx.globalCompositeOperation = layer.id === "coral" ? "screen" : "multiply";
+      ctx.globalAlpha = clamp(layer.alpha, 0, 0.3);
+      ctx.fillStyle = layer.color;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
 
     // Depth veil: stronger in abyss, heavier toward bottom of screen
     const veil = ctx.createLinearGradient(0, 0, 0, height);

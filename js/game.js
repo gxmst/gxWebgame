@@ -9,7 +9,7 @@ import {
   wrap,
   wrapDelta,
 } from "./math.js";
-import { Camera } from "./camera.js?v=5";
+import { Camera } from "./camera.js";
 import {
   RELATION,
   canEat,
@@ -55,7 +55,6 @@ import {
 } from "./cosmetics.js";
 import {
   getMaxChasers,
-  getRelationWeights,
   getSovereignHazardTuning,
   isSovereignTier,
 } from "./difficulty.js";
@@ -65,17 +64,33 @@ import {
   getNetGeometry,
   getNetTravelLimit,
 } from "./hazards.js";
-
-const STATE = Object.freeze({
-  TITLE: "title",
-  PLAYING: "playing",
-  ENDLESS: "endless",
-  DYING: "dying",
-  PAUSED: "paused",
-  SETTINGS: "settings",
-  SHOP: "shop",
-  RESULTS: "results",
-});
+import {
+  STATE,
+  getMusicScene,
+  isHudState,
+  isRunState,
+  isSimulationState,
+} from "./game-state.js";
+import {
+  createRunBuildState,
+  ensureRunBuildOffer,
+  getRunBuildEffects,
+  selectRunBuild,
+} from "./run-builds.js";
+import {
+  createSovereignGoalState,
+  getSovereignGoalProgress,
+  tryExtractSovereignGoal,
+  updateSovereignGoal,
+} from "./sovereign-goals.js";
+import { getBiomeAtY } from "./biomes.js";
+import {
+  TELEMETRY_MAX_RUNS,
+  appendTelemetry,
+  exportTelemetry,
+  loadTelemetry,
+  saveTelemetry,
+} from "./telemetry.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -106,12 +121,22 @@ class Game {
     this.tierToastTimer = 0;
     this.runCommitted = false;
     this.runWasVictory = false;
+    this.runExtracted = false;
     this.victoryElapsedMs = null;
     this.endlessElapsed = 0;
     this.endlessNetTimer = CONFIG.difficulty.sovereignHazards.initialNetDelaySeconds;
     this.netReplenishDebt = 0;
     this.tutorialStep = 0;
     this.shopTab = "upgrades";
+    this.runBuildState = createRunBuildState(0);
+    this.runBuildEffects = getRunBuildEffects(this.runBuildState);
+    this.buildDraftReturnState = STATE.PLAYING;
+    this.pendingBuildTier = null;
+    this.sovereignGoal = createSovereignGoalState();
+    this.sovereignGoalProgress = getSovereignGoalProgress(this.sovereignGoal);
+    this.currentBiome = getBiomeAtY(CONFIG.world.height * CONFIG.biomes.startYRatio, CONFIG.world.height);
+    this.biomeToastCooldown = 0;
+    this.telemetry = loadTelemetry();
     this.clearProgressConfirmUntil = 0;
     this.deathReason = "";
     this.score = 0;
@@ -126,7 +151,8 @@ class Game {
     this.trailTimer = 0;
     this.baitFeastCount = 0;
     this.baitFeastTimer = 0;
-    this.debug = new URLSearchParams(location.search).get("debug") === "1";
+    this.debugAllowed = new URLSearchParams(location.search).get("debug") === "1";
+    this.debug = this.debugAllowed;
     this.debugFps = 60;
     this.frameSamples = [];
     this.autoQuality = new AutoQualityController({ maxDpr: CONFIG.viewport.maxDpr });
@@ -164,7 +190,7 @@ class Game {
       cameraProvider: () => this.camera,
       playerProvider: () => this.player,
       touchModeProvider: () => this.save.settings.touchMode,
-      enabledProvider: () => [STATE.PLAYING, STATE.ENDLESS].includes(this.state),
+      enabledProvider: () => isSimulationState(this.state),
     });
 
     this.bindUi();
@@ -185,12 +211,14 @@ class Game {
       "shop-speed-level", "shop-speed-cost", "shop-speed-buy",
       "shop-stamina-level", "shop-stamina-cost", "shop-stamina-buy",
       "shop-mouth-level", "shop-mouth-cost", "shop-mouth-buy",
-      "hud", "score-value", "combo-wrap", "combo-value", "tier-name", "tier-progress",
-      "sovereign-wrap", "sovereign-time", "pause-button", "stamina-fill", "dash-button",
+      "hud", "score-value", "combo-wrap", "combo-value", "tier-name", "tier-progress", "biome-name",
+      "sovereign-wrap", "sovereign-time", "sovereign-goal-label", "sovereign-goal-detail", "extract-button",
+      "pause-button", "stamina-fill", "dash-button",
+      "build-draft-screen", "build-draft-tier", "build-choice-list",
       "pause-screen", "resume-button", "pause-settings-button", "quit-button",
       "settings-screen", "volume-input", "mute-toggle", "music-toggle", "vibration-toggle", "shake-toggle",
       "touch-mode", "quality-select", "contrast-toggle", "settings-back-button",
-      "clear-progress-button", "clear-progress-status",
+      "clear-progress-button", "clear-progress-status", "telemetry-count", "export-telemetry-button", "export-telemetry-status",
       "results-screen", "result-title", "result-reason", "result-score", "result-tier",
       "result-time", "result-sovereign-stat", "result-sovereign-time", "result-combo", "result-coins", "result-pearls", "result-record", "retry-button", "results-home-button",
       "rotate-overlay", "tier-toast", "message-toast", "debug-panel",
@@ -221,30 +249,29 @@ class Game {
     window.addEventListener("orientationchange", () => window.setTimeout(() => this.resize(), 80));
     window.addEventListener("blur", () => {
       this.audio.setBackgrounded(true);
-      if ([STATE.PLAYING, STATE.ENDLESS].includes(this.state)) this.pause();
+      if (isSimulationState(this.state)) this.pause();
     });
     window.addEventListener("focus", () => this.audio.setBackgrounded(document.hidden));
     document.addEventListener("visibilitychange", () => {
       this.audio.setBackgrounded(document.hidden);
-      if (document.hidden && [STATE.PLAYING, STATE.ENDLESS].includes(this.state)) this.pause();
+      if (document.hidden && isSimulationState(this.state)) this.pause();
     });
     window.addEventListener("pageshow", () => this.audio.setBackgrounded(document.hidden));
     window.addEventListener("pagehide", (event) => {
       const pausedSettings = this.state === STATE.SETTINGS
         && this.returnFromSettings === STATE.PAUSED
-        && [STATE.PLAYING, STATE.ENDLESS].includes(this.previousState);
+        && isSimulationState(this.previousState);
       if (!event.persisted && this.elapsed > 0 && !this.runCommitted
-        && ([STATE.PLAYING, STATE.ENDLESS, STATE.PAUSED].includes(this.state)
-          || pausedSettings)) {
+        && (isRunState(this.state) || pausedSettings)) {
         this.commitRun(this.runWasVictory);
       }
     });
     window.addEventListener("keydown", (event) => {
-      if (event.code === "Backquote") {
+      if (event.code === "Backquote" && this.debugAllowed) {
         this.debug = !this.debug;
         this.dom.debugPanel.hidden = !this.debug;
       }
-      if (!this.debug || ![STATE.PLAYING, STATE.ENDLESS].includes(this.state)) return;
+      if (!this.debug || !isSimulationState(this.state)) return;
       if (event.code === "BracketRight") this.debugTier(1);
       if (event.code === "BracketLeft") this.debugTier(-1);
       if (event.code === "KeyI") this.player.invulnerable = this.player.invulnerable > 20 ? 0 : 999;
@@ -262,6 +289,20 @@ class Game {
         this.endlessElapsed += 60;
         this.elapsed += 60;
         this.endlessNetTimer = 0;
+      }
+      if (event.code === "KeyC" && this.state === STATE.ENDLESS) {
+        const progress = this.sovereignGoalProgress
+          ?? getSovereignGoalProgress(this.sovereignGoal);
+        this.endlessElapsed += Math.max(0, progress.target.elapsed - progress.values.elapsed);
+        this.elapsed += Math.max(0, progress.target.elapsed - progress.values.elapsed);
+        this.metrics.eaten += Math.max(0, progress.target.eaten - progress.values.eaten);
+        this.score += Math.max(0, progress.target.score - progress.values.score);
+        this.metrics.netsDodged += Math.max(
+          0,
+          progress.target.netsDodged - progress.values.netsDodged,
+        );
+        this.updateEndless(0);
+        this.updateHud();
       }
     });
 
@@ -281,12 +322,18 @@ class Game {
     click(this.dom.quitButton, () => this.quitRun());
     click(this.dom.settingsBackButton, () => this.closeSettings());
     click(this.dom.clearProgressButton, () => this.requestClearProgress());
+    click(this.dom.exportTelemetryButton, () => this.downloadTelemetry());
+    click(this.dom.extractButton, () => this.extractSovereignRun());
     click(this.dom.retryButton, () => this.startGame());
     click(this.dom.resultsHomeButton, () => this.goHome());
     this.dom.shopCosmeticsPanel?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-cosmetic-kind][data-cosmetic-id]");
       if (!button) return;
       this.activateCosmetic(button.dataset.cosmeticKind, button.dataset.cosmeticId);
+    });
+    this.dom.buildChoiceList?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-build-choice]");
+      if (button) this.chooseRunBuild(button.dataset.buildChoice);
     });
 
     this.dom.volumeInput?.addEventListener("input", () => {
@@ -309,6 +356,10 @@ class Game {
     });
     this.dom.qualitySelect?.addEventListener("change", () => {
       this.save.settings.quality = this.dom.qualitySelect.value;
+      if (this.elapsed > 0 && !this.runCommitted) {
+        this.metrics.qualityChanges++;
+        this.metrics.qualityFinal = this.save.settings.quality;
+      }
       if (this.save.settings.quality === "auto") this.autoQuality.reset();
       this.effects.setQuality(this.save.settings.quality);
       saveSave(this.save);
@@ -340,6 +391,7 @@ class Game {
     this.updateTitleStats();
     this.updateAppearanceButton();
     this.updateShopUi();
+    this.updateTelemetryUi();
   }
 
   applyContrast() {
@@ -360,9 +412,20 @@ class Game {
       edgeEaten: 0,
       netCaptured: 0,
       netReplenished: 0,
+      netsDodged: 0,
       dashes: 0,
       longestNoPrey: 0,
       deaths: [],
+      biomeSeconds: {},
+      buildChoices: [],
+      sovereignReachedAt: null,
+      sovereignStartEaten: 0,
+      sovereignStartScore: 0,
+      qualityChanges: 0,
+      qualityFinal: this.save?.settings?.quality ?? "auto",
+      fpsTotal: 0,
+      fpsSamples: 0,
+      minimumFps: 0,
     };
   }
 
@@ -384,15 +447,19 @@ class Game {
     this.portraitBlocked = this.cssWidth < this.cssHeight;
     if (this.dom.rotateOverlay) this.dom.rotateOverlay.hidden = !this.portraitBlocked;
     if (this.portraitBlocked && !wasBlocked) this.input?.reset();
-    if (!this.portraitBlocked && wasBlocked && [STATE.PLAYING, STATE.ENDLESS].includes(this.state)) {
+    if (!this.portraitBlocked && wasBlocked && isSimulationState(this.state)) {
       this.resumeCountdown = 2.4;
     }
   }
 
   buildTitleScene() {
+    const startY = CONFIG.world.height * CONFIG.biomes.startYRatio;
+    this.runBuildState = createRunBuildState(0);
+    this.runBuildEffects = getRunBuildEffects(this.runBuildState);
+    this.pendingBuildTier = null;
     this.player = createPlayer(
       CONFIG.world.width / 2,
-      CONFIG.world.height / 2,
+      startY,
       this.save.selectedSkin,
       this.save.selectedAccessory,
     );
@@ -415,6 +482,7 @@ class Game {
     this.camera.setTarget(this.titleCameraTarget);
     this.fish = [];
     this.specials = [];
+    this.currentBiome = getBiomeAtY(this.player.y, CONFIG.world.height);
     this.director.reset(this.getSeed());
     this.director.populateInitial(this);
     this.environment = createEnvironment(CONFIG.world, this.director.random);
@@ -422,9 +490,16 @@ class Game {
 
   startGame() {
     const seed = this.getSeed();
+    const startY = CONFIG.world.height * CONFIG.biomes.startYRatio;
+    this.runBuildState = createRunBuildState(seed);
+    this.runBuildEffects = getRunBuildEffects(this.runBuildState);
+    this.pendingBuildTier = null;
+    this.buildDraftReturnState = STATE.PLAYING;
+    this.sovereignGoal = createSovereignGoalState();
+    this.sovereignGoalProgress = getSovereignGoalProgress(this.sovereignGoal);
     this.player = createPlayer(
       CONFIG.world.width / 2,
-      CONFIG.world.height / 2,
+      startY,
       this.save.selectedSkin,
       this.save.selectedAccessory,
     );
@@ -440,6 +515,8 @@ class Game {
     this.camera.setTarget(this.player);
     this.fish = [];
     this.specials = [];
+    this.currentBiome = getBiomeAtY(this.player.y, CONFIG.world.height);
+    this.biomeToastCooldown = 0;
     this.effects.clear();
     this.director.reset(seed);
     this.director.populateInitial(this);
@@ -459,6 +536,7 @@ class Game {
     this.baitFeastTimer = 0;
     this.runCommitted = false;
     this.runWasVictory = false;
+    this.runExtracted = false;
     this.victoryElapsedMs = null;
     this.endlessElapsed = 0;
     this.endlessNetTimer = CONFIG.difficulty.sovereignHazards.initialNetDelaySeconds;
@@ -469,6 +547,7 @@ class Game {
     this.portraitBlocked = false;
     this.metrics = this.createMetrics();
     this.metrics.seed = seed;
+    this.metrics.biomeSeconds[this.currentBiome.id] = 0;
     this.input.reset();
     this.resize();
     this.showState(STATE.PLAYING);
@@ -518,10 +597,20 @@ class Game {
     const average = this.frameSamples.reduce((sum, value) => sum + value, 0) / this.frameSamples.length;
     this.debugFps = average > 0 ? Math.round(1 / average) : 60;
     const active = this.save.settings.quality === "auto"
-      && [STATE.PLAYING, STATE.ENDLESS].includes(this.state)
+      && isSimulationState(this.state)
       && !this.portraitBlocked;
+    if (isSimulationState(this.state) && !this.portraitBlocked && frame > 0) {
+      const instantaneousFps = Math.min(240, 1 / frame);
+      this.metrics.fpsTotal += instantaneousFps;
+      this.metrics.fpsSamples++;
+      this.metrics.minimumFps = this.metrics.minimumFps > 0
+        ? Math.min(this.metrics.minimumFps, instantaneousFps)
+        : instantaneousFps;
+    }
     const qualityChange = this.autoQuality.update(frame, this.debugFps, active);
     if (qualityChange) {
+      this.metrics.qualityChanges++;
+      this.metrics.qualityFinal = `${this.save.settings.quality}:${qualityChange.dprCap.toFixed(2)}`;
       this.resize();
       this.showMessage(
         qualityChange.direction === "down" ? "已自动降低渲染精度，保持操作流畅" : "帧率稳定，已恢复更清晰画面",
@@ -548,7 +637,7 @@ class Game {
 
     if (this.input.consumePause()) {
       if (this.state === STATE.PAUSED) this.resume();
-      else if ([STATE.PLAYING, STATE.ENDLESS].includes(this.state)) this.pause();
+      else if (isSimulationState(this.state)) this.pause();
     }
 
     if (this.resumeCountdown > 0) {
@@ -574,7 +663,7 @@ class Game {
       return;
     }
 
-    if (![STATE.PLAYING, STATE.ENDLESS].includes(this.state)) return;
+    if (!isSimulationState(this.state)) return;
 
     this.elapsed += dt;
     this.updateDayNight();
@@ -585,6 +674,12 @@ class Game {
     if (this.baitFeastTimer <= 0) this.baitFeastCount = 0;
     this.maxCombo = Math.max(this.maxCombo, this.combo.count);
     this.updatePlayer(dt);
+    if (!isSimulationState(this.state)) {
+      this.updateHud();
+      this.updateDebug();
+      return;
+    }
+    this.updateBiome(dt);
     this.updateFish(dt, false);
     this.updateSpecials(dt);
     this.resolveCollisions();
@@ -599,6 +694,21 @@ class Game {
     this.metrics.longestNoPrey = Math.max(this.metrics.longestNoPrey, this.director.noPreyTime);
     this.updateHud();
     this.updateDebug();
+  }
+
+  updateBiome(dt) {
+    this.biomeToastCooldown = Math.max(0, this.biomeToastCooldown - dt);
+    const previousId = this.currentBiome?.id;
+    this.currentBiome = getBiomeAtY(this.player.y, CONFIG.world.height);
+    this.metrics.biomeSeconds[this.currentBiome.id] =
+      (this.metrics.biomeSeconds[this.currentBiome.id] ?? 0) + dt;
+    if (previousId && previousId !== this.currentBiome.id && this.biomeToastCooldown <= 0) {
+      this.showMessage(
+        `${this.currentBiome.name} · ${this.currentBiome.arrivalMessage}`,
+        3,
+      );
+      this.biomeToastCooldown = 2.5;
+    }
   }
 
   updateCameraMode() {
@@ -745,6 +855,7 @@ class Game {
     const newTier = getTier(player.displayMass);
     if (newTier.index > player.tier) this.onTierUp(newTier);
     player.tier = newTier.index;
+    if (!isSimulationState(this.state)) return;
 
     const input = this.input.sample();
     if (this.tutorialStep === 1 && input.moveStrength > 0.2) {
@@ -783,7 +894,11 @@ class Game {
     player.dashBoostTime = Math.max(0, (player.dashBoostTime || 0) - dt);
     if (player.dashing && (!input.dashHeld && player.dashMinTime <= 0)) player.dashing = false;
     if (player.dashing) {
-      player.stamina = Math.max(0, player.stamina - CONFIG.dash.drainPerSecond * dt);
+      player.stamina = Math.max(
+        0,
+        player.stamina
+          - CONFIG.dash.drainPerSecond * this.runBuildEffects.dashDrainMultiplier * dt,
+      );
       player.staminaDelay = CONFIG.dash.recoveryDelay;
       if (player.stamina <= 0) {
         player.dashing = false;
@@ -795,7 +910,11 @@ class Game {
       if (player.staminaDelay <= 0) {
         player.stamina = Math.min(
           this.getMaxStamina(),
-          player.stamina + CONFIG.dash.recoveryPerSecond * this.upgradeEffects.staminaRecoveryMultiplier * dt,
+          player.stamina
+            + CONFIG.dash.recoveryPerSecond
+              * this.upgradeEffects.staminaRecoveryMultiplier
+              * this.runBuildEffects.staminaRecoveryMultiplier
+              * dt,
         );
       }
     }
@@ -813,8 +932,13 @@ class Game {
       const turnRate = CONFIG.movement.turnRateDeg * Math.PI / 180 * turnScale / massInertia;
       player.angle = moveAngleTowards(player.angle, targetAngle, turnRate * dt);
 
-      let speed = getMoveSpeed(player.displayMass) * input.moveStrength * this.upgradeEffects.speedMultiplier;
-      if (player.dashing) speed *= CONFIG.dash.speedMultiplier;
+      let speed = getMoveSpeed(player.displayMass)
+        * input.moveStrength
+        * this.upgradeEffects.speedMultiplier
+        * this.runBuildEffects.speedMultiplier;
+      if (player.dashing) {
+        speed *= CONFIG.dash.speedMultiplier * this.runBuildEffects.dashSpeedMultiplier;
+      }
       if ((player.dashBoostTime || 0) > 0) speed *= CONFIG.dash.boostSpeedMultiplier;
       if (player.stunned > 0) speed *= CONFIG.hazards.jellyfishSpeedScale;
       speed *= player.environmentSlowScale ?? 1;
@@ -1174,7 +1298,13 @@ class Game {
               this.camera.getVisibleWorldBounds().height,
             );
           }
-          if (item.travelDistance >= item.maxTravelDistance) item.active = false;
+          if (item.travelDistance >= item.maxTravelDistance) {
+            item.active = false;
+            if (!item.dodgeCounted && this.state === STATE.ENDLESS) {
+              item.dodgeCounted = true;
+              this.metrics.netsDodged++;
+            }
+          }
         }
       }
     }
@@ -1306,7 +1436,9 @@ class Game {
 
   mouthCircle(entity) {
     const bodyRadius = getVisualRadius(entity.displayMass ?? entity.mass ?? 10) * CONFIG.mass.collisionRadiusScale;
-    const mouthMultiplier = entity === this.player ? this.upgradeEffects.mouthMultiplier : 1;
+    const mouthMultiplier = entity === this.player
+      ? this.upgradeEffects.mouthMultiplier * this.runBuildEffects.mouthMultiplier
+      : 1;
     return {
       x: entity.x + Math.cos(entity.angle) * bodyRadius * CONFIG.mass.mouthOffsetScale,
       y: entity.y + Math.sin(entity.angle) * bodyRadius * CONFIG.mass.mouthOffsetScale,
@@ -1346,14 +1478,18 @@ class Game {
     const species = SPECIES[fish.species] || SPECIES.silver;
     const preyRatio = fish.mass / this.player.mass;
     const nextCombo = updateCombo(this.combo, 0, { ate: true, preyRatio });
+    nextCombo.timeRemaining += this.runBuildEffects.comboWindowBonusSeconds;
     const score = getEatScore(this.player.mass, fish.mass, {
       comboMultiplier: nextCombo.multiplier,
       speciesScore: species.score,
-      environmentMultiplier: this.dayNight.scoreMultiplier,
+      environmentMultiplier: this.dayNight.scoreMultiplier
+        * this.currentBiome.rewardMultiplier
+        * this.runBuildEffects.scoreMultiplier,
     });
     this.combo = nextCombo;
     this.score += score;
-    const massGain = getMassGain(fish.mass, species.nutrition);
+    const massGain = getMassGain(fish.mass, species.nutrition)
+      * this.runBuildEffects.massGainMultiplier;
     const sovereignThreshold = CONFIG.tiers.at(-1).threshold;
     this.player.mass = this.state === STATE.ENDLESS
       || this.player.mass + massGain >= sovereignThreshold
@@ -1500,7 +1636,72 @@ class Game {
     this.showTierToast(`${tier.id} · ${tier.name}`);
     if (tier.index === 3) this.showMessage("水母不可食，紫色电光要避开", 2.6);
     if (tier.index === 5) this.showMessage("水雷已出现，变大也不能大意", 2.8);
-    if (tier.index === CONFIG.tiers.length && this.state === STATE.PLAYING) {
+    const openedDraft = this.openRunBuildDraft(tier);
+    if (!openedDraft && tier.index === CONFIG.tiers.length && this.state === STATE.PLAYING) {
+      this.beginSovereign();
+    }
+  }
+
+  openRunBuildDraft(tier) {
+    const offer = ensureRunBuildOffer(this.runBuildState, tier.id);
+    if (!offer.success || offer.state.selected[tier.id]) return false;
+    this.runBuildState = offer.state;
+    this.pendingBuildTier = tier.id;
+    this.buildDraftReturnState = this.state;
+    if (this.dom.buildDraftTier) {
+      this.dom.buildDraftTier.textContent = `${tier.id} · ${tier.name}`;
+    }
+    if (this.dom.buildChoiceList) {
+      const fragment = document.createDocumentFragment();
+      for (const [index, choice] of offer.choices.entries()) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "build-choice";
+        button.dataset.buildChoice = choice.id;
+
+        const marker = document.createElement("span");
+        marker.className = "build-choice__marker";
+        marker.textContent = String(index + 1).padStart(2, "0");
+        marker.setAttribute("aria-hidden", "true");
+        const name = document.createElement("strong");
+        name.textContent = choice.name;
+        const description = document.createElement("span");
+        description.textContent = choice.description;
+        button.append(marker, name, description);
+        fragment.append(button);
+      }
+      this.dom.buildChoiceList.replaceChildren(fragment);
+    }
+    this.input.reset();
+    this.showState(STATE.UPGRADE_DRAFT);
+    this.dom.buildChoiceList?.querySelector("button")?.focus({ preventScroll: true });
+    return true;
+  }
+
+  chooseRunBuild(abilityId) {
+    if (this.state !== STATE.UPGRADE_DRAFT || !this.pendingBuildTier) return;
+    const previousMaxStamina = this.getMaxStamina();
+    const result = selectRunBuild(this.runBuildState, this.pendingBuildTier, abilityId);
+    if (!result.success) return;
+    const tierId = this.pendingBuildTier;
+    this.runBuildState = result.state;
+    this.runBuildEffects = result.effects;
+    const nextMaxStamina = this.getMaxStamina();
+    this.player.stamina = clamp(
+      this.player.stamina + Math.max(0, nextMaxStamina - previousMaxStamina),
+      0,
+      nextMaxStamina,
+    );
+    this.metrics.buildChoices.push({
+      tier: tierId,
+      id: result.selected.id,
+      time: this.elapsed,
+    });
+    this.pendingBuildTier = null;
+    this.showState(this.buildDraftReturnState);
+    this.canvas.focus({ preventScroll: true });
+    this.showMessage(`已获得 · ${result.selected.name}`, 2.2);
+    if (tierId === CONFIG.tiers.at(-1).id && this.state === STATE.PLAYING) {
       this.beginSovereign();
     }
   }
@@ -1518,15 +1719,21 @@ class Game {
       this.player.invulnerable,
       CONFIG.difficulty.sovereignHazards.transitionInvulnerabilitySeconds,
     );
+    this.sovereignGoal = createSovereignGoalState();
+    this.sovereignGoalProgress = getSovereignGoalProgress(this.sovereignGoal);
+    this.metrics.sovereignReachedAt = this.elapsed;
+    this.metrics.sovereignStartEaten = this.metrics.eaten;
+    this.metrics.sovereignStartScore = this.score;
+    this.metrics.netsDodged = 0;
     for (const fish of this.fish) {
       if (getRelation(this.player.mass, fish.mass) === RELATION.THREAT) {
         fish.state = "wander";
         fish.stateTime = 0;
       }
     }
-    this.state = STATE.ENDLESS;
-    this.showMessage("你已成为海洋霸主 · 自由巡游开始", 3.4);
-    document.body.dataset.state = this.state;
+    this.showState(STATE.ENDLESS);
+    this.updateHud();
+    this.showMessage("海洋霸主合同已开启 · 完成目标后可返航", 3.4);
   }
 
   spawnSovereignNet() {
@@ -1559,6 +1766,35 @@ class Game {
       if (this.activeNetCount() < hazard.maxActiveNets) this.spawnSovereignNet();
       this.endlessNetTimer = hazard.netIntervalSeconds;
     }
+    const goalUpdate = updateSovereignGoal(this.sovereignGoal, {
+      elapsed: this.endlessElapsed,
+      eaten: this.metrics.eaten - this.metrics.sovereignStartEaten,
+      score: this.score - this.metrics.sovereignStartScore,
+      netsDodged: this.metrics.netsDodged,
+    });
+    this.sovereignGoal = goalUpdate.state;
+    this.sovereignGoalProgress = goalUpdate.progress;
+    if (goalUpdate.completed) {
+      this.audio.play("tier");
+      this.showMessage(
+        `合同阶段 ${goalUpdate.completedStage} 完成 · 可返航或继续冲分`,
+        3.2,
+      );
+    }
+  }
+
+  extractSovereignRun() {
+    if (this.state !== STATE.ENDLESS) return;
+    const extraction = tryExtractSovereignGoal(this.sovereignGoal);
+    if (!extraction.success) {
+      this.showMessage("完成当前合同阶段后才能返航", 2.2);
+      return;
+    }
+    this.sovereignGoal = extraction.state;
+    this.runExtracted = true;
+    this.player.dashing = false;
+    this.deathReason = "合同完成 · 主动返航";
+    this.showResults();
   }
 
   die(reason) {
@@ -1589,7 +1825,11 @@ class Game {
     const wasVictory = this.runWasVictory;
     const records = this.getRunRecords(wasVictory);
     const earned = this.commitRun(wasVictory);
-    if (this.dom.resultTitle) this.dom.resultTitle.textContent = wasVictory ? "霸主远征结束" : "本局结束";
+    if (this.dom.resultTitle) {
+      this.dom.resultTitle.textContent = this.runExtracted
+        ? "满载返航"
+        : wasVictory ? "霸主远征结束" : "本局结束";
+    }
     if (this.dom.resultReason) this.dom.resultReason.textContent = this.deathReason || "完成挑战";
     if (this.dom.resultScore) this.dom.resultScore.textContent = formatNumber(this.score);
     if (this.dom.resultTier) this.dom.resultTier.textContent = getTier(this.player.displayMass).name;
@@ -1622,7 +1862,41 @@ class Game {
       collectedPearls: this.collectedPearls,
     }));
     saveSave(this.save);
+    this.telemetry = appendTelemetry(this.telemetry, {
+      seed: this.metrics.seed,
+      recordedAt: new Date().toISOString(),
+      score: this.score,
+      reachedTier: getTier(this.player.displayMass).id,
+      tierTimes: this.metrics.tierTimes,
+      deathReason: this.deathReason || (this.runExtracted ? "合同完成 · 主动返航" : "页面离开"),
+      extracted: this.runExtracted,
+      duration: this.elapsed,
+      sovereign: this.runWasVictory,
+      sovereignDuration: this.endlessElapsed,
+      sovereignReachedAt: this.metrics.sovereignReachedAt,
+      eaten: this.metrics.eaten,
+      edgeEaten: this.metrics.edgeEaten,
+      noPrey: this.metrics.longestNoPrey,
+      netCaptured: this.metrics.netCaptured,
+      netReplenished: this.metrics.netReplenished,
+      netsDodged: this.metrics.netsDodged,
+      averageFps: this.metrics.fpsSamples > 0
+        ? this.metrics.fpsTotal / this.metrics.fpsSamples
+        : 0,
+      minimumFps: this.metrics.minimumFps,
+      quality: {
+        selected: this.save.settings.quality,
+        final: this.metrics.qualityFinal,
+        changes: this.metrics.qualityChanges,
+      },
+      biomeSeconds: this.metrics.biomeSeconds,
+      buildChoices: this.metrics.buildChoices,
+      contractStages: this.sovereignGoal.completedStages,
+      viewport: { width: this.cssWidth, height: this.cssHeight, dpr: this.dpr },
+    });
+    saveTelemetry(this.telemetry);
     this.runCommitted = true;
+    this.updateTelemetryUi();
     this.updateTitleStats();
     return {
       coins: this.save.upgrades.coins - beforeCoins,
@@ -1641,7 +1915,7 @@ class Game {
   }
 
   pause() {
-    if (![STATE.PLAYING, STATE.ENDLESS].includes(this.state)) return;
+    if (!isSimulationState(this.state)) return;
     this.previousState = this.state;
     this.input.reset();
     this.showState(STATE.PAUSED);
@@ -1708,7 +1982,9 @@ class Game {
   }
 
   getMaxStamina() {
-    return CONFIG.dash.maxStamina + this.upgradeEffects.staminaBonus;
+    return CONFIG.dash.maxStamina
+      + this.upgradeEffects.staminaBonus
+      + this.runBuildEffects.staminaBonus;
   }
 
   updateShopUi() {
@@ -1764,6 +2040,35 @@ class Game {
     if (this.dom.clearProgressStatus) this.dom.clearProgressStatus.textContent = status;
   }
 
+  updateTelemetryUi(status = "仅保存在此设备，不会上传") {
+    if (this.dom.telemetryCount) {
+      this.dom.telemetryCount.textContent = `${this.telemetry.length} / ${TELEMETRY_MAX_RUNS} 局`;
+    }
+    if (this.dom.exportTelemetryStatus) {
+      this.dom.exportTelemetryStatus.textContent = status;
+    }
+    if (this.dom.exportTelemetryButton) {
+      this.dom.exportTelemetryButton.disabled = this.telemetry.length === 0;
+    }
+  }
+
+  downloadTelemetry() {
+    if (this.telemetry.length === 0) {
+      this.updateTelemetryUi("还没有可导出的试玩记录");
+      return;
+    }
+    const blob = new Blob([exportTelemetry(this.telemetry)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `gxwebgame-playtests-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    this.updateTelemetryUi(`已导出 ${this.telemetry.length} 局 JSON`);
+  }
+
   quitRun() {
     if (this.elapsed <= 0) {
       this.goHome();
@@ -1783,9 +2088,11 @@ class Game {
 
   showState(state) {
     this.state = state;
-    this.audio.setScene(this.getMusicScene(state));
+    this.audio.setScene(getMusicScene(state, {
+      returnFromSettings: this.returnFromSettings,
+    }));
     document.body.dataset.state = state;
-    if (![STATE.PLAYING, STATE.ENDLESS].includes(state)) {
+    if (!isSimulationState(state)) {
       this.toastTimer = 0;
       this.tierToastTimer = 0;
       if (this.dom.messageToast) {
@@ -1800,30 +2107,24 @@ class Game {
     const map = {
       [STATE.TITLE]: this.dom.titleScreen,
       [STATE.PAUSED]: this.dom.pauseScreen,
+      [STATE.UPGRADE_DRAFT]: this.dom.buildDraftScreen,
       [STATE.SETTINGS]: this.dom.settingsScreen,
       [STATE.SHOP]: this.dom.shopScreen,
       [STATE.RESULTS]: this.dom.resultsScreen,
     };
-    for (const screen of [this.dom.titleScreen, this.dom.shopScreen, this.dom.pauseScreen, this.dom.settingsScreen, this.dom.resultsScreen]) {
+    for (const screen of [
+      this.dom.titleScreen,
+      this.dom.shopScreen,
+      this.dom.pauseScreen,
+      this.dom.settingsScreen,
+      this.dom.resultsScreen,
+      this.dom.buildDraftScreen,
+    ]) {
       if (screen) screen.hidden = screen !== map[state];
     }
-    if (this.dom.hud) this.dom.hud.hidden = ![STATE.PLAYING, STATE.ENDLESS, STATE.DYING].includes(state);
-    if (this.dom.dashButton) this.dom.dashButton.hidden = ![STATE.PLAYING, STATE.ENDLESS].includes(state);
+    if (this.dom.hud) this.dom.hud.hidden = !isHudState(state);
+    if (this.dom.dashButton) this.dom.dashButton.hidden = !isSimulationState(state);
     if (this.dom.debugPanel) this.dom.debugPanel.hidden = !this.debug;
-  }
-
-  getMusicScene(state) {
-    if (state === STATE.SETTINGS) {
-      return this.returnFromSettings === STATE.PAUSED ? "paused" : "settings";
-    }
-    if ([STATE.PLAYING, STATE.ENDLESS].includes(state)) return "playing";
-    return {
-      [STATE.TITLE]: "title",
-      [STATE.SHOP]: "shop",
-      [STATE.PAUSED]: "paused",
-      [STATE.DYING]: "dying",
-      [STATE.RESULTS]: "results",
-    }[state] || "title";
   }
 
   activateCosmetic(kind, id) {
@@ -1962,6 +2263,7 @@ class Game {
     if (this.dom.comboValue) this.dom.comboValue.textContent = `x${this.combo.multiplier.toFixed(2)}`;
     const tier = getTier(this.player.displayMass);
     if (this.dom.tierName) this.dom.tierName.textContent = `${tier.id} ${tier.name}`;
+    if (this.dom.biomeName) this.dom.biomeName.textContent = this.currentBiome.name;
     const next = CONFIG.tiers[tier.index] || tier;
     const progress = next === tier ? 1 : clamp((this.player.displayMass - tier.threshold) / (next.threshold - tier.threshold), 0, 1);
     if (this.dom.tierProgress) this.dom.tierProgress.style.width = `${progress * 100}%`;
@@ -1976,13 +2278,36 @@ class Game {
     }
     if (this.dom.sovereignWrap) this.dom.sovereignWrap.hidden = this.state !== STATE.ENDLESS;
     if (this.dom.sovereignTime) this.dom.sovereignTime.textContent = formatTime(this.endlessElapsed);
+    if (this.state === STATE.ENDLESS) {
+      const progress = this.sovereignGoalProgress
+        ?? getSovereignGoalProgress(this.sovereignGoal);
+      if (this.dom.sovereignGoalLabel) {
+        this.dom.sovereignGoalLabel.textContent = this.sovereignGoal.canExtract
+          ? `合同 ${this.sovereignGoal.stage} · 返航许可已就绪`
+          : `合同 ${this.sovereignGoal.stage}`;
+      }
+      if (this.dom.sovereignGoalDetail) {
+        this.dom.sovereignGoalDetail.textContent = [
+          `存活 ${Math.floor(progress.values.elapsed)}/${progress.target.elapsed}s`,
+          `猎食 ${Math.floor(progress.values.eaten)}/${progress.target.eaten}`,
+          `得分 ${formatNumber(progress.values.score)}/${formatNumber(progress.target.score)}`,
+          `躲网 ${Math.floor(progress.values.netsDodged)}/${progress.target.netsDodged}`,
+        ].join(" · ");
+      }
+      if (this.dom.extractButton) {
+        this.dom.extractButton.disabled = !this.sovereignGoal.canExtract;
+        this.dom.extractButton.textContent = this.sovereignGoal.canExtract
+          ? "返航结算"
+          : "完成合同后返航";
+      }
+    }
   }
 
   updateDebug() {
     if (!this.debug || !this.dom.debugPanel) return;
     const relationCounts = { prey: 0, neutral: 0, threat: 0 };
     for (const fish of this.fish) relationCounts[this.getEffectiveRelation(fish)]++;
-    const spawnWeights = getRelationWeights(this.player.tier);
+    const spawnWeights = Object.fromEntries(this.director.getSpawnWeights(this));
     const baitMembers = this.director.countBaitMembers(this);
     const baitSchools = this.director.countBaitSchools(this);
     const playerScreen = this.camera.worldToScreen(this.player.x, this.player.y);
@@ -1991,6 +2316,7 @@ class Game {
       `FPS ${this.debugFps} | DPR ${this.dpr.toFixed(2)} | seed ${this.director.seed}`,
       `state ${this.state} | t ${this.elapsed.toFixed(1)}s`,
       `time ${this.dayNight.segment} | night ${this.dayNight.nightStrength.toFixed(2)} | score x${this.dayNight.scoreMultiplier.toFixed(2)}`,
+      `biome ${this.currentBiome.id} ${this.currentBiome.name} | reward x${this.currentBiome.rewardMultiplier.toFixed(2)} | risk x${this.currentBiome.riskMultiplier.toFixed(2)}`,
       `mass ${this.player.displayMass.toFixed(1)} -> ${this.player.mass.toFixed(1)} | T${this.player.tier}`,
       `pos ${this.player.x.toFixed(0)},${this.player.y.toFixed(0)} | camera ${this.camera.x.toFixed(0)},${this.camera.y.toFixed(0)}`,
       `screen ${playerScreen.x.toFixed(0)},${playerScreen.y.toFixed(0)} | zoom ${this.camera.zoom.toFixed(2)}`,
@@ -1999,21 +2325,22 @@ class Game {
       `spawn P${percent(spawnWeights.prey)} F${percent(spawnWeights.fringe)} N${percent(spawnWeights.neutral)} X${percent(spawnWeights.predator)}`,
       `bait ${baitSchools} school / ${baitMembers} fish | particles ${this.effects.particles.length}`,
       `net ${this.activeNetCount()} active | caught ${this.metrics.netCaptured} | refill ${this.metrics.netReplenished} | debt ${this.netReplenishDebt}`,
+      `build ${Object.values(this.runBuildState.selected).join(",") || "none"} | contract ${this.sovereignGoal.completedStages}/${this.sovereignGoal.stage}`,
       `environment ${this.environment.filter((item) => item.active).length} | shells +${this.collectedPearls}`,
       `special ${this.specials.length} | no prey ${this.director.noPreyTime.toFixed(1)}s`,
-      "[ / ] 调档 · I 无敌 · N 昼夜 · G 珍珠 · E 巡游 +60s · ` 关闭",
+      "[ / ] 调档 · I 无敌 · N 昼夜 · G 珍珠 · E 巡游 +60s · C 完成合同 · ` 关闭",
     ].join("\n");
   }
 
   debugTier(direction) {
     const tier = getTier(this.player.mass);
     const nextIndex = clamp(tier.index - 1 + direction, 0, CONFIG.tiers.length - 1);
-    this.player.mass = CONFIG.tiers[nextIndex].threshold + 0.05;
+    const nextTier = CONFIG.tiers[nextIndex];
+    this.player.mass = nextTier.threshold + 0.05;
     this.player.displayMass = this.player.mass;
-    this.player.tier = CONFIG.tiers[nextIndex].index;
-    if (isSovereignTier(this.player.tier) && this.state === STATE.PLAYING) {
-      this.beginSovereign();
-    }
+    this.player.tier = nextTier.index;
+    if (nextTier.index > tier.index) this.onTierUp(nextTier);
+    this.updateHud();
   }
 
   showMessage(message, duration = 2) {
@@ -2040,7 +2367,7 @@ class Game {
     const shake = this.effects.getShake(this.save.settings.screenShake && this.state !== STATE.TITLE);
     ctx.save();
     ctx.translate(shake.x, shake.y);
-    this.worldRenderer.draw(ctx, this.camera, this.time, this.dayNight);
+    this.worldRenderer.draw(ctx, this.camera, this.time, this.dayNight, this.currentBiome);
     this.worldRenderer.drawEnvironment(ctx, this.camera, this.time, this.environment, "ground", this.save.settings.quality);
     this.renderSpecials(ctx);
     this.renderFish(ctx);

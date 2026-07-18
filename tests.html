@@ -39,6 +39,11 @@
       import { tests as environment } from "./tests/environment.test.js";
       import { tests as audio } from "./tests/audio.test.js";
       import { tests as hazards } from "./tests/hazards.test.js";
+      import { tests as biomes } from "./tests/biomes.test.js";
+      import { tests as telemetry } from "./tests/telemetry.test.js";
+      import { tests as runBuilds } from "./tests/run-builds.test.js";
+      import { tests as sovereignGoals } from "./tests/sovereign-goals.test.js";
+      import { tests as gameState } from "./tests/game-state.test.js";
 
       const tests = [
         ...rules,
@@ -56,6 +61,11 @@
         ...environment,
         ...audio,
         ...hazards,
+        ...biomes,
+        ...telemetry,
+        ...runBuilds,
+        ...sovereignGoals,
+        ...gameState,
       ];
       const results = document.querySelector("#results");
       let passed = 0;
