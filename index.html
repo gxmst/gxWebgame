@@ -1,499 +1,163 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
-    <meta name="theme-color" content="#072f3f" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta
-      name="description"
-      content="大鱼吃小鱼：在珊瑚浅海中捕食、成长并成为海洋霸主。"
-    />
-    <title>大鱼吃小鱼</title>
-    <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="./assets/icon-192.png" />
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <main id="game-shell" class="game-shell">
-      <canvas
-        id="game-canvas"
-        tabindex="0"
-        aria-label="大鱼吃小鱼游戏区域"
-      ></canvas>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#072f3f" />
+<meta name="description" content="gx 小游戏合集 —— 纯网页、即开即玩的休闲小游戏。" />
+<title>gx 小游戏合集</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #051f2b;
+    --bg2: #083849;
+    --ink: #f5fbf7;
+    --muted: #9ab6bd;
+    --accent: #f2b632;
+    --accent2: #7ee7df;
+    --card: rgba(9, 40, 52, 0.72);
+    --line: rgba(255, 255, 255, 0.1);
+  }
+  html, body { min-height: 100%; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(ellipse at 50% -10%, #0c6d87 0%, transparent 55%),
+      linear-gradient(180deg, var(--bg2) 0%, var(--bg) 60%, #041720 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    padding: clamp(24px, 5vw, 64px) clamp(16px, 4vw, 48px) 48px;
+  }
 
-      <div class="ocean-vignette" aria-hidden="true"></div>
+  header.hero { max-width: 1080px; margin: 0 auto clamp(28px, 5vw, 52px); text-align: center; }
+  .hero-kicker {
+    color: var(--accent);
+    font: 700 12px "Courier New", monospace;
+    letter-spacing: 4px;
+    margin-bottom: 14px;
+  }
+  .hero h1 {
+    font-size: clamp(34px, 7vw, 64px);
+    font-weight: 900;
+    letter-spacing: 2px;
+    line-height: 1.1;
+    text-shadow: 0 2px 20px rgba(0, 0, 0, 0.4);
+  }
+  .hero h1 em { color: var(--accent2); font-style: normal; }
+  .hero p.intro {
+    max-width: 620px;
+    margin: 18px auto 0;
+    color: var(--muted);
+    font-size: clamp(14px, 2.2vw, 16px);
+    line-height: 1.7;
+  }
+  main.grid {
+    max-width: 1080px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: clamp(16px, 2.5vw, 26px);
+  }
 
-      <section
-        id="title-screen"
-        class="screen title-screen"
-        aria-labelledby="game-title"
-      >
-        <div class="title-lockup">
-          <p class="title-kicker">珊瑚浅海生存挑战</p>
-          <h1 id="game-title">
-            <span>大鱼吃</span>
-            <strong>小鱼</strong>
-          </h1>
-          <p class="title-tagline">从一尾鱼苗，游成海洋霸主。</p>
-        </div>
+  .card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.28);
+  }
+  .card:hover, .card:focus-visible {
+    transform: translateY(-4px);
+    border-color: var(--accent2);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+    outline: none;
+  }
+  .card.coming { pointer-events: none; opacity: 0.55; }
 
-        <div class="title-actions" aria-label="主菜单">
-          <button id="start-button" class="button button--primary" type="button">
-            <span class="play-icon" aria-hidden="true"></span>
-            <span>开始游戏</span>
-          </button>
-          <button id="shop-button" class="button button--gold shop-entry-button" type="button">
-            <span class="coin-icon" aria-hidden="true"></span>
-            <span>成长商店</span>
-          </button>
-          <div class="title-secondary-actions">
-            <button id="skin-button" class="button button--secondary" type="button">
-              <span class="fin-icon" aria-hidden="true"></span>
-              <span>外观商店</span>
-            </button>
-            <button id="settings-button" class="button button--secondary" type="button">
-              <span class="gear-icon" aria-hidden="true">⚙</span>
-              <span>游戏设置</span>
-            </button>
-          </div>
-        </div>
+  .card-thumb {
+    aspect-ratio: 16 / 10;
+    display: grid;
+    place-items: center;
+    font-size: 54px;
+    background: linear-gradient(150deg, #0c6d87, #06323f);
+    border-bottom: 1px solid var(--line);
+  }
+  .card-body { padding: 16px 18px 18px; flex: 1; display: flex; flex-direction: column; }
+  .card-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .card-desc { color: var(--muted); font-size: 13px; line-height: 1.6; flex: 1; }
+  .card-tag {
+    align-self: flex-start;
+    margin-top: 14px;
+    font: 700 11px "Courier New", monospace;
+    letter-spacing: 1px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(242, 182, 50, 0.15);
+    color: var(--accent);
+    border: 1px solid rgba(242, 182, 50, 0.4);
+  }
+  .card.coming .card-tag {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--muted);
+    border-color: var(--line);
+  }
 
-        <section class="leaderboard-panel" aria-labelledby="leaderboard-title">
-          <header>
-            <div>
-              <p>本设备记录</p>
-              <h2 id="leaderboard-title">个人最佳 Top 10</h2>
-            </div>
-          </header>
-          <div class="leaderboard-columns" aria-hidden="true">
-            <span>#</span><span>得分</span><span>档位</span><span>时长</span><span>日期</span>
-          </div>
-          <ol id="leaderboard-list" class="leaderboard-list"></ol>
-          <p id="leaderboard-empty" class="leaderboard-empty">还没有记录，去创造第一条吧</p>
-        </section>
+  footer.site-foot {
+    max-width: 1080px;
+    margin: clamp(36px, 6vw, 64px) auto 0;
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+  }
+</style>
+</head>
+<body>
+<header class="hero">
+  <p class="hero-kicker">GX ARCADE</p>
+  <h1>gx <em>小游戏</em> 合集</h1>
+  <p class="intro">纯网页、即开即玩的休闲小游戏。无需下载、无需登录，打开就能玩。手机、电脑都支持。</p>
+</header>
 
-        <p class="record-line">
-          <span>最高纪录</span>
-          <output id="high-score">0</output>
-          <span class="record-separator" aria-hidden="true">·</span>
-          <span>最快通关</span>
-          <output id="best-clear-time">--:--</output>
-          <span class="record-separator" aria-hidden="true">·</span>
-          <span>金币</span>
-          <output data-coins>0</output>
-          <span class="record-separator" aria-hidden="true">·</span>
-          <span>珍珠</span>
-          <output data-pearls>0</output>
-        </p>
+<main class="grid">
+  <a class="card" href="./bigfish/index.html">
+    <div class="card-thumb">🐟</div>
+    <div class="card-body">
+      <div class="card-title">大鱼吃小鱼</div>
+      <p class="card-desc">从一尾鱼苗游成海洋霸主。吃掉更小的鱼成长，躲开天敌和渔网，成为深海之王。</p>
+      <span class="card-tag">可以玩</span>
+    </div>
+  </a>
 
-      </section>
+  <div class="card coming">
+    <div class="card-thumb">🏰</div>
+    <div class="card-body">
+      <div class="card-title">塔防（暂定）</div>
+      <p class="card-desc">在路线两旁布防，抵挡一波波来袭的敌人。规划、升级、守住阵地。</p>
+      <span class="card-tag">开发中</span>
+    </div>
+  </div>
 
-      <section
-        id="shop-screen"
-        class="screen modal-screen"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="shop-title"
-        hidden
-      >
-        <div class="dialog-panel shop-panel">
-          <header class="panel-header">
-            <div>
-              <p class="panel-kicker">成长与收藏</p>
-              <h2 id="shop-title">海湾商店</h2>
-            </div>
-            <div class="shop-balances">
-              <div class="shop-balance" aria-label="当前金币">
-                <span class="coin-icon" aria-hidden="true"></span>
-                <output id="shop-coins">0</output>
-              </div>
-              <div class="shop-balance shop-balance--pearls" aria-label="当前珍珠">
-                <span class="pearl-icon" aria-hidden="true"></span>
-                <output id="shop-pearls">0</output>
-              </div>
-            </div>
-            <button id="shop-back-button" class="icon-button close-button" type="button" aria-label="关闭商店并返回">
-              <span aria-hidden="true">×</span>
-            </button>
-          </header>
+  <div class="card coming">
+    <div class="card-thumb">⚔️</div>
+    <div class="card-body">
+      <div class="card-title">文字地牢（暂定）</div>
+      <p class="card-desc">刷装备、变强、下更深的地牢。经典 Roguelike 刷子循环的文字版。</p>
+      <span class="card-tag">开发中</span>
+    </div>
+  </div>
+</main>
 
-          <div class="shop-tabs" role="tablist" aria-label="商店分类">
-            <button id="shop-upgrades-tab" class="shop-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="shop-upgrades-panel">成长能力</button>
-            <button id="shop-cosmetics-tab" class="shop-tab" type="button" role="tab" aria-selected="false" aria-controls="shop-cosmetics-panel">外观收藏</button>
-          </div>
-
-          <div id="shop-upgrades-panel" role="tabpanel" aria-labelledby="shop-upgrades-tab">
-            <div class="shop-grid">
-              <article class="upgrade-card" data-upgrade-card="speed">
-                <div class="upgrade-icon upgrade-icon--speed" aria-hidden="true">»</div>
-                <h3>游动速度</h3>
-                <p>提高普通游动与转向后的追击能力。</p>
-                <div class="upgrade-level"><span>等级</span><output id="shop-speed-level">0 / 5</output></div>
-                <button id="shop-speed-buy" class="button button--secondary" type="button">
-                  升级 · <span class="coin-icon coin-icon--small" aria-hidden="true"></span><output id="shop-speed-cost">20</output>
-                </button>
-              </article>
-
-              <article class="upgrade-card" data-upgrade-card="stamina">
-                <div class="upgrade-icon upgrade-icon--stamina" aria-hidden="true">⚡</div>
-                <h3>冲刺体力</h3>
-                <p>扩大体力槽，并略微提高体力恢复速度。</p>
-                <div class="upgrade-level"><span>等级</span><output id="shop-stamina-level">0 / 5</output></div>
-                <button id="shop-stamina-buy" class="button button--secondary" type="button">
-                  升级 · <span class="coin-icon coin-icon--small" aria-hidden="true"></span><output id="shop-stamina-cost">20</output>
-                </button>
-              </article>
-
-              <article class="upgrade-card" data-upgrade-card="mouth">
-                <div class="upgrade-icon upgrade-icon--mouth" aria-hidden="true">◖</div>
-                <h3>吞噬范围</h3>
-                <p>扩大嘴部判定，让追上猎物后的吞食更宽容。</p>
-                <div class="upgrade-level"><span>等级</span><output id="shop-mouth-level">0 / 5</output></div>
-                <button id="shop-mouth-buy" class="button button--secondary" type="button">
-                  升级 · <span class="coin-icon coin-icon--small" aria-hidden="true"></span><output id="shop-mouth-cost">20</output>
-                </button>
-              </article>
-            </div>
-          </div>
-
-          <div id="shop-cosmetics-panel" class="cosmetics-panel" role="tabpanel" aria-labelledby="shop-cosmetics-tab" hidden>
-            <section class="cosmetic-section" aria-labelledby="skin-shop-title">
-              <h3 id="skin-shop-title">鱼身配色</h3>
-              <div id="cosmetic-skins-grid" class="cosmetic-grid"></div>
-            </section>
-            <section class="cosmetic-section" aria-labelledby="accessory-shop-title">
-              <h3 id="accessory-shop-title">帽子与挂件</h3>
-              <div id="cosmetic-accessories-grid" class="cosmetic-grid"></div>
-            </section>
-          </div>
-        </div>
-      </section>
-
-      <section id="hud" class="hud" aria-label="游戏信息" hidden>
-        <div class="score-cluster">
-          <p class="hud-label">得分</p>
-          <output id="score-value" class="score-value">0</output>
-          <div id="combo-wrap" class="combo-wrap" aria-live="polite" hidden>
-            <span>连吃</span>
-            <output id="combo-value">×1.0</output>
-          </div>
-        </div>
-
-        <div class="tier-cluster">
-          <div class="tier-heading">
-            <output id="biome-name" class="biome-name">珊瑚浅海</output>
-            <output id="tier-name">鱼苗</output>
-          </div>
-          <div
-            class="tier-meter"
-            role="progressbar"
-            aria-label="成长进度"
-            aria-valuemin="0"
-            aria-valuemax="100"
-            aria-valuenow="0"
-          >
-            <span id="tier-progress"></span>
-          </div>
-          <div id="sovereign-wrap" class="sovereign-wrap" hidden>
-            <div class="sovereign-summary">
-              <span>霸主巡游</span>
-              <output id="sovereign-time">0:00</output>
-            </div>
-            <div class="sovereign-contract">
-              <strong id="sovereign-goal-label">合同 1</strong>
-              <span id="sovereign-goal-detail">存活 0/20s · 猎食 0/12 · 得分 0/600 · 躲网 0/2</span>
-            </div>
-            <button id="extract-button" class="button extract-button" type="button" disabled>
-              完成合同后返航
-            </button>
-          </div>
-        </div>
-
-        <button
-          id="pause-button"
-          class="icon-button pause-button"
-          type="button"
-          title="暂停"
-          aria-label="暂停游戏"
-        >
-          <span class="pause-icon" aria-hidden="true"><i></i><i></i></span>
-        </button>
-
-        <div class="dash-cluster">
-          <div class="stamina-meter" aria-label="冲刺体力">
-            <span class="stamina-label">体力</span>
-            <span class="stamina-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
-              <span id="stamina-fill"></span>
-            </span>
-          </div>
-          <button id="dash-button" class="dash-button" type="button">
-            <span class="dash-chevrons" aria-hidden="true">»</span>
-            <span>冲刺</span>
-          </button>
-        </div>
-      </section>
-
-      <section
-        id="build-draft-screen"
-        class="screen modal-screen build-draft-screen"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="build-draft-title"
-        hidden
-      >
-        <div class="dialog-panel build-draft-panel">
-          <p id="build-draft-tier" class="panel-kicker">T2 · 小鱼</p>
-          <h2 id="build-draft-title">潮汐进化</h2>
-          <div id="build-choice-list" class="build-choice-list"></div>
-        </div>
-      </section>
-
-      <section
-        id="pause-screen"
-        class="screen modal-screen"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="pause-title"
-        hidden
-      >
-        <div class="dialog-panel dialog-panel--compact">
-          <p class="panel-kicker">洋流已静止</p>
-          <h2 id="pause-title">游戏暂停</h2>
-          <div class="menu-actions">
-            <button id="resume-button" class="button button--primary" type="button">
-              <span class="play-icon" aria-hidden="true"></span>
-              <span>继续游戏</span>
-            </button>
-            <button id="pause-settings-button" class="button button--secondary" type="button">
-              <span class="gear-icon" aria-hidden="true">⚙</span>
-              <span>游戏设置</span>
-            </button>
-            <button id="quit-button" class="button button--quiet" type="button">
-              <span class="home-icon" aria-hidden="true"></span>
-              <span>返回标题</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section
-        id="settings-screen"
-        class="screen modal-screen"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        hidden
-      >
-        <div class="dialog-panel settings-panel">
-          <header class="panel-header">
-            <div>
-              <p class="panel-kicker">航海偏好</p>
-              <h2 id="settings-title">游戏设置</h2>
-            </div>
-            <button
-              id="settings-back-button"
-              class="icon-button close-button"
-              type="button"
-              title="返回"
-              aria-label="关闭设置并返回"
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-          </header>
-
-          <div class="settings-list">
-            <div class="setting-row setting-row--range">
-              <label for="volume-input">
-                <span>总音量</span>
-                <output data-volume-value>70%</output>
-              </label>
-              <input id="volume-input" type="range" min="0" max="100" step="1" value="70" />
-            </div>
-
-            <label class="setting-row" for="mute-toggle">
-              <span>
-                <strong>静音</strong>
-              </span>
-              <span class="switch">
-                <input id="mute-toggle" type="checkbox" />
-                <span aria-hidden="true"></span>
-              </span>
-            </label>
-
-            <label class="setting-row" for="music-toggle">
-              <span>
-                <strong>背景音乐</strong>
-              </span>
-              <span class="switch">
-                <input id="music-toggle" type="checkbox" checked />
-                <span aria-hidden="true"></span>
-              </span>
-            </label>
-
-            <label class="setting-row" for="vibration-toggle">
-              <span>
-                <strong>触感反馈</strong>
-              </span>
-              <span class="switch">
-                <input id="vibration-toggle" type="checkbox" checked />
-                <span aria-hidden="true"></span>
-              </span>
-            </label>
-
-            <label class="setting-row" for="shake-toggle">
-              <span>
-                <strong>屏幕震动</strong>
-              </span>
-              <span class="switch">
-                <input id="shake-toggle" type="checkbox" checked />
-                <span aria-hidden="true"></span>
-              </span>
-            </label>
-
-            <label class="setting-row" for="touch-mode">
-              <span>
-                <strong>触屏操控</strong>
-              </span>
-              <select id="touch-mode">
-                <option value="relative">相对拖动</option>
-                <option value="point">指向游动</option>
-              </select>
-            </label>
-
-            <label class="setting-row" for="quality-select">
-              <span>
-                <strong>画面质量</strong>
-              </span>
-              <select id="quality-select">
-                <option value="auto">自动</option>
-                <option value="high">清晰</option>
-                <option value="low">省电</option>
-              </select>
-            </label>
-
-            <label class="setting-row" for="contrast-toggle">
-              <span>
-                <strong>高对比提示</strong>
-              </span>
-              <span class="switch">
-                <input id="contrast-toggle" type="checkbox" />
-                <span aria-hidden="true"></span>
-              </span>
-            </label>
-
-            <div class="setting-row setting-row--telemetry">
-              <span>
-                <strong>本地试玩记录</strong>
-                <small id="export-telemetry-status" aria-live="polite">仅保存在此设备，不会上传</small>
-              </span>
-              <div class="telemetry-actions">
-                <output id="telemetry-count">0 / 50 局</output>
-                <button id="export-telemetry-button" class="button button--secondary" type="button" disabled>
-                  导出 JSON
-                </button>
-              </div>
-            </div>
-
-            <div class="setting-row setting-row--danger">
-              <span>
-                <strong>本地进度</strong>
-                <small id="clear-progress-status" aria-live="polite">保留当前操控和声音设置</small>
-              </span>
-              <button id="clear-progress-button" class="button button--danger" type="button">
-                清除进度
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section
-        id="results-screen"
-        class="screen modal-screen results-screen"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="result-title"
-        hidden
-      >
-        <div class="dialog-panel results-panel">
-          <p class="panel-kicker">本次潜游记录</p>
-          <h2 id="result-title">本局结束</h2>
-          <p id="result-reason" class="result-reason">被梭鱼吞食</p>
-          <p id="result-record" class="record-badge" hidden>新纪录</p>
-
-          <div class="result-scoreline">
-            <span>最终得分</span>
-            <output id="result-score">0</output>
-          </div>
-
-          <dl class="result-stats">
-            <div>
-              <dt>达到档位</dt>
-              <dd id="result-tier">鱼苗</dd>
-            </div>
-            <div>
-              <dt>存活时间</dt>
-              <dd id="result-time">00:00</dd>
-            </div>
-            <div id="result-sovereign-stat" hidden>
-              <dt>霸主巡游</dt>
-              <dd id="result-sovereign-time">00:00</dd>
-            </div>
-            <div>
-              <dt>最高连吃</dt>
-              <dd id="result-combo">×1.0</dd>
-            </div>
-            <div class="reward-stat">
-              <dt>局外奖励</dt>
-              <dd>
-                <span class="coin-reward"><span class="coin-icon coin-icon--small" aria-hidden="true"></span><span id="result-coins">+0</span></span>
-                <span class="pearl-reward"><span class="pearl-icon" aria-hidden="true"></span><span id="result-pearls">+0</span></span>
-              </dd>
-            </div>
-          </dl>
-
-          <div class="result-actions">
-            <button id="retry-button" class="button button--primary" type="button">
-              <span class="retry-icon" aria-hidden="true">↻</span>
-              <span>再来一局</span>
-            </button>
-            <button id="results-home-button" class="button button--secondary" type="button">
-              <span class="home-icon" aria-hidden="true"></span>
-              <span>返回标题</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <aside id="rotate-overlay" class="rotate-overlay" role="alert" hidden>
-        <div class="rotate-device" aria-hidden="true"><span></span></div>
-        <h2>请横屏游玩</h2>
-        <p>转动设备，继续你的海洋旅程</p>
-      </aside>
-
-      <div id="tier-toast" class="toast tier-toast" role="status" aria-live="polite" aria-hidden="true">
-        <span class="toast-kicker">体型提升</span>
-        <strong>成长为小鱼</strong>
-      </div>
-
-      <div id="message-toast" class="toast message-toast" role="status" aria-live="polite" aria-hidden="true">
-        附近出现了金色鱼群
-      </div>
-
-      <aside id="debug-panel" class="debug-panel" aria-label="调试信息" hidden>
-        <header>
-          <strong>SIM DEBUG</strong>
-          <span>F3</span>
-        </header>
-        <pre data-debug-output>等待模拟数据…</pre>
-      </aside>
-    </main>
-
-    <script type="module" src="./js/bootstrap.js"></script>
-  </body>
+<footer class="site-foot">
+  <p>gx 小游戏合集 · 纯前端 · 打开即玩</p>
+</footer>
+</body>
 </html>
