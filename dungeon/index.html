@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#111316" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%94%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+    <meta
+      name="description"
+      content="文字地牢：配装、成长并挑战不断深入的暗黑地牢。"
+    />
+    <title>文字地牢</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#game-main">跳到游戏区域</a>
+
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <a class="icon-button home-link" href="../" aria-label="返回游戏大厅" title="返回游戏大厅">⌂</a>
+          <div>
+            <p class="brand-kicker">灰烬编年史</p>
+            <h1>文字地牢</h1>
+          </div>
+        </div>
+
+        <div class="account-strip" aria-label="冒险进度">
+          <span class="resource" aria-label="金币" title="金币">
+            <span aria-hidden="true">◈</span>
+            <span class="resource-label">金币</span>
+            <strong data-coins>0</strong>
+          </span>
+          <span class="resource" aria-label="已解锁层数" title="已解锁层数">
+            <span aria-hidden="true">◆</span>
+            <span class="resource-label">已解锁</span>
+            <strong>第 <span data-max-floor>1</span> 层</strong>
+          </span>
+          <button class="icon-button reset-button" type="button" data-reset aria-label="重置存档" title="重置存档">↺</button>
+        </div>
+      </header>
+
+      <main class="game-grid" id="game-main">
+        <aside class="game-panel character-panel" id="character-panel" data-game-panel="character" aria-labelledby="character-title">
+          <header class="panel-heading">
+            <div>
+              <p class="panel-kicker">冒险者</p>
+              <h2 id="character-title">角色与装备</h2>
+            </div>
+            <span class="class-mark" aria-label="职业：战士">⚔️</span>
+          </header>
+
+          <section class="character-summary" aria-label="角色等级与经验">
+            <div class="identity-row">
+              <div>
+                <strong class="hero-name">无名战士</strong>
+                <span class="hero-class">战士 · 近战</span>
+              </div>
+              <span class="level-badge">Lv.<strong data-level>1</strong></span>
+            </div>
+            <div class="meter-label">
+              <span>经验</span>
+              <span data-exp-text>0 / 100</span>
+            </div>
+            <div
+              class="meter meter-exp"
+              role="progressbar"
+              aria-label="经验值"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+            >
+              <span class="meter-fill" data-exp-fill style="width: 0%"></span>
+            </div>
+          </section>
+
+          <section class="power-block" aria-label="角色战力">
+            <span class="power-icon" aria-hidden="true">✦</span>
+            <div>
+              <span>综合战力</span>
+              <strong data-power>0</strong>
+            </div>
+          </section>
+
+          <section class="progression-section" aria-labelledby="progression-title">
+            <div class="section-title-row">
+              <h3 id="progression-title">职业与转生</h3>
+              <span class="section-meta">长期成长</span>
+            </div>
+            <div class="class-summary-row">
+              <span class="progression-icon" aria-hidden="true">⚔️</span>
+              <span class="class-summary-copy">
+                <small>当前职业 · 转生 <b data-prestige-count>0</b></small>
+                <strong data-class-name>战士</strong>
+              </span>
+              <button class="compact-button" type="button" data-class-change>查看职业</button>
+            </div>
+            <button class="prestige-button" type="button" data-prestige disabled>
+              <span aria-hidden="true">✦</span>
+              <span><strong>尚未达到转生条件</strong><small>满级后重启征程，获得永久强化</small></span>
+            </button>
+          </section>
+
+          <section class="stat-section" aria-labelledby="combat-stats-title">
+            <div class="section-title-row">
+              <h3 id="combat-stats-title">战斗属性</h3>
+            </div>
+            <dl class="stat-grid">
+              <div>
+                <dt><span aria-hidden="true">♥</span> 生命</dt>
+                <dd data-hp>0</dd>
+              </div>
+              <div>
+                <dt><span aria-hidden="true">⚔</span> 攻击</dt>
+                <dd data-attack>0</dd>
+              </div>
+              <div>
+                <dt><span aria-hidden="true">⬟</span> 防御</dt>
+                <dd data-defense>0</dd>
+              </div>
+              <div>
+                <dt><span aria-hidden="true">»</span> 速度</dt>
+                <dd data-speed>0</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="attribute-section" aria-labelledby="attributes-title">
+            <div class="section-title-row">
+              <h3 id="attributes-title">基础属性</h3>
+              <span class="points-pill"><strong data-stat-points>0</strong> 点可用</span>
+            </div>
+            <dl class="attribute-list">
+              <div>
+                <dt><span class="attribute-icon strength" aria-hidden="true">力</span>力量</dt>
+                <dd data-strength>0</dd>
+              </div>
+              <div>
+                <dt><span class="attribute-icon agility" aria-hidden="true">敏</span>敏捷</dt>
+                <dd data-agility>0</dd>
+              </div>
+              <div>
+                <dt><span class="attribute-icon intelligence" aria-hidden="true">智</span>智力</dt>
+                <dd data-intelligence>0</dd>
+              </div>
+              <div>
+                <dt><span class="attribute-icon vitality" aria-hidden="true">体</span>体质</dt>
+                <dd data-vitality>0</dd>
+              </div>
+            </dl>
+            <label class="auto-allocation">
+              <input type="checkbox" data-auto-allocate checked />
+              <span>自动推荐加点</span>
+            </label>
+          </section>
+
+          <section class="skills-section" aria-labelledby="skills-title">
+            <div class="section-title-row">
+              <h3 id="skills-title">技能构筑</h3>
+              <span class="points-pill"><strong data-skill-points>0</strong> 点可用</span>
+            </div>
+            <div class="skills-list" data-skills aria-live="polite">
+              <div class="skill-row is-basic">
+                <span class="skill-icon" aria-hidden="true">⚔️</span>
+                <span class="skill-copy"><strong>普通攻击</strong><small>单体 · 无冷却</small></span>
+                <span class="skill-level">Lv.1</span>
+              </div>
+              <div class="skill-row">
+                <span class="skill-icon" aria-hidden="true">💥</span>
+                <span class="skill-copy"><strong>重击</strong><small>单体爆发 · 冷却 2</small></span>
+                <span class="skill-level">Lv.1</span>
+              </div>
+              <div class="skill-row">
+                <span class="skill-icon" aria-hidden="true">🌀</span>
+                <span class="skill-copy"><strong>旋风斩</strong><small>群体伤害 · 冷却 3</small></span>
+                <span class="skill-level">Lv.1</span>
+              </div>
+              <div class="skill-row">
+                <span class="skill-icon" aria-hidden="true">🛡️</span>
+                <span class="skill-copy"><strong>格挡</strong><small>生存增益 · 冷却 4</small></span>
+                <span class="skill-level">Lv.1</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="equipment-section" aria-labelledby="equipment-title">
+            <div class="section-title-row">
+              <h3 id="equipment-title">已装备</h3>
+              <span class="section-meta">4 个部位</span>
+            </div>
+            <div class="equipment-grid" data-equipment aria-live="polite">
+              <div class="equipment-slot is-empty" data-slot="weapon">
+                <span class="slot-icon" aria-hidden="true">🗡️</span>
+                <span><small>武器</small><strong>未装备</strong></span>
+              </div>
+              <div class="equipment-slot is-empty" data-slot="helmet">
+                <span class="slot-icon" aria-hidden="true">⛑️</span>
+                <span><small>头盔</small><strong>未装备</strong></span>
+              </div>
+              <div class="equipment-slot is-empty" data-slot="armor">
+                <span class="slot-icon" aria-hidden="true">🛡️</span>
+                <span><small>护甲</small><strong>未装备</strong></span>
+              </div>
+              <div class="equipment-slot is-empty" data-slot="accessory">
+                <span class="slot-icon" aria-hidden="true">💎</span>
+                <span><small>饰品</small><strong>未装备</strong></span>
+              </div>
+            </div>
+          </section>
+        </aside>
+
+        <section class="game-panel dungeon-panel is-active" id="dungeon-panel" data-game-panel="dungeon" aria-labelledby="dungeon-title">
+          <header class="panel-heading dungeon-heading">
+            <div>
+              <p class="panel-kicker">地下遗迹</p>
+              <h2 id="dungeon-title">地牢远征</h2>
+            </div>
+            <span class="status-indicator" role="status" aria-live="polite"><i aria-hidden="true"></i>等待出发</span>
+          </header>
+
+          <div class="idle-view" data-idle-view>
+            <div class="floor-select">
+              <div class="section-title-row floor-list-heading">
+                <h3>选择层数</h3>
+                <span class="section-meta">越深，奖赏越丰厚</span>
+              </div>
+              <ol class="floor-list" data-floor-list aria-label="地牢层数"></ol>
+            </div>
+
+            <section class="floor-preview" data-floor-preview aria-live="polite" aria-labelledby="floor-preview-title">
+              <div class="preview-topline">
+                <span class="danger-tag">普通层</span>
+                <span class="recommended-power">推荐战力 <strong>330</strong></span>
+              </div>
+              <div class="floor-emblem" aria-hidden="true">🚪</div>
+              <div class="preview-copy">
+                <p class="panel-kicker">当前选择</p>
+                <h3 id="floor-preview-title">第 1 层 · 地穴入口</h3>
+                <p>潮湿石阶向下延伸，骸骨鼠正在烛影间翻动碎石。</p>
+              </div>
+              <dl class="preview-details">
+                <div><dt>敌群</dt><dd>3 名</dd></div>
+                <div><dt>金币</dt><dd>27</dd></div>
+                <div><dt>掉落</dt><dd class="rarity-normal">普通+</dd></div>
+              </dl>
+              <button class="primary-button enter-button" type="button" data-enter-floor>
+                <span aria-hidden="true">⚔</span>
+                进入地牢
+              </button>
+            </section>
+          </div>
+
+          <div class="battle-view" data-battle-view hidden>
+            <div class="battle-toolbar">
+              <div>
+                <span class="battle-caption">自动战斗</span>
+                <strong>第 <span data-battle-round>1</span> 回合</strong>
+              </div>
+              <div class="battle-actions">
+                <div class="segmented-control" data-speed-controls aria-label="战斗速度">
+                  <button class="is-active" type="button" data-speed="1" aria-pressed="true">1×</button>
+                  <button type="button" data-speed="2" aria-pressed="false">2×</button>
+                  <button type="button" data-speed="3" aria-pressed="false">3×</button>
+                </div>
+                <button class="secondary-button skip-button" type="button" data-skip>
+                  <span aria-hidden="true">»</span> 跳过
+                </button>
+                <button class="secondary-button retreat-button" type="button" data-retreat title="撤退会损失少量经验和金币">
+                  <span aria-hidden="true">↩</span> 撤退
+                </button>
+              </div>
+            </div>
+
+            <div class="battlefield" aria-label="战斗状态">
+              <article class="combatant hero-combatant">
+                <span class="combatant-portrait" aria-hidden="true">⚔️</span>
+                <div class="combatant-copy">
+                  <span class="combatant-side">我方</span>
+                  <h3 data-hero-battle-name>无名战士</h3>
+                  <div class="meter-label">
+                    <span>生命</span>
+                    <span data-hero-hp-text>0 / 0</span>
+                  </div>
+                  <div
+                    class="meter meter-hp"
+                    role="progressbar"
+                    aria-label="角色生命值"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="100"
+                  >
+                    <span class="meter-fill" data-hero-hp-fill style="width: 100%"></span>
+                  </div>
+                </div>
+              </article>
+
+              <div class="versus-mark" aria-hidden="true"><span>VS</span></div>
+
+              <div class="enemy-party" data-enemies aria-label="敌方单位"></div>
+            </div>
+
+            <section class="combat-log-section" aria-labelledby="combat-log-title">
+              <div class="section-title-row">
+                <h3 id="combat-log-title">战斗记录</h3>
+                <span class="live-label"><i aria-hidden="true"></i>实时</span>
+              </div>
+              <ol class="combat-log" data-log aria-live="polite" aria-relevant="additions"></ol>
+            </section>
+          </div>
+        </section>
+
+        <aside class="game-panel inventory-panel" id="inventory-panel" data-game-panel="inventory" aria-labelledby="inventory-title">
+          <header class="panel-heading">
+            <div>
+              <p class="panel-kicker">战利品</p>
+              <h2 id="inventory-title">背包与商店</h2>
+            </div>
+            <span class="inventory-capacity" aria-label="背包容量"><strong data-inventory-count>0</strong> / <span data-inventory-limit>60</span></span>
+          </header>
+
+          <div class="inventory-tabs" role="tablist" aria-label="物品管理">
+            <button class="is-active" type="button" role="tab" id="inventory-tab" data-inventory-tab="inventory" aria-selected="true" aria-controls="inventory-view">
+              <span aria-hidden="true">▣</span> 背包
+            </button>
+            <button type="button" role="tab" id="shop-tab" data-inventory-tab="shop" aria-selected="false" aria-controls="shop-view" tabindex="-1">
+              <span aria-hidden="true">◈</span> 商店
+            </button>
+          </div>
+
+          <section class="inventory-tab-panel" id="inventory-view" role="tabpanel" aria-labelledby="inventory-tab" data-inventory-view="inventory">
+            <div class="rarity-legend" aria-label="装备稀有度">
+              <span class="rarity-normal">普通</span>
+              <span class="rarity-excellent">优秀</span>
+              <span class="rarity-rare">稀有</span>
+              <span class="rarity-legendary">传说</span>
+            </div>
+
+            <div class="inventory-scroll">
+              <div class="inventory-list" data-inventory aria-live="polite"></div>
+              <div class="empty-state" data-inventory-empty>
+                <span aria-hidden="true">🧰</span>
+                <strong>背包空空如也</strong>
+                <p>地牢中的战利品会收纳在这里。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="inventory-tab-panel shop-panel" id="shop-view" role="tabpanel" aria-labelledby="shop-tab" data-inventory-view="shop" hidden>
+            <div class="shop-toolbar">
+              <div>
+                <strong>流浪商队</strong>
+                <small>商品随远征进度刷新</small>
+              </div>
+              <button class="compact-button" type="button" data-shop-refresh>
+                <span aria-hidden="true">↻</span> 刷新
+              </button>
+            </div>
+            <div class="shop-list" data-shop aria-live="polite">
+              <div class="empty-state shop-empty">
+                <span aria-hidden="true">🏪</span>
+                <strong>商队正在整理货架</strong>
+                <p>新的装备很快会陈列在这里。</p>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <nav class="mobile-tabs" aria-label="主要界面">
+      <button type="button" data-mobile-tab="character" aria-controls="character-panel">
+        <span aria-hidden="true">♟</span>
+        角色
+      </button>
+      <button class="is-active" type="button" data-mobile-tab="dungeon" aria-controls="dungeon-panel" aria-current="page">
+        <span aria-hidden="true">⚔</span>
+        地牢
+      </button>
+      <button type="button" data-mobile-tab="inventory" aria-controls="inventory-panel">
+        <span aria-hidden="true">▣</span>
+        背包
+      </button>
+    </nav>
+
+    <dialog class="class-dialog" data-class-dialog aria-labelledby="class-dialog-title" aria-describedby="class-dialog-description">
+      <form method="dialog" class="dialog-shell">
+        <div class="dialog-heading">
+          <div>
+            <p class="panel-kicker">选择道路</p>
+            <h2 id="class-dialog-title">选择职业</h2>
+          </div>
+          <button class="icon-button" type="submit" value="cancel" aria-label="关闭职业选择" title="关闭">×</button>
+        </div>
+        <div class="class-dialog-content">
+          <p id="class-dialog-description">职业决定属性成长、推荐加点和可用技能。</p>
+          <div class="class-options" role="radiogroup" aria-label="可选职业">
+            <button class="class-option is-selected" type="button" role="radio" data-class-id="warrior" aria-checked="true">
+              <span class="class-option-icon" aria-hidden="true">⚔️</span>
+              <span class="class-option-copy">
+                <strong>战士</strong>
+                <small>近战攻守 · 力量主属性</small>
+                <span>高生命与护甲，兼顾单体爆发和群体清场。</span>
+              </span>
+            </button>
+            <button class="class-option" type="button" role="radio" data-class-id="mage" aria-checked="false">
+              <span class="class-option-icon" aria-hidden="true">🧙‍♂️</span>
+              <span class="class-option-copy">
+                <strong>法师</strong>
+                <small>远程爆发 · 智力主属性</small>
+                <span>生存较弱，以火球、闪电和奥术护盾掌控战场。</span>
+              </span>
+            </button>
+          </div>
+        </div>
+        <div class="dialog-actions class-dialog-actions">
+          <button class="secondary-button" type="submit" value="cancel">取消</button>
+          <button class="primary-button" type="button" data-class-confirm>确认职业</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="reforge-dialog" data-reforge-dialog aria-labelledby="reforge-title" aria-describedby="reforge-description">
+      <div class="dialog-heading">
+        <div>
+          <p class="panel-kicker">装备重铸</p>
+          <h2 id="reforge-title">比较新旧词条</h2>
+        </div>
+        <form method="dialog">
+          <button class="icon-button" type="submit" value="close" data-reforge-close aria-label="关闭重铸结果" title="关闭">×</button>
+        </form>
+      </div>
+      <div class="reforge-content" id="reforge-description" data-reforge-content>
+        <div class="reforge-placeholder">
+          <span aria-hidden="true">⚒️</span>
+          <strong>等待重铸结果</strong>
+          <p>新旧词条会并排展示，确认前不会替换原装备。</p>
+        </div>
+      </div>
+      <div class="dialog-actions reforge-actions">
+        <button class="secondary-button" type="button" data-reforge-keep>保留原词条</button>
+        <button class="primary-button" type="button" data-reforge-replace>采用新词条</button>
+      </div>
+    </dialog>
+
+    <dialog class="result-dialog" data-result-dialog aria-labelledby="result-title" aria-describedby="result-description">
+      <div class="dialog-heading">
+        <div>
+          <p class="panel-kicker">远征结算</p>
+          <h2 id="result-title">战斗结果</h2>
+        </div>
+        <button class="icon-button" type="button" data-result-close aria-label="关闭结算" title="关闭">×</button>
+      </div>
+      <div class="result-content" id="result-description" data-result-content></div>
+      <div class="dialog-actions">
+        <button class="primary-button" type="button" data-result-close>返回地牢</button>
+      </div>
+    </dialog>
+
+    <div class="toast" data-toast role="status" aria-live="polite" hidden></div>
+
+    <noscript>
+      <div class="noscript-message">需要启用 JavaScript 才能进入地牢。</div>
+    </noscript>
+
+    <script type="module" src="./js/game.js"></script>
+  </body>
+</html>

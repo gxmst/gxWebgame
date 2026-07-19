@@ -26,8 +26,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run logic tests
-        run: node tests/run-node.mjs
+      - name: Run bigfish logic tests
+        run: node bigfish/tests/run-node.mjs
+      - name: Run dungeon logic tests
+        run: node dungeon/tests/run-node.mjs
 
   deploy:
     if: github.event_name != 'pull_request'
