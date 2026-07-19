@@ -75,14 +75,14 @@ export const CONFIG = deepFreeze({
   },
 
   /**
-   * 程序化深海氛围音乐。全部声部由 Web Audio 实时合成，不依赖音频文件。
+   * 程序化街机电子音乐。全部声部由 Web Audio 实时合成，不依赖音频文件。
    * 音量刻意偏低，sceneVolume 可分别调整标题、游玩、暂停与结算时的存在感。
    */
   music: {
     /** 独立背景音乐开关的默认值；旧存档缺少该字段时也使用此值。 */
     enabledByDefault: true,
     /** 音乐总线相对总音量的基础增益。 */
-    baseVolume: 0.11,
+    baseVolume: 0.075,
     /** 不同界面的音乐强度，切换时会平滑过渡。 */
     sceneVolume: {
       title: 0.52,
@@ -99,31 +99,36 @@ export const CONFIG = deepFreeze({
     fadeOutSeconds: 0.45,
     /** 标题、游玩、暂停等场景音量互相切换时的淡变秒数。 */
     sceneTransitionSeconds: 0.45,
-    /** 和弦之间滑音所需秒数，避免音高突变。 */
-    glideSeconds: 2.8,
-    /** 每个和弦停留秒数，数值越大越舒缓。 */
-    chordDurationSeconds: 11,
-    /** 根音频率（E2 附近），整体音高可从这里调整。 */
-    rootFrequency: 82.41,
-    /** 小调氛围和弦，相对根音的半音偏移；每行对应一个循环段落。 */
-    chordSemitones: [
-      [0, 3, 7],
-      [-2, 3, 7],
-      [-4, 0, 5],
-      [-5, -2, 3],
-    ],
-    /** 三个常驻声部的波形，保持轻量且避免尖锐锯齿波。 */
-    voiceWaveforms: ["sine", "triangle", "sine"],
-    /** 各声部增益；总和仍会再乘 baseVolume 与总音量。 */
-    voiceGains: [0.3, 0.2, 0.14],
-    /** 各声部的轻微失谐（音分），让持续音不显得僵硬。 */
-    voiceDetuneCents: [-5, 3, 7],
-    /** 低通滤波截止频率与共振，压住高频保持柔和。 */
-    filterFrequency: 620,
-    filterQ: 0.55,
-    /** 缓慢音量呼吸的频率（Hz）和深度。 */
-    breathFrequency: 0.055,
-    breathDepth: 0.16,
+    /** 每分钟节拍数，调大后旋律会更轻快。 */
+    bpm: 116,
+    /** 每拍切成几步；4 表示十六分音符步进。 */
+    stepsPerBeat: 4,
+    /** 每次定时检查的毫秒数，只负责把未来音符排进 AudioContext 时钟。 */
+    schedulerIntervalMs: 25,
+    /** 提前排入音频时钟的秒数，避免主线程卡顿造成节拍抖动。 */
+    scheduleAheadSeconds: 0.15,
+    /** 旋律基准频率（A3 附近），所有旋律音符都按半音偏移计算。 */
+    rootFrequency: 220,
+    /** 旋律层波形；方波是经典明亮的芯片音色。 */
+    melodyWaveform: "square",
+    /** 低音层波形；三角波让低八度有颗粒感但不会刺耳。 */
+    bassWaveform: "triangle",
+    /** 旋律层相对增益；最终还会乘 baseVolume 与总音量。 */
+    melodyGain: 0.24,
+    /** 低音层相对增益；最终还会乘 baseVolume 与总音量。 */
+    bassGain: 0.16,
+    /** 旋律音符起音时间（秒），越短越像街机提示音。 */
+    melodyAttackSeconds: 0.006,
+    /** 低音音符起音时间（秒）。 */
+    bassAttackSeconds: 0.008,
+    /** 音符占一个步长的比例，留出清晰的颗粒间隔。 */
+    noteGate: 0.72,
+    /** 起音后的快速衰减时间（秒）。 */
+    noteDecaySeconds: 0.075,
+    /** 旋律循环序列，数字是相对 rootFrequency 的半音；null 表示休止。 */
+    melodySemitones: [0, 4, 7, 9, 7, 4, 2, 4, 5, 9, 12, 9, 7, 4, 2, 0],
+    /** 低音循环序列，数字是相对低八度根音的半音；null 表示该步不打低音。 */
+    bassSemitones: [0, null, 0, null, 5, null, 5, null, 7, null, 7, null, 9, null, 7, null],
   },
 
   mass: {

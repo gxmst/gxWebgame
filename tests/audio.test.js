@@ -51,15 +51,19 @@ class FakeOscillator extends FakeNode {
     this.detune = new FakeParam();
     this.started = false;
     this.stopped = false;
+    this.startTime = null;
+    this.stopTime = null;
   }
 
-  start() {
+  start(time) {
     this.started = true;
+    this.startTime = time;
   }
 
-  stop() {
+  stop(time) {
     if (this.stopped) throw new Error("already stopped");
     this.stopped = true;
+    this.stopTime = time;
     this.onended?.();
   }
 }
@@ -124,43 +128,71 @@ class FakeContext {
 function createAudio(settings) {
   const context = new FakeContext();
   let contextsCreated = 0;
+  const intervals = [];
   const audio = new AudioSystem(() => settings, {
     contextFactory: () => {
       contextsCreated++;
       return context;
     },
-    setIntervalFn: () => 1,
-    clearIntervalFn: () => {},
+    setIntervalFn: (callback, delay) => {
+      intervals.push({ callback, delay, cleared: false });
+      return intervals.length;
+    },
+    clearIntervalFn: (id) => {
+      if (intervals[id - 1]) intervals[id - 1].cleared = true;
+    },
   });
-  return { audio, context, getContextsCreated: () => contextsCreated };
+  return { audio, context, intervals, getContextsCreated: () => contextsCreated };
 }
 
 export const tests = [
   {
-    name: "audio unlock creates one lightweight music session after interaction",
+    name: "audio unlock starts one chiptune sequencer after interaction",
     async run() {
       const settings = { volume: 0.7, muted: false, music: true };
-      const { audio, context, getContextsCreated } = createAudio(settings);
+      const { audio, context, intervals, getContextsCreated } = createAudio(settings);
       assert(audio.musicSession === null, "loading must not start audio");
       await audio.unlock();
       assert(getContextsCreated() === 1);
       assert(audio.musicSession !== null);
-      assert(context.oscillators.length === CONFIG.music.voiceWaveforms.length + 1);
+      assert(context.oscillators.some((oscillator) => oscillator.type === "square"));
+      assert(context.oscillators.some((oscillator) => oscillator.type === "triangle"));
+      assert(context.oscillators.every((oscillator) => oscillator.stopTime > oscillator.startTime));
+      assert(intervals.length === 1 && intervals[0].delay === CONFIG.music.schedulerIntervalMs);
+      const oscillatorCount = context.oscillators.length;
       await audio.unlock();
       assert(getContextsCreated() === 1);
-      assert(context.oscillators.length === CONFIG.music.voiceWaveforms.length + 1);
+      assert(context.oscillators.length === oscillatorCount);
+      assert(intervals.length === 1, "unlocking twice must not create another scheduler");
+    },
+  },
+  {
+    name: "music lookahead schedules short notes on the Web Audio clock",
+    async run() {
+      const settings = { volume: 0.7, muted: false, music: true };
+      const { audio, context, intervals } = createAudio(settings);
+      await audio.unlock();
+      const before = context.oscillators.length;
+      context.currentTime = 0.2;
+      intervals[0].callback();
+      const scheduled = context.oscillators.slice(before);
+      assert(scheduled.length > 0);
+      assert(scheduled.every((oscillator) => oscillator.startTime >= context.currentTime));
+      assert(scheduled.every((oscillator) => oscillator.startTime
+        < context.currentTime + CONFIG.music.scheduleAheadSeconds));
     },
   },
   {
     name: "music toggle stops only music while sound effects remain available",
     async run() {
       const settings = { volume: 0.6, muted: false, music: true };
-      const { audio, context } = createAudio(settings);
+      const { audio, context, intervals } = createAudio(settings);
       await audio.unlock();
       const before = context.oscillators.length;
       settings.music = false;
       audio.syncSettings();
       assert(audio.musicSession === null);
+      assert(intervals[0].cleared === true);
       audio.play("ui");
       assert(context.oscillators.length === before + 1, "UI sound should still create a tone");
     },

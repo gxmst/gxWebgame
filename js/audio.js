@@ -259,73 +259,104 @@ export class AudioSystem {
     this.forceStopRetiringSessions();
 
     const now = this.context.currentTime;
-    const filter = this.context.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = CONFIG.music.filterFrequency;
-    filter.Q.value = CONFIG.music.filterQ;
-
-    const breathGain = this.context.createGain();
-    breathGain.gain.value = 1 - CONFIG.music.breathDepth;
     const sessionGain = this.context.createGain();
     sessionGain.gain.setValueAtTime(SILENCE, now);
     sessionGain.gain.linearRampToValueAtTime(1, now + CONFIG.music.fadeInSeconds);
-    filter.connect(breathGain);
-    breathGain.connect(sessionGain);
     sessionGain.connect(this.musicBus);
 
-    const voices = CONFIG.music.voiceWaveforms.map((waveform, index) => {
-      const oscillator = this.context.createOscillator();
-      const voiceGain = this.context.createGain();
-      oscillator.type = waveform;
-      oscillator.detune.value = CONFIG.music.voiceDetuneCents[index] ?? 0;
-      voiceGain.gain.value = CONFIG.music.voiceGains[index] ?? 0;
-      oscillator.connect(voiceGain);
-      voiceGain.connect(filter);
-      oscillator.start(now);
-      return oscillator;
-    });
-
-    const lfo = this.context.createOscillator();
-    const lfoGain = this.context.createGain();
-    lfo.type = "sine";
-    lfo.frequency.value = CONFIG.music.breathFrequency;
-    lfoGain.gain.value = CONFIG.music.breathDepth;
-    lfo.connect(lfoGain);
-    lfoGain.connect(breathGain.gain);
-    lfo.start(now);
-
     const session = {
-      voices,
-      lfo,
       output: sessionGain,
-      chordIndex: 0,
+      activeNotes: new Set(),
+      nextStepTime: now,
+      nextStepIndex: 0,
+      stepDuration: 60 / Math.max(1, CONFIG.music.bpm)
+        / Math.max(1, CONFIG.music.stepsPerBeat),
       intervalId: null,
       stopped: false,
     };
     this.musicSession = session;
-    this.applyMusicChord(session, true);
+    this.scheduleMusicAhead(session);
     if (this.setIntervalFn) {
       session.intervalId = this.setIntervalFn(() => {
         if (this.musicSession !== session || session.stopped) return;
-        session.chordIndex = (session.chordIndex + 1) % CONFIG.music.chordSemitones.length;
-        this.applyMusicChord(session, false);
-      }, CONFIG.music.chordDurationSeconds * 1000);
+        this.scheduleMusicAhead(session);
+      }, Math.max(10, CONFIG.music.schedulerIntervalMs));
     }
   }
 
-  applyMusicChord(session, immediate) {
+  scheduleMusicAhead(session) {
     if (!this.context || session.stopped) return;
-    const chord = CONFIG.music.chordSemitones[session.chordIndex]
-      || CONFIG.music.chordSemitones[0];
-    const now = this.context.currentTime;
-    for (let index = 0; index < session.voices.length; index++) {
-      const semitones = chord[index % chord.length];
-      const frequency = CONFIG.music.rootFrequency * 2 ** (semitones / 12);
-      const param = session.voices[index].frequency;
-      param.cancelScheduledValues?.(now);
-      if (immediate || !param.setTargetAtTime) param.setValueAtTime(frequency, now);
-      else param.setTargetAtTime(frequency, now, Math.max(0.01, CONFIG.music.glideSeconds / 3));
+    const music = CONFIG.music;
+    const currentTime = this.context.currentTime;
+    const scheduleUntil = currentTime + Math.max(0.01, music.scheduleAheadSeconds);
+    const sequenceLength = Math.max(music.melodySemitones.length, music.bassSemitones.length);
+    if (!sequenceLength) return;
+    if (session.nextStepTime < currentTime) {
+      const missedSteps = Math.ceil((currentTime - session.nextStepTime) / session.stepDuration);
+      session.nextStepTime += missedSteps * session.stepDuration;
+      session.nextStepIndex = (session.nextStepIndex + missedSteps) % sequenceLength;
     }
+    while (session.nextStepTime < scheduleUntil) {
+      this.scheduleMusicStep(session, session.nextStepIndex, session.nextStepTime);
+      session.nextStepTime += session.stepDuration;
+      session.nextStepIndex = (session.nextStepIndex + 1) % sequenceLength;
+    }
+  }
+
+  scheduleMusicStep(session, stepIndex, time) {
+    const music = CONFIG.music;
+    const melodySemitones = music.melodySemitones.length
+      ? music.melodySemitones[stepIndex % music.melodySemitones.length]
+      : null;
+    const bassSemitones = music.bassSemitones.length
+      ? music.bassSemitones[stepIndex % music.bassSemitones.length]
+      : null;
+    if (melodySemitones != null) {
+      this.scheduleMusicNote(
+        session,
+        music.rootFrequency * 2 ** (melodySemitones / 12),
+        music.melodyWaveform,
+        music.melodyGain,
+        music.melodyAttackSeconds,
+        time,
+      );
+    }
+    if (bassSemitones != null) {
+      this.scheduleMusicNote(
+        session,
+        (music.rootFrequency / 2) * 2 ** (bassSemitones / 12),
+        music.bassWaveform,
+        music.bassGain,
+        music.bassAttackSeconds,
+        time,
+      );
+    }
+  }
+
+  scheduleMusicNote(session, frequency, waveform, gainValue, attackSeconds, time) {
+    if (!this.context || session.stopped) return;
+    const oscillator = this.context.createOscillator();
+    const gain = this.context.createGain();
+    const duration = Math.max(0.01, session.stepDuration * CONFIG.music.noteGate);
+    const attack = Math.min(Math.max(0.001, attackSeconds), duration * 0.45);
+    const decay = Math.max(0.01, CONFIG.music.noteDecaySeconds);
+    const releaseAt = time + Math.min(duration, attack + decay);
+    oscillator.type = waveform;
+    oscillator.frequency.setValueAtTime(frequency, time);
+    gain.gain.setValueAtTime(SILENCE, time);
+    gain.gain.linearRampToValueAtTime(gainValue, time + attack);
+    gain.gain.exponentialRampToValueAtTime(SILENCE, releaseAt);
+    oscillator.connect(gain);
+    gain.connect(session.output);
+    const note = { oscillator, gain };
+    session.activeNotes.add(note);
+    oscillator.onended = () => {
+      session.activeNotes.delete(note);
+      oscillator.disconnect?.();
+      gain.disconnect?.();
+    };
+    oscillator.start(time);
+    oscillator.stop(releaseAt + 0.02);
   }
 
   stopMusic(immediate = false) {
@@ -344,18 +375,25 @@ export class AudioSystem {
   }
 
   scheduleMusicSessionStop(session, stopAt) {
-    const nodes = [...session.voices, session.lfo];
-    let remaining = nodes.length;
     const cleanup = () => {
-      remaining--;
-      if (remaining > 0) return;
+      if (session.activeNotes.size > 0) return;
       this.retiringMusicSessions.delete(session);
       session.output.disconnect?.();
     };
-    for (const node of nodes) {
-      node.onended = cleanup;
+    const notes = [...session.activeNotes];
+    if (!notes.length) {
+      cleanup();
+      return;
+    }
+    for (const note of notes) {
+      const { oscillator } = note;
+      const previousEnded = oscillator.onended;
+      oscillator.onended = () => {
+        previousEnded?.();
+        cleanup();
+      };
       try {
-        node.stop(stopAt);
+        oscillator.stop(stopAt);
       } catch {
         cleanup();
       }
@@ -366,9 +404,9 @@ export class AudioSystem {
     const now = this.context?.currentTime ?? 0;
     for (const session of this.retiringMusicSessions) {
       setParamNow(session.output.gain, 0, now);
-      for (const node of [...session.voices, session.lfo]) {
+      for (const note of [...session.activeNotes]) {
         try {
-          node.stop(now + 0.01);
+          note.oscillator.stop(now + 0.01);
         } catch {
           // A scheduled or already stopped oscillator is harmless.
         }
