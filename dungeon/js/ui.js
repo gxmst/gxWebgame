@@ -199,6 +199,44 @@ export class DungeonUI {
         return;
       }
 
+      const npcButton = event.target.closest("[data-town-npc]");
+      if (npcButton) {
+        this.handlers.openNpc?.(npcButton.dataset.townNpc);
+        return;
+      }
+
+      if (event.target.closest("[data-quest-log]")) {
+        this.handlers.openQuestLog?.();
+        return;
+      }
+
+      if (event.target.closest("[data-quest-log-close]")) {
+        this.handlers.closeQuestLog?.();
+        return;
+      }
+
+      const eventOption = event.target.closest("[data-event-option]");
+      if (eventOption) {
+        this.handlers.chooseEventOption?.(Number(eventOption.dataset.eventOption));
+        return;
+      }
+
+      if (event.target.closest("[data-event-continue]")) {
+        this.handlers.continueEvent?.();
+        return;
+      }
+
+      const dialogueOption = event.target.closest("[data-dialogue-option]");
+      if (dialogueOption) {
+        this.handlers.chooseDialogueOption?.(Number(dialogueOption.dataset.dialogueOption));
+        return;
+      }
+
+      if (event.target.closest("[data-dialogue-close]")) {
+        this.handlers.closeDialogue?.();
+        return;
+      }
+
       if (event.target.closest("[data-start-outdoor]")) {
         this.handlers.startOutdoor?.();
         return;
@@ -735,6 +773,7 @@ export class DungeonUI {
       if (this.dom.townEmblem) {
         this.dom.townEmblem.textContent = currentNode?.emoji || "🏰";
       }
+      this.renderTownNpcs(model.townNpcs);
     }
 
     if (currentNode?.type === "outdoor" || scene === "outdoor") {
@@ -903,6 +942,114 @@ export class DungeonUI {
     }
     setText(this.dom.outdoorFloor, `第 ${numberOr(outdoor.targetFloor ?? outdoor.floorId, 1)} 层附近`);
     setText(this.dom.outdoorTotalWaves, formatNumber(outdoor.totalWaves ?? outdoor.completedWaves ?? 0));
+  }
+
+  renderTownNpcs(npcs = []) {
+    if (!this.dom.townNpcList) return;
+    const list = Array.isArray(npcs) ? npcs : [];
+    if (list.length === 0) {
+      this.dom.townNpcList.innerHTML = `<p class="town-npc-empty">这个镇子暂时没有可交谈的人。</p>`;
+      return;
+    }
+    this.dom.townNpcList.innerHTML = list.map((npc) => `
+      <button class="town-npc-card" type="button" role="listitem" data-town-npc="${escapeHtml(npc.id)}">
+        <span class="npc-emoji" aria-hidden="true">${escapeHtml(npc.emoji || "🗨️")}</span>
+        <span>
+          <strong>${escapeHtml(npc.name || "无名")}</strong>
+          <small>${escapeHtml(npc.blurb || "村民")}</small>
+        </span>
+        <span class="npc-marker" aria-label="${npc.marker === "available" ? "可接任务" : npc.marker === "turnin" ? "可交付" : npc.marker === "active" ? "任务进行中" : ""}">${escapeHtml(npc.markerLabel || "")}</span>
+      </button>
+    `).join("");
+  }
+
+  showEventCard(eventModel = null) {
+    if (!this.dom.eventDialog || !eventModel?.card) return;
+    const card = eventModel.card;
+    const phase = eventModel.phase || "choice";
+    setText(this.dom.eventTitle, card.title || "突发事件");
+    const rewardChips = formatEventRewardChips(eventModel.rewards);
+    if (phase === "result") {
+      this.dom.eventContent.innerHTML = `
+        <div class="event-card-hero">
+          <span class="event-emoji" aria-hidden="true">${escapeHtml(card.emoji || "❔")}</span>
+          <p>${escapeHtml(card.text || "")}</p>
+        </div>
+        <div class="event-result-box">${escapeHtml(eventModel.resultText || "你做出了选择。")}</div>
+        ${rewardChips ? `<div class="event-reward-chips">${rewardChips}</div>` : ""}
+      `;
+      this.dom.eventActions.innerHTML = `
+        <button class="primary-button" type="button" data-event-continue>继续漫步</button>
+      `;
+    } else {
+      this.dom.eventContent.innerHTML = `
+        <div class="event-card-hero">
+          <span class="event-emoji" aria-hidden="true">${escapeHtml(card.emoji || "❔")}</span>
+          <p>${escapeHtml(card.text || "")}</p>
+        </div>
+      `;
+      const options = Array.isArray(card.options) ? card.options : [];
+      this.dom.eventActions.innerHTML = options.map((option, index) => `
+        <button class="${index === 0 ? "primary-button" : "secondary-button"}" type="button" data-event-option="${index}">
+          ${escapeHtml(option.label || `选项 ${index + 1}`)}
+        </button>
+      `).join("");
+    }
+    openDialog(this.dom.eventDialog);
+  }
+
+  closeEventCard() {
+    closeDialog(this.dom.eventDialog);
+  }
+
+  showDialogue(dialogue = null) {
+    if (!this.dom.dialogueDialog || !dialogue?.node) return;
+    const npc = dialogue.npc || {};
+    const node = dialogue.node;
+    setText(this.dom.dialogueTitle, npc.name || "对话");
+    if (this.dom.dialogueEmoji) this.dom.dialogueEmoji.textContent = npc.emoji || "🗨️";
+    this.dom.dialogueContent.innerHTML = `<p>${escapeHtml(node.text || "……")}</p>`;
+    const options = Array.isArray(node.options) ? node.options : [];
+    this.dom.dialogueActions.innerHTML = options.map((option, index) => `
+      <button class="${index === 0 ? "primary-button" : "secondary-button"}" type="button" data-dialogue-option="${index}">
+        ${escapeHtml(option.label || `选项 ${index + 1}`)}
+      </button>
+    `).join("") || `<button class="primary-button" type="button" data-dialogue-close>告辞</button>`;
+    openDialog(this.dom.dialogueDialog);
+  }
+
+  closeDialogue() {
+    closeDialog(this.dom.dialogueDialog);
+  }
+
+  showQuestLog(log = {}) {
+    if (!this.dom.questDialog || !this.dom.questLogContent) return;
+    const active = Array.isArray(log.active) ? log.active : [];
+    const completed = Array.isArray(log.completed) ? log.completed : [];
+    const activeMarkup = active.length
+      ? active.map((quest) => `
+        <article class="quest-log-item ${quest.ready ? "is-ready" : ""}">
+          <strong>${quest.ready ? "✅ " : "❗ "}${escapeHtml(quest.name || quest.id)}</strong>
+          <p>${escapeHtml(quest.description || "")}</p>
+          <div class="quest-progress">${escapeHtml(quest.progressText || "")}</div>
+        </article>
+      `).join("")
+      : `<p class="quest-log-empty">当前没有进行中的任务。</p>`;
+    const completedMarkup = completed.length
+      ? `<h3 class="panel-kicker" style="margin:14px 0 8px">已完成</h3>
+        ${completed.map((quest) => `
+          <article class="quest-log-item">
+            <strong>${escapeHtml(quest.name || quest.id)}</strong>
+            <p>${escapeHtml(quest.description || "")}</p>
+          </article>
+        `).join("")}`
+      : "";
+    this.dom.questLogContent.innerHTML = `<div class="quest-log-list">${activeMarkup}${completedMarkup}</div>`;
+    openDialog(this.dom.questDialog);
+  }
+
+  closeQuestLog() {
+    closeDialog(this.dom.questDialog);
   }
 
   activateInventoryTab(name) {
@@ -1204,7 +1351,7 @@ export class DungeonUI {
   setCharacterControlsDisabled(disabled) {
     if (this.dom.autoAllocate) this.dom.autoAllocate.disabled = disabled;
     for (const button of document.querySelectorAll(
-      "[data-allocate-stat], [data-unequip-slot], [data-equip-id], [data-sell-id], [data-reforge-id], [data-upgrade-skill], [data-reset-skills], [data-prestige], [data-character-manage], [data-class-change], [data-shop-refresh], [data-buy-listing], [data-world-node], [data-world-back], [data-world-map-mode], [data-world-map-card-enter], [data-town-shop], [data-town-inventory], [data-town-characters], [data-start-outdoor]",
+      "[data-allocate-stat], [data-unequip-slot], [data-equip-id], [data-sell-id], [data-reforge-id], [data-upgrade-skill], [data-reset-skills], [data-prestige], [data-character-manage], [data-class-change], [data-shop-refresh], [data-buy-listing], [data-world-node], [data-world-back], [data-world-map-mode], [data-world-map-card-enter], [data-town-shop], [data-town-inventory], [data-town-characters], [data-town-npc], [data-quest-log], [data-start-outdoor], [data-event-option], [data-event-continue], [data-dialogue-option]",
     )) {
       button.disabled = disabled;
     }
@@ -1384,6 +1531,18 @@ function collectDom() {
     townDescription: hook("town-description"),
     townFlavor: hook("town-flavor"),
     townEmblem: hook("town-emblem"),
+    townNpcList: hook("town-npc-list"),
+    eventDialog: hook("event-dialog"),
+    eventTitle: hook("event-title"),
+    eventContent: hook("event-content"),
+    eventActions: hook("event-actions"),
+    dialogueDialog: hook("dialogue-dialog"),
+    dialogueTitle: hook("dialogue-title"),
+    dialogueEmoji: hook("dialogue-emoji"),
+    dialogueContent: hook("dialogue-content"),
+    dialogueActions: hook("dialogue-actions"),
+    questDialog: hook("quest-dialog"),
+    questLogContent: hook("quest-log-content"),
     level: hook("level"),
     expText: hook("exp-text"),
     expFill: hook("exp-fill"),
@@ -1756,6 +1915,44 @@ function cssEscape(value) {
 
 function numberOr(value, fallback) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function openDialog(dialog) {
+  if (!dialog) return;
+  if (typeof dialog.showModal === "function") {
+    if (!dialog.open) dialog.showModal();
+  } else {
+    dialog.setAttribute("open", "");
+  }
+}
+
+function closeDialog(dialog) {
+  if (!dialog) return;
+  if (dialog.open && typeof dialog.close === "function") dialog.close();
+  else dialog.removeAttribute("open");
+}
+
+function formatEventRewardChips(rewards) {
+  if (!rewards || typeof rewards !== "object") return "";
+  const chips = [];
+  if (rewards.gold) chips.push(`<span>金币 +${formatNumber(rewards.gold)}</span>`);
+  if (rewards.goldSpent) chips.push(`<span>花费 ${formatNumber(rewards.goldSpent)} 金</span>`);
+  if (rewards.experience) chips.push(`<span>经验 +${formatNumber(rewards.experience)}</span>`);
+  if (Array.isArray(rewards.items) && rewards.items.length) {
+    chips.push(`<span>装备 ×${rewards.items.length}</span>`);
+  }
+  if (rewards.materials && typeof rewards.materials === "object") {
+    for (const [id, amount] of Object.entries(rewards.materials)) {
+      if (amount > 0) chips.push(`<span>${escapeHtml(id)} ×${formatNumber(amount)}</span>`);
+    }
+  }
+  if (rewards.buffs && typeof rewards.buffs === "object") {
+    for (const [stat, amount] of Object.entries(rewards.buffs)) {
+      if (amount) chips.push(`<span>${escapeHtml(stat)} ${amount > 0 ? "+" : ""}${amount}</span>`);
+    }
+  }
+  if (rewards.battle) chips.push("<span>触发战斗</span>");
+  return chips.join("");
 }
 
 function clamp(value, min, max) {

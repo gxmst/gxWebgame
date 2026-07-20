@@ -715,6 +715,13 @@ const ENEMY_TEMPLATES = {
     emoji: "🧟",
     stats: { maxHp: 70, attack: 13, defense: 7, speed: 45, critChance: 0.04 },
   },
+  // 世界地图任务/事件用：腐化林地常见野兽（也进入浅层敌人池）
+  corrupt_wolf: {
+    id: "corrupt_wolf",
+    name: "腐狼",
+    emoji: "🐺",
+    stats: { maxHp: 58, attack: 12, defense: 4, speed: 72, critChance: 0.07 },
+  },
   crypt_guard: {
     id: "crypt_guard",
     name: "墓穴守卫",
@@ -804,8 +811,8 @@ const ENEMY_TEMPLATES = {
 const FLOOR_MAX = 100;
 // 主题按深度分带(upTo 为该带的最深层),越深的带出现越危险的新怪。
 const FLOOR_THEMES = [
-  { upTo: 9, name: "地穴回廊", emoji: "🕯️", description: "潮湿石阶向黑暗深处延伸，碎骨在脚边轻轻作响。", pool: ["bone_rat", "skeleton", "cultist"] },
-  { upTo: 19, name: "白骨回廊", emoji: "💀", description: "骨墙之间回荡着甲片摩擦声，冷箭不知从何处袭来。", pool: ["skeleton", "skeleton_archer", "cultist"] },
+  { upTo: 9, name: "地穴回廊", emoji: "🕯️", description: "潮湿石阶向黑暗深处延伸，碎骨在脚边轻轻作响。", pool: ["bone_rat", "skeleton", "cultist", "corrupt_wolf"] },
+  { upTo: 19, name: "白骨回廊", emoji: "💀", description: "骨墙之间回荡着甲片摩擦声，冷箭不知从何处袭来。", pool: ["skeleton", "skeleton_archer", "cultist", "corrupt_wolf"] },
   { upTo: 29, name: "腐朽墓室", emoji: "⚰️", description: "棺椁半开，腐气与蛛丝在墓室深处交织。", pool: ["ghoul", "cultist", "crypt_spider"] },
   { upTo: 39, name: "守卫大厅", emoji: "🛡️", description: "破损军旗悬在穹顶，重甲守卫封死了前路。", pool: ["crypt_guard", "ghoul", "skeleton_archer"] },
   { upTo: 49, name: "怨语深廊", emoji: "👻", description: "低语在石壁间游走，怨灵掠过烛火而不留身影。", pool: ["wraith", "cultist", "crypt_spider"] },
@@ -1296,6 +1303,265 @@ export const CONFIG = deepFreeze({
     materialsEnabled: false,
     materialDropChancePerEnemy: 0,
     materialId: "wild_essence",
+  },
+
+  /**
+   * 野外事件卡（2A）。加卡 = 加数据；逻辑见 events.js。
+   * 城镇 / 副本内不触发；仅 outdoor 清波后按 eventChance 抽取。
+   */
+  events: {
+    enabled: true,
+    eventChance: 0.22,
+    wavesBetweenEvents: 1,
+    eliteBattle: {
+      enemyStatMultiplier: 1.4,
+      rewardMultiplier: 2,
+      lootChance: 0.9,
+      minimumRarity: "uncommon",
+      enemyCount: 2,
+    },
+    cards: [
+      {
+        id: "treasure_chest",
+        title: "锈蚀的宝箱",
+        emoji: "📦",
+        text: "藤蔓缠绕的宝箱半埋在落叶里，锁扣已经朽坏。",
+        regions: ["forest"],
+        weight: 12,
+        options: [
+          {
+            label: "撬开它",
+            outcomes: [
+              { type: "loot", rarityBias: "uncommon" },
+              { type: "gold", min: 20, max: 60 },
+            ],
+            ambush: { chance: 0.12, enemyCount: 2 },
+            resultText: "箱子里有一些金币和一件装备。",
+          },
+          {
+            label: "小心有诈，绕开",
+            outcomes: [],
+            resultText: "你绕开了宝箱，什么也没发生。",
+          },
+        ],
+      },
+      {
+        id: "mystery_merchant",
+        title: "神秘商人",
+        emoji: "🧙",
+        text: "斗篷遮面的商人从树影中走出，摊开一件蒙尘的货品。",
+        weight: 10,
+        options: [
+          {
+            label: "花 80 金币买下",
+            outcomes: [
+              { type: "spendGold", amount: 80 },
+              { type: "loot", rarityBias: "rare" },
+            ],
+            failText: "商人轻笑一声：穷鬼也敢砍价？",
+            resultText: "商人收起金币，把货品塞进你手里后消失了。",
+          },
+          {
+            label: "离开",
+            outcomes: [],
+            resultText: "你摆摆手走开，商人没再纠缠。",
+          },
+        ],
+      },
+      {
+        id: "elite_ambush",
+        title: "精英伏击",
+        emoji: "⚔️",
+        text: "灌木突然炸开，几道凶光已经扑到面前——无路可退！",
+        weight: 8,
+        options: [
+          {
+            label: "迎战！",
+            outcomes: [{ type: "battle", enemyCount: 2 }],
+            resultText: "你握紧武器，迎接伏击。",
+          },
+        ],
+      },
+      {
+        id: "ancient_altar",
+        title: "古老祭坛",
+        emoji: "⛲",
+        text: "青苔覆盖的石坛仍残留微弱灵光，仿佛在等待献祭。",
+        weight: 9,
+        options: [
+          {
+            label: "献上 50 金币",
+            outcomes: [
+              { type: "spendGold", amount: 50 },
+              { type: "buff", stat: "attack", amount: 1 },
+              { type: "experience", min: 40, max: 90 },
+            ],
+            failText: "祭坛沉默着，你的金币不够。",
+            resultText: "灵光一闪，你感到力量微微上涨。",
+          },
+          {
+            label: "无视",
+            outcomes: [],
+            resultText: "你没有打扰这座古坛。",
+          },
+        ],
+      },
+      {
+        id: "wounded_traveler",
+        title: "受伤的旅人",
+        emoji: "🩸",
+        text: "一名旅人靠在树干上，伤口还在渗血，眼神却仍警惕。",
+        weight: 10,
+        options: [
+          {
+            label: "救助（花费 30 金币）",
+            outcomes: [
+              { type: "spendGold", amount: 30 },
+              { type: "experience", min: 30, max: 70 },
+              { type: "questFlag", flag: "helped_traveler" },
+            ],
+            failText: "你想帮忙，却掏不出足够的药钱。",
+            resultText: "旅人感激地留下几句情报：林中腐狼异常活跃。",
+          },
+          {
+            label: "趁火打劫",
+            outcomes: [
+              { type: "gold", min: 25, max: 55 },
+              { type: "questFlag", flag: "robbed_traveler" },
+            ],
+            resultText: "你搜走了旅人的钱袋。他虚弱的目光在背后刺痛你。",
+          },
+          {
+            label: "无视",
+            outcomes: [],
+            resultText: "你移开视线继续赶路。",
+          },
+        ],
+      },
+      {
+        id: "strange_mushroom",
+        title: "诡异蘑菇",
+        emoji: "🍄",
+        text: "一丛发着幽蓝荧光的蘑菇长在朽木上，闻起来有点甜。",
+        weight: 11,
+        options: [
+          {
+            label: "吃掉它",
+            outcomes: [
+              { type: "experience", min: 10, max: 120 },
+              { type: "gold", min: 0, max: 40 },
+            ],
+            ambush: { chance: 0.2, enemyCount: 1 },
+            resultText: "味道……难以形容。你的视野晃了一下。",
+          },
+          {
+            label: "不吃",
+            outcomes: [],
+            resultText: "你把蘑菇踢开，继续前进。",
+          },
+        ],
+      },
+      {
+        id: "unclaimed_corpse",
+        title: "无主尸骸",
+        emoji: "💀",
+        text: "路边倒着一具风干的尸骸，背包带还半挂在肩上。",
+        weight: 10,
+        options: [
+          {
+            label: "搜刮",
+            outcomes: [
+              { type: "gold", min: 15, max: 45 },
+              { type: "material", id: "wild_essence", min: 1, max: 2 },
+            ],
+            ambush: { chance: 0.18, enemyCount: 2 },
+            resultText: "你翻出一些散落的金币与残破材料。",
+          },
+          {
+            label: "走开",
+            outcomes: [],
+            resultText: "你对死者抱拳，没有惊扰长眠。",
+          },
+        ],
+      },
+    ],
+  },
+
+  /**
+   * 城镇 NPC + 任务（2A：基础接做交 + kill 目标）。
+   * 任务链 / 复杂对话树留给 2B。
+   */
+  quests: {
+    npcs: {
+      forest_elder: {
+        id: "forest_elder",
+        name: "林地长老",
+        emoji: "🧝",
+        town: "forest_town",
+        blurb: "灰烬村的守护者，为腐化蔓延忧心忡忡。",
+        quests: ["cull_wolves"],
+        dialogue: {
+          root: {
+            text: "年轻的冒险者，腐化正在吞噬这片森林……腐狼的嚎叫一夜比一夜近。",
+            options: [
+              { label: "我能帮上什么？", goto: "offer_quest" },
+              { label: "这村子还安全吗？", goto: "about_village" },
+              { label: "告辞", end: true },
+            ],
+          },
+          offer_quest: {
+            text: "林中的腐狼越来越多。替我清剿 10 只，如何？事成之后，村中不会亏待你。",
+            options: [
+              { label: "接下任务", acceptQuest: "cull_wolves", end: true },
+              { label: "再考虑", end: true },
+            ],
+          },
+          about_village: {
+            text: "炉火还在，城墙还在。只要还有人愿意拔剑，灰烬村就不会倒。",
+            options: [
+              { label: "关于腐狼……", goto: "offer_quest" },
+              { label: "告辞", end: true },
+            ],
+          },
+        },
+      },
+      forest_quartermaster: {
+        id: "forest_quartermaster",
+        name: "军需官玛莎",
+        emoji: "🛡️",
+        town: "forest_town",
+        blurb: "管着商店与补给，说话简短却可靠。",
+        dialogue: {
+          root: {
+            text: "需要补给就去商店；破损的装备可以在背包里重铸。别在野外硬扛。",
+            options: [
+              { label: "明白了", end: true },
+            ],
+          },
+        },
+      },
+    },
+    quests: {
+      cull_wolves: {
+        id: "cull_wolves",
+        name: "清剿腐狼",
+        giver: "forest_elder",
+        description: "清剿腐化林地中的 10 只腐狼，回报林地长老。",
+        objective: {
+          type: "kill",
+          target: "corrupt_wolf",
+          targetName: "腐狼",
+          count: 10,
+        },
+        rewards: [
+          { type: "gold", amount: 200 },
+          { type: "experience", amount: 500 },
+          { type: "loot", rarityBias: "rare" },
+        ],
+        // 2B 任务链入口预留
+        nextQuest: null,
+      },
+    },
   },
 
   /**

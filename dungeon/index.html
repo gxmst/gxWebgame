@@ -294,7 +294,7 @@
             </p>
           </section>
 
-          <!-- 城镇：现有商店 / 角色管理入口 -->
+          <!-- 城镇：NPC + 设施入口 -->
           <section class="town-view" data-town-view hidden aria-labelledby="town-title">
             <div class="town-emblem" aria-hidden="true" data-town-emblem>🏰</div>
             <div class="town-copy">
@@ -303,6 +303,13 @@
               <p data-town-description>林地边缘的避难所。</p>
               <p class="town-flavor" data-town-flavor></p>
             </div>
+            <section class="town-npc-section" aria-labelledby="town-npc-title">
+              <div class="section-title-row">
+                <h4 id="town-npc-title">居民</h4>
+                <button class="text-button" type="button" data-quest-log>任务日志</button>
+              </div>
+              <div class="town-npc-list" data-town-npc-list role="list"></div>
+            </section>
             <div class="town-actions" role="group" aria-label="城镇设施">
               <button class="primary-button" type="button" data-town-shop>
                 <span aria-hidden="true">◈</span> 进入商店
@@ -317,7 +324,7 @@
                 <span aria-hidden="true">←</span> 返回地图
               </button>
             </div>
-            <p class="town-tip">商店内可购买装备；背包中可对装备重铸。角色管理可创建或切换冒险者。</p>
+            <p class="town-tip">与居民对话可接任务；商店补给、背包重铸、角色管理仍在此办理。</p>
           </section>
 
           <div class="idle-view" data-idle-view hidden>
@@ -651,6 +658,46 @@
       <div class="dialog-actions">
         <button class="secondary-button" type="button" data-result-again hidden>⚔ 再战本层</button>
         <button class="primary-button" type="button" data-result-close data-result-return>返回地牢</button>
+      </div>
+    </dialog>
+
+    <dialog class="event-dialog" data-event-dialog aria-labelledby="event-title" aria-describedby="event-description">
+      <div class="dialog-heading">
+        <div>
+          <p class="panel-kicker">野外事件</p>
+          <h2 id="event-title" data-event-title>突发事件</h2>
+        </div>
+      </div>
+      <div class="event-content" id="event-description" data-event-content></div>
+      <div class="dialog-actions event-actions" data-event-actions></div>
+    </dialog>
+
+    <dialog class="dialogue-dialog" data-dialogue-dialog aria-labelledby="dialogue-title" aria-describedby="dialogue-description">
+      <div class="dialog-heading">
+        <div class="dialogue-heading-main">
+          <span class="dialogue-emoji" data-dialogue-emoji aria-hidden="true">🗨️</span>
+          <div>
+            <p class="panel-kicker">对话</p>
+            <h2 id="dialogue-title" data-dialogue-title>NPC</h2>
+          </div>
+        </div>
+        <button class="icon-button" type="button" data-dialogue-close aria-label="结束对话" title="关闭">×</button>
+      </div>
+      <div class="dialogue-content" id="dialogue-description" data-dialogue-content></div>
+      <div class="dialog-actions dialogue-actions" data-dialogue-actions></div>
+    </dialog>
+
+    <dialog class="quest-dialog" data-quest-dialog aria-labelledby="quest-log-title">
+      <div class="dialog-heading">
+        <div>
+          <p class="panel-kicker">冒险记录</p>
+          <h2 id="quest-log-title">任务日志</h2>
+        </div>
+        <button class="icon-button" type="button" data-quest-log-close aria-label="关闭任务日志" title="关闭">×</button>
+      </div>
+      <div class="quest-log-content" data-quest-log-content></div>
+      <div class="dialog-actions">
+        <button class="primary-button" type="button" data-quest-log-close>关闭</button>
       </div>
     </dialog>
 

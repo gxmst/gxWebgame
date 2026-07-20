@@ -21,6 +21,14 @@ import {
   sanitizeWorldState,
   syncWorldProgress,
 } from "./world.js";
+import {
+  createDefaultEventState,
+  sanitizeEventState,
+} from "./events.js";
+import {
+  createDefaultQuestState,
+  sanitizeQuestState,
+} from "./quests.js";
 import { canPrestige, prestigeHero } from "./skills.js";
 
 export const DEFAULT_SAVE_KEY = CONFIG.save.key;
@@ -33,19 +41,24 @@ const ACTIVE_PROJECTION_KEYS = [
   "economy",
   "outdoor",
   "world",
+  "quests",
+  "eventFlags",
+  "eventBuffs",
+  "materials",
+  "eventMeta",
   "pendingBattle",
 ];
 const NORMALIZED_SAVE = Symbol("normalized-save");
 
 /**
  * Canonical v3 save shape:
- * { version, characters:[{id,name,hero,progress,economy,outdoor,world,pendingBattle}],
+ * { version, characters:[{id,name,hero,progress,economy,outdoor,world,
+ *   quests,eventFlags,eventBuffs,materials,eventMeta,pendingBattle}],
  *   activeCharacterId, settings }
  *
- * Enumerable hero/progress/economy/outdoor/world/pendingBattle accessors project
- * the active character for compatibility with the v2 game/economy APIs. saveSave()
- * writes only the canonical fields; ordinary JSON snapshots retain aliases so
- * legacy helper code that parses them directly still has the expected shape.
+ * Enumerable active-character accessors project for compatibility with the
+ * v2 game/economy APIs. saveSave() writes only the canonical fields; ordinary
+ * JSON snapshots retain aliases so legacy helper code still has the expected shape.
  */
 export function createDefaultSave() {
   const character = createDefaultCharacter({ id: "character-1" });
@@ -69,6 +82,7 @@ export function createDefaultCharacter(options = {}) {
   const namedHero = sanitizeHero({ ...hero, name });
   const id = safeString(options.id, "character-1", MAX_CHARACTER_ID_LENGTH);
   const progress = createDefaultProgress();
+  const eventState = createDefaultEventState();
   return {
     id,
     name: namedHero.name,
@@ -79,6 +93,11 @@ export function createDefaultCharacter(options = {}) {
     world: createDefaultWorldState({
       highestUnlockedFloor: progress.highestUnlockedFloor,
     }),
+    quests: createDefaultQuestState(),
+    eventFlags: eventState.eventFlags,
+    eventBuffs: eventState.eventBuffs,
+    materials: eventState.materials,
+    eventMeta: { lastEventWave: eventState.lastEventWave },
     // Refreshing during combat settles only this character as a retreat.
     pendingBattle: null,
   };
@@ -491,6 +510,12 @@ function sanitizeLegacyCharacter(source, usedIds) {
     firstRecord(source.progress, source.dungeon),
     source,
   );
+  const eventState = sanitizeEventState({
+    eventFlags: source.eventFlags,
+    eventBuffs: source.eventBuffs,
+    materials: source.materials,
+    lastEventWave: source.eventMeta?.lastEventWave ?? source.lastEventWave,
+  });
   return {
     id,
     name: hero.name,
@@ -502,6 +527,11 @@ function sanitizeLegacyCharacter(source, usedIds) {
       firstRecord(source.world),
       progress,
     ),
+    quests: sanitizeQuestState(source.quests ?? source.questLog),
+    eventFlags: eventState.eventFlags,
+    eventBuffs: eventState.eventBuffs,
+    materials: eventState.materials,
+    eventMeta: { lastEventWave: eventState.lastEventWave },
     pendingBattle: sanitizePendingBattle(source.pendingBattle, id),
   };
 }
@@ -523,6 +553,12 @@ function sanitizeCharacterRecord(candidate, index, usedIds = new Set()) {
   );
   const name = safeString(source.name, hero.name, 30);
   const namedHero = hero.name === name ? hero : sanitizeHero({ ...hero, name });
+  const eventState = sanitizeEventState({
+    eventFlags: source.eventFlags,
+    eventBuffs: source.eventBuffs,
+    materials: source.materials,
+    lastEventWave: source.eventMeta?.lastEventWave ?? source.lastEventWave,
+  });
   return {
     id,
     name: namedHero.name,
@@ -534,6 +570,11 @@ function sanitizeCharacterRecord(candidate, index, usedIds = new Set()) {
       firstRecord(source.world),
       progress,
     ),
+    quests: sanitizeQuestState(source.quests ?? source.questLog),
+    eventFlags: eventState.eventFlags,
+    eventBuffs: eventState.eventBuffs,
+    materials: eventState.materials,
+    eventMeta: { lastEventWave: eventState.lastEventWave },
     pendingBattle: sanitizePendingBattle(source.pendingBattle, id),
   };
 }
@@ -599,6 +640,15 @@ function synchronizeProjectedCharacter(character, source) {
     : character.progress;
   const name = projectedHero.name;
   const hero = projectedHero;
+  const eventSource = {
+    eventFlags: Object.hasOwn(source, "eventFlags") ? source.eventFlags : character.eventFlags,
+    eventBuffs: Object.hasOwn(source, "eventBuffs") ? source.eventBuffs : character.eventBuffs,
+    materials: Object.hasOwn(source, "materials") ? source.materials : character.materials,
+    lastEventWave: Object.hasOwn(source, "eventMeta")
+      ? source.eventMeta?.lastEventWave
+      : character.eventMeta?.lastEventWave,
+  };
+  const eventState = sanitizeEventState(eventSource);
   return {
     ...character,
     name,
@@ -613,6 +663,13 @@ function synchronizeProjectedCharacter(character, source) {
     world: Object.hasOwn(source, "world")
       ? sanitizeWorldState(source.world, progress)
       : sanitizeWorldState(character.world, progress),
+    quests: Object.hasOwn(source, "quests")
+      ? sanitizeQuestState(source.quests)
+      : sanitizeQuestState(character.quests),
+    eventFlags: eventState.eventFlags,
+    eventBuffs: eventState.eventBuffs,
+    materials: eventState.materials,
+    eventMeta: { lastEventWave: eventState.lastEventWave },
     pendingBattle: Object.hasOwn(source, "pendingBattle")
       ? sanitizePendingBattle(source.pendingBattle, character.id)
       : sanitizePendingBattle(character.pendingBattle, character.id),
@@ -686,6 +743,11 @@ function attachActiveProjection(save) {
         economy: save.economy,
         outdoor: save.outdoor,
         world: save.world,
+        quests: save.quests,
+        eventFlags: save.eventFlags,
+        eventBuffs: save.eventBuffs,
+        materials: save.materials,
+        eventMeta: save.eventMeta,
         pendingBattle: save.pendingBattle,
       };
     },

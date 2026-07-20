@@ -1527,6 +1527,244 @@ button.equipment-slot {
   line-height: 1.45;
 }
 
+.town-npc-section {
+  width: min(520px, 100%);
+  text-align: left;
+}
+
+.town-npc-section .section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.town-npc-section h4 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--gold-soft);
+}
+
+.town-npc-list {
+  display: grid;
+  gap: 8px;
+}
+
+.town-npc-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(16, 18, 22, 0.72);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.town-npc-card:hover,
+.town-npc-card:focus-visible {
+  border-color: rgba(212, 175, 95, 0.55);
+  outline: none;
+}
+
+.town-npc-card .npc-emoji {
+  font-size: 22px;
+}
+
+.town-npc-card strong {
+  display: block;
+  font-size: 14px;
+}
+
+.town-npc-card small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.town-npc-card .npc-marker {
+  min-width: 1.5em;
+  font-size: 16px;
+  text-align: center;
+}
+
+.town-npc-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.event-dialog,
+.dialogue-dialog,
+.quest-dialog {
+  width: min(440px, calc(100vw - 28px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #1a1e24, #12151a);
+  color: inherit;
+}
+
+.event-dialog[open],
+.dialogue-dialog[open],
+.quest-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.event-dialog::backdrop,
+.dialogue-dialog::backdrop,
+.quest-dialog::backdrop {
+  background: rgba(6, 8, 12, 0.72);
+}
+
+.event-content,
+.dialogue-content,
+.quest-log-content {
+  padding: 4px 18px 8px;
+}
+
+.event-card-hero {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 8px 0 4px;
+}
+
+.event-card-hero .event-emoji {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: radial-gradient(circle at 35% 30%, rgba(212, 175, 95, 0.2), transparent 55%), #161a1f;
+  font-size: 34px;
+}
+
+.event-card-hero p,
+.dialogue-content p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.event-result-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(212, 175, 95, 0.28);
+  background: rgba(212, 175, 95, 0.08);
+  color: var(--gold-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.event-reward-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.event-reward-chips span {
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.event-actions,
+.dialogue-actions {
+  flex-wrap: wrap;
+}
+
+.event-actions .primary-button,
+.event-actions .secondary-button,
+.dialogue-actions .primary-button,
+.dialogue-actions .secondary-button {
+  min-width: 120px;
+}
+
+.dialogue-heading-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dialogue-emoji {
+  font-size: 28px;
+}
+
+.quest-log-list {
+  display: grid;
+  gap: 10px;
+}
+
+.quest-log-item {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.quest-log-item strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.quest-log-item p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.quest-log-item .quest-progress {
+  margin-top: 6px;
+  color: var(--gold-soft);
+  font-size: 12px;
+}
+
+.quest-log-item.is-ready {
+  border-color: rgba(120, 190, 120, 0.45);
+}
+
+.quest-log-empty {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.text-button {
+  border: 0;
+  background: transparent;
+  color: var(--gold-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.text-button:hover,
+.text-button:focus-visible {
+  color: var(--gold);
+  outline: none;
+}
+
 .outdoor-actions {
   display: flex;
   flex-wrap: wrap;

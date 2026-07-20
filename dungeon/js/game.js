@@ -66,6 +66,20 @@ import {
   leaveToMap,
   listRegions,
 } from "./world.js";
+import {
+  applyEventBuffsToStats,
+  createEventBattleWave,
+  pickEventCard,
+  resolveEventOption,
+  shouldTriggerEvent,
+} from "./events.js";
+import {
+  chooseDialogueOption,
+  getDialogueNode,
+  listQuestLog,
+  listTownNpcs,
+  progressKillQuests,
+} from "./quests.js";
 import { DungeonUI } from "./ui.js";
 
 const BASE_LOG_DELAY = 175;
@@ -81,6 +95,10 @@ class DungeonGame {
     );
     this.battle = null;
     this.outdoorRun = null;
+    // 野外事件卡进行中（暂停刷怪）；结构：{ card, seed, phase, resolution, battlePlan }
+    this.pendingEvent = null;
+    // 城镇对话：{ npcId, nodeId }
+    this.dialogue = null;
     // 刷新后按存档 currentNodeId 恢复场景；无节点时回到世界地图。
     const restoredNode = this.save.world?.currentNodeId
       ? getNode(this.save.world.currentNodeId, CONFIG)
@@ -131,6 +149,13 @@ class DungeonGame {
       openTownInventory: () => this.openTownInventory(),
       startOutdoor: () => this.startOutdoor(),
       stopOutdoor: () => this.stopOutdoor(),
+      chooseEventOption: (optionIndex) => this.chooseEventOption(optionIndex),
+      continueEvent: () => this.continueEvent(),
+      openNpc: (npcId) => this.openNpc(npcId),
+      chooseDialogueOption: (optionIndex) => this.chooseDialogueOption(optionIndex),
+      closeDialogue: () => this.closeDialogue(),
+      openQuestLog: () => this.openQuestLog(),
+      closeQuestLog: () => this.closeQuestLog(),
     });
     if (this.interruptedBattle) {
       this.save = resolveImportedPendingBattle(this.save).save;
@@ -253,7 +278,33 @@ class DungeonGame {
         targetFloor: outdoorFloor,
         totalWaves: outdoorWaves,
         running: Boolean(this.outdoorRun),
+        eventPending: Boolean(this.pendingEvent),
       },
+      quests: listQuestLog(this.save.quests, CONFIG),
+      townNpcs: this.buildTownNpcView(),
+      dialogue: this.dialogue
+        ? {
+          npc: listTownNpcs(this.save.world?.currentNodeId, this.save.quests, CONFIG)
+            .find((npc) => npc.id === this.dialogue.npcId)
+            ?? null,
+          node: getDialogueNode(
+            this.dialogue.npcId,
+            this.dialogue.nodeId,
+            this.save.quests,
+            CONFIG,
+          ),
+        }
+        : null,
+      pendingEvent: this.pendingEvent
+        ? {
+          card: this.pendingEvent.card,
+          phase: this.pendingEvent.phase,
+          resultText: this.pendingEvent.resolution?.resultText ?? null,
+          rewards: this.pendingEvent.resolution?.rewards ?? null,
+        }
+        : null,
+      eventBuffs: this.save.eventBuffs ?? {},
+      materials: this.save.materials ?? {},
       career: {
         totalVictories: this.save.progress.totalVictories,
         totalDefeats: this.save.progress.totalDefeats,
@@ -266,6 +317,14 @@ class DungeonGame {
       },
       classes: Object.values(CONFIG.classes),
     };
+  }
+
+  buildTownNpcView() {
+    const nodeId = this.save.world?.currentNodeId;
+    if (!nodeId) return [];
+    const node = getNode(nodeId, CONFIG);
+    if (!node || node.type !== "town") return [];
+    return listTownNpcs(nodeId, this.save.quests, CONFIG);
   }
 
   buildWorldViewModel() {
@@ -285,6 +344,13 @@ class DungeonGame {
       currentRegionName: currentRegion?.name ?? "—",
       currentRegionEmoji: currentRegion?.emoji ?? "◆",
     };
+  }
+
+  /** 战斗单位：叠加上事件永久小 buff，不改 hero.js / combat.js。 */
+  createPlayerCombatant() {
+    const combatant = createHeroCombatant(this.save.hero);
+    combatant.stats = applyEventBuffsToStats(combatant.stats, this.save.eventBuffs);
+    return combatant;
   }
 
   sceneFromNodeType(type) {
@@ -494,14 +560,14 @@ class DungeonGame {
     const characterId = this.save.activeCharacterId;
     const seed = `${Date.now()}|${characterId}|${floor.id}|${attempt}`;
     const wave = createEnemyWave(floor.id, seed);
-    const player = createHeroCombatant(this.save.hero);
+    const player = this.createPlayerCombatant();
     const result = simulateCombat({
       player,
       enemies: wave.enemies,
       seed,
       config: CONFIG,
     });
-    const stats = getHeroStats(this.save.hero);
+    const stats = applyEventBuffsToStats(getHeroStats(this.save.hero), this.save.eventBuffs);
     const enemies = wave.enemies.map((enemy) => ({
       ...enemy,
       icon: enemy.emoji,
@@ -569,37 +635,60 @@ class DungeonGame {
 
   startOutdoorWave() {
     const run = this.outdoorRun;
-    if (!run || run.state.status !== "running" || document.hidden) return;
+    if (!run || run.state.status !== "running" || document.hidden || this.pendingEvent) return;
     const wave = createOutdoorWave(this.save, run.state, CONFIG);
+    this.beginScriptedBattle({
+      wave,
+      seed: wave.seed,
+      mode: "outdoor",
+      waveNumber: run.state.completedWaves + 1,
+      caption: `🌲 第 ${run.state.completedWaves + 1} 波 · ${getFloor(wave.floorId)?.name ?? "荒野"}`,
+      settle: () => this.resolveOutdoorWave(),
+      logSummaries: true,
+    });
+  }
+
+  /**
+   * 通用脚本战斗：野外波次 / 事件伏击共用，不改 combat.js。
+   */
+  beginScriptedBattle({
+    wave,
+    seed,
+    mode,
+    waveNumber = null,
+    caption = "",
+    settle,
+    logSummaries = false,
+    playLogs = false,
+  }) {
     const floor = getFloor(wave.floorId) ?? getFloor(CONFIG.dungeon.minFloor);
-    const seed = wave.seed;
     const result = simulateCombat({
-      player: createHeroCombatant(this.save.hero),
+      player: this.createPlayerCombatant(),
       enemies: wave.enemies,
       seed,
       config: CONFIG,
     });
-    const stats = getHeroStats(this.save.hero);
+    const stats = applyEventBuffsToStats(getHeroStats(this.save.hero), this.save.eventBuffs);
     const enemies = wave.enemies.map((enemy) => ({
       ...enemy,
       icon: enemy.emoji,
       hp: enemy.stats?.hp ?? enemy.hp,
       maxHp: enemy.stats?.maxHp ?? enemy.maxHp,
     }));
-    const waveNumber = run.state.completedWaves + 1;
     this.battle = {
       floor,
       wave,
       seed,
       result,
-      index: result.logs.length,
+      index: playLogs ? 0 : result.logs.length,
       timer: null,
       settled: false,
       loot: null,
-      lastSnapshot: result.finalState,
+      lastSnapshot: playLogs ? null : result.finalState,
       characterId: this.save.activeCharacterId,
-      mode: "outdoor",
+      mode,
       waveNumber,
+      settleHandler: settle,
     };
     this.ui.showBattle({
       hero: this.save.hero,
@@ -608,25 +697,32 @@ class DungeonGame {
       enemies,
       floor,
       speed: this.save.settings.battleSpeed,
-      mode: "outdoor",
+      mode: mode === "event" ? "outdoor" : mode,
       waveNumber,
     });
-    for (const summary of run.summaries.slice(-4)) {
-      this.ui.appendBattleLog({ type: "info", message: summary });
+    if (logSummaries && this.outdoorRun) {
+      for (const summary of this.outdoorRun.summaries.slice(-4)) {
+        this.ui.appendBattleLog({ type: "info", message: summary });
+      }
     }
-    this.ui.appendBattleLog({
-      type: "info",
-      round: 0,
-      message: `🌲 第 ${waveNumber} 波 · ${floor?.name ?? "荒野"}`,
-    });
+    if (caption) {
+      this.ui.appendBattleLog({ type: "info", round: 0, message: caption });
+    }
+    if (playLogs) {
+      this.scheduleNextLog(80);
+      return;
+    }
     const configuredDelay = Number(CONFIG.outdoor?.waveDelayMs);
     const delay = Math.max(
       180,
       (Number.isFinite(configuredDelay) ? configuredDelay : 720)
         / Math.max(1, this.save.settings.battleSpeed),
     );
-    run.timer = setTimeout(() => this.resolveOutdoorWave(), delay);
-    this.battle.timer = run.timer;
+    const timer = setTimeout(() => {
+      if (typeof this.battle?.settleHandler === "function") this.battle.settleHandler();
+    }, delay);
+    if (this.outdoorRun && mode === "outdoor") this.outdoorRun.timer = timer;
+    this.battle.timer = timer;
   }
 
   resolveOutdoorWave() {
@@ -646,6 +742,9 @@ class DungeonGame {
     );
     run.state = settled.state;
     const earned = settled.earned;
+    if (battle.result.victory) {
+      this.recordKillProgress(battle.wave.enemies);
+    }
     const waveSummary = battle.result.victory
       ? `✓ 第 ${battle.wave.waveIndex + 1} 波完成 · 经验 +${earned.experience} · 金币 +${earned.gold}${earned.items.length ? ` · 装备 ${earned.items.length}` : ""}`
       : `× 第 ${battle.wave.waveIndex + 1} 波未能清剿，漫步已停止。`;
@@ -661,7 +760,52 @@ class DungeonGame {
       this.finishOutdoorRun(battle.result.victory ? "complete" : "defeat");
       return;
     }
+
+    // 清波后尝试触发事件卡；触发则暂停自动刷怪。
+    if (this.tryOpenOutdoorEvent(run)) return;
+
     this.render();
+    this.scheduleOutdoorContinue();
+  }
+
+  tryOpenOutdoorEvent(run) {
+    const regionId = this.save.world?.currentRegionId
+      || getNode(this.save.world?.currentNodeId, CONFIG)?.regionId
+      || "forest";
+    const completedWaves = run.state.completedWaves;
+    const lastEventWave = this.save.eventMeta?.lastEventWave ?? -999;
+    const seed = `${run.state.sessionSeed}|event|${completedWaves}`;
+    if (!shouldTriggerEvent({ completedWaves, lastEventWave }, seed, CONFIG)) {
+      return false;
+    }
+    const card = pickEventCard({
+      regionId,
+      worldLevel: getWorldLevel(this.save),
+      eventFlags: this.save.eventFlags,
+    }, seed, CONFIG);
+    if (!card) return false;
+
+    this.pendingEvent = {
+      card,
+      seed,
+      phase: "choice",
+      resolution: null,
+      completedWaves,
+      regionId,
+    };
+    this.save = updateActiveCharacter(this.save, (active) => ({
+      ...active,
+      eventMeta: { lastEventWave: completedWaves },
+    }));
+    this.persist({ silent: true });
+    this.render();
+    this.ui.showEventCard?.(this.buildViewModel().pendingEvent);
+    return true;
+  }
+
+  scheduleOutdoorContinue() {
+    const run = this.outdoorRun;
+    if (!run || run.state.status !== "running" || this.pendingEvent || document.hidden) return;
     const configuredDelay = Number(CONFIG.outdoor?.waveDelayMs);
     const delay = Math.max(
       180,
@@ -671,9 +815,347 @@ class DungeonGame {
     run.timer = setTimeout(() => this.startOutdoorWave(), delay);
   }
 
+  chooseEventOption(optionIndex) {
+    const pending = this.pendingEvent;
+    if (!pending || pending.phase !== "choice") return;
+    const resolution = resolveEventOption(
+      pending.card,
+      Number(optionIndex),
+      {
+        heroGold: this.save.hero.gold,
+        worldLevel: getWorldLevel(this.save),
+        lootFloor: Math.max(1, getWorldLevel(this.save)),
+        highestUnlockedFloor: this.save.progress.highestUnlockedFloor,
+        hero: this.save.hero,
+        eventFlags: this.save.eventFlags,
+        eventBuffs: this.save.eventBuffs,
+        materials: this.save.materials,
+        regionId: pending.regionId,
+      },
+      pending.seed,
+      CONFIG,
+    );
+    if (!resolution.ok && resolution.reason === "not-enough-gold") {
+      this.ui.showToast(resolution.resultText || "金币不足。", "error");
+      return;
+    }
+    pending.resolution = resolution;
+    pending.phase = resolution.battle ? "battle" : "result";
+    this.applyEventResolution(resolution);
+    this.persist({ silent: true });
+    this.render();
+    if (resolution.battle) {
+      this.ui.closeEventCard?.();
+      this.startEventBattle(resolution.battle);
+      return;
+    }
+    this.ui.showEventCard?.(this.buildViewModel().pendingEvent);
+  }
+
+  applyEventResolution(resolution) {
+    if (!resolution?.ok) return;
+    const goldDelta = Number(resolution.heroPatch?.goldDelta) || 0;
+    const expDelta = Number(resolution.heroPatch?.experienceDelta) || 0;
+    const items = Array.isArray(resolution.rewards?.items) ? resolution.rewards.items : [];
+    let nextSave = updateActiveCharacter(this.save, (active) => ({
+      ...active,
+      eventFlags: resolution.eventFlags ?? active.eventFlags,
+      eventBuffs: resolution.eventBuffs ?? active.eventBuffs,
+      materials: resolution.materials ?? active.materials,
+      quests: this.mergeQuestFlags(active.quests, resolution.questFlags),
+    }));
+
+    if (goldDelta || expDelta || items.length) {
+      const available = Math.max(0, CONFIG.save.maxInventoryItems - nextSave.hero.inventory.length);
+      const stored = items.slice(0, available);
+      const overflow = items.slice(available);
+      const salvageGold = overflow.reduce((sum, item) => sum + getSellValue(item), 0);
+      nextSave = applyVictory(nextSave, {
+        experience: Math.max(0, expDelta),
+        gold: Math.max(0, goldDelta) + salvageGold,
+        loot: stored,
+        characterId: nextSave.activeCharacterId,
+      });
+      // spendGold 为负 delta：applyVictory 只加不减，这里再扣一次支出
+      if (goldDelta < 0) {
+        nextSave = updateActiveCharacter(nextSave, (active) => ({
+          ...active,
+          hero: {
+            ...active.hero,
+            gold: Math.max(0, (active.hero.gold || 0) + goldDelta),
+          },
+        }));
+      }
+    } else if (goldDelta < 0) {
+      nextSave = updateActiveCharacter(nextSave, (active) => ({
+        ...active,
+        hero: {
+          ...active.hero,
+          gold: Math.max(0, (active.hero.gold || 0) + goldDelta),
+        },
+      }));
+    }
+    this.save = nextSave;
+  }
+
+  mergeQuestFlags(questState, flags) {
+    if (!flags || typeof flags !== "object") return questState;
+    return {
+      ...questState,
+      flags: {
+        ...(questState?.flags || {}),
+        ...Object.fromEntries(
+          Object.entries(flags).map(([key, value]) => [key, value === true]),
+        ),
+      },
+    };
+  }
+
+  startEventBattle(plan) {
+    const seed = plan?.seed || `${this.pendingEvent?.seed}|battle`;
+    const wave = createEventBattleWave(this.save, seed, plan, CONFIG);
+    this.beginScriptedBattle({
+      wave,
+      seed: wave.seed || seed,
+      mode: "event",
+      caption: `⚔️ 事件战斗 · ${this.pendingEvent?.card?.title || "伏击"}`,
+      settle: () => this.resolveEventBattle(),
+      playLogs: true,
+    });
+  }
+
+  resolveEventBattle() {
+    const battle = this.battle;
+    if (!battle || battle.mode !== "event" || battle.settled) return;
+    battle.settled = true;
+    clearTimeout(battle.timer);
+    this.ui.applyBattleSnapshot(battle.result.finalState);
+
+    if (battle.result.victory) {
+      this.recordKillProgress(battle.wave.enemies);
+      const drops = this.rollEventBattleLoot(battle);
+      const delivery = resolveLootBatch(this.save, drops);
+      this.save = delivery.save;
+      const exp = Number(battle.result.rewards?.experience) || Number(battle.wave.experienceReward) || 0;
+      const gold = Number(battle.result.rewards?.gold) || Number(battle.wave.goldReward) || 0;
+      if (exp || gold || delivery.storedItems.length) {
+        this.save = applyVictory(this.save, {
+          experience: exp,
+          gold: gold + (delivery.salvageGold || 0),
+          loot: delivery.storedItems,
+          characterId: this.save.activeCharacterId,
+        });
+      }
+      if (this.pendingEvent) {
+        this.pendingEvent.phase = "result";
+        this.pendingEvent.resolution = {
+          ...(this.pendingEvent.resolution || {}),
+          resultText: (this.pendingEvent.resolution?.resultText || "你击退了伏击。")
+            + ` 战斗胜利：经验 +${exp}，金币 +${gold}`
+            + (delivery.storedItems.length ? `，装备 ${delivery.storedItems.length} 件` : "")
+            + "。",
+          rewards: {
+            ...(this.pendingEvent.resolution?.rewards || {}),
+            experience: exp,
+            gold,
+            items: delivery.storedItems,
+          },
+        };
+      }
+      this.ui.appendBattleLog({
+        type: "reward",
+        message: `✓ 伏击已击退 · 经验 +${exp} · 金币 +${gold}`,
+      });
+    } else {
+      // 事件战斗失败：结束野外漫步，不额外重罚（与野外波次失败一致）
+      if (this.pendingEvent) {
+        this.pendingEvent.phase = "result";
+        this.pendingEvent.resolution = {
+          ...(this.pendingEvent.resolution || {}),
+          resultText: "你被伏击击退，野外漫步中止。",
+        };
+      }
+      this.battle = null;
+      this.ui.closeEventCard?.();
+      this.pendingEvent = null;
+      this.finishOutdoorRun("defeat");
+      return;
+    }
+
+    this.battle = null;
+    this.persist({ silent: true });
+    this.render();
+    this.ui.showEventCard?.(this.buildViewModel().pendingEvent);
+  }
+
+  rollEventBattleLoot(battle) {
+    const chance = Number(battle.wave.eventLootChance);
+    const lootChance = Number.isFinite(chance) ? chance : 0.85;
+    const minimumRarity = battle.wave.eventMinimumRarity || "uncommon";
+    const plans = [];
+    for (const enemy of battle.wave.enemies || []) {
+      const roll = createSeededRng(`${battle.seed}|event-drop|${enemy.id}`);
+      if (roll() < lootChance) {
+        plans.push({
+          seed: `${battle.seed}|event-loot|${enemy.id}`,
+          options: { minimumRarity, idPrefix: "event" },
+        });
+      }
+    }
+    if (plans.length === 0) {
+      plans.push({
+        seed: `${battle.seed}|event-loot-fallback`,
+        options: { minimumRarity, idPrefix: "event" },
+      });
+    }
+    return plans
+      .map((plan) => generateLoot(battle.floor.id, plan.seed, this.save.hero, plan.options))
+      .filter(Boolean);
+  }
+
+  continueEvent() {
+    if (!this.pendingEvent || this.pendingEvent.phase === "choice") return;
+    if (this.pendingEvent.phase === "battle") return;
+    this.pendingEvent = null;
+    this.ui.closeEventCard?.();
+    this.render();
+    if (this.outdoorRun?.state?.status === "running") {
+      this.scheduleOutdoorContinue();
+    }
+  }
+
+  recordKillProgress(enemies = []) {
+    const templateIds = (Array.isArray(enemies) ? enemies : [])
+      .map((enemy) => enemy?.templateId || enemy?.id)
+      .filter(Boolean);
+    if (templateIds.length === 0) return;
+    const progressed = progressKillQuests(this.save.quests, templateIds, CONFIG);
+    if (progressed.updates.length === 0) return;
+    this.save = updateActiveCharacter(this.save, (active) => ({
+      ...active,
+      quests: progressed.quests,
+    }));
+    for (const update of progressed.updates) {
+      if (update.complete) {
+        this.ui.showToast?.(`任务「${update.name}」目标已达成，可回城镇交付。`, "reward");
+      }
+    }
+  }
+
+  openNpc(npcId) {
+    if (this.battle || this.outdoorRun) {
+      this.ui.showToast("请先结束当前活动。", "error");
+      return;
+    }
+    const node = getDialogueNode(npcId, "root", this.save.quests, CONFIG);
+    if (!node) {
+      this.ui.showToast("对方现在无话可说。", "error");
+      return;
+    }
+    this.dialogue = { npcId, nodeId: node.id || "root" };
+    this.render();
+    this.ui.showDialogue?.(this.buildViewModel().dialogue);
+  }
+
+  chooseDialogueOption(optionIndex) {
+    if (!this.dialogue) return;
+    const result = chooseDialogueOption(
+      this.dialogue.npcId,
+      this.dialogue.nodeId,
+      Number(optionIndex),
+      this.save.quests,
+      CONFIG,
+    );
+    if (!result.ok) {
+      this.ui.showToast("对话无法继续。", "error");
+      return;
+    }
+    this.save = updateActiveCharacter(this.save, (active) => ({
+      ...active,
+      quests: result.quests,
+    }));
+
+    if (result.acceptedQuest) {
+      this.ui.showToast(`已接取任务「${result.acceptedQuest.name}」。`, "reward");
+    }
+    if (result.turnedIn) {
+      this.grantQuestRewards(result.rewards, result.turnedIn);
+      this.ui.showToast(`已交付「${result.turnedIn.name}」。`, "reward");
+    }
+
+    if (result.ended || !result.node) {
+      this.dialogue = null;
+      this.ui.closeDialogue?.();
+    } else {
+      this.dialogue = {
+        npcId: this.dialogue.npcId,
+        nodeId: result.nextNodeId || result.node.id || "root",
+      };
+      this.ui.showDialogue?.(this.buildViewModel().dialogue);
+    }
+    this.persist();
+    this.render();
+  }
+
+  grantQuestRewards(rewards = [], quest = null) {
+    let experience = 0;
+    let gold = 0;
+    const items = [];
+    for (const reward of rewards) {
+      if (!reward || typeof reward !== "object") continue;
+      if (reward.type === "experience") {
+        experience += Math.max(0, Math.floor(Number(reward.amount) || 0));
+      } else if (reward.type === "gold") {
+        gold += Math.max(0, Math.floor(Number(reward.amount) || 0));
+      } else if (reward.type === "loot") {
+        const item = generateLoot(
+          Math.max(1, getWorldLevel(this.save)),
+          `${this.save.activeCharacterId}|quest|${quest?.id || "reward"}|${items.length}|${Date.now()}`,
+          this.save.hero,
+          {
+            idPrefix: "quest",
+            minimumRarity: reward.rarityBias || reward.minimumRarity || undefined,
+            classId: this.save.hero.classId,
+          },
+        );
+        if (item) items.push(item);
+      }
+    }
+    const available = Math.max(0, CONFIG.save.maxInventoryItems - this.save.hero.inventory.length);
+    const stored = items.slice(0, available);
+    const overflow = items.slice(available);
+    const salvageGold = overflow.reduce((sum, item) => sum + getSellValue(item), 0);
+    if (experience || gold || salvageGold || stored.length) {
+      this.save = applyVictory(this.save, {
+        experience,
+        gold: gold + salvageGold,
+        loot: stored,
+        characterId: this.save.activeCharacterId,
+      });
+    }
+  }
+
+  closeDialogue() {
+    this.dialogue = null;
+    this.ui.closeDialogue?.();
+    this.render();
+  }
+
+  openQuestLog() {
+    this.ui.showQuestLog?.(listQuestLog(this.save.quests, CONFIG));
+  }
+
+  closeQuestLog() {
+    this.ui.closeQuestLog?.();
+  }
+
   stopOutdoor(reason = "manual") {
     if (!this.outdoorRun) return;
-    if (this.battle?.mode === "outdoor") {
+    if (this.pendingEvent) {
+      this.pendingEvent = null;
+      this.ui.closeEventCard?.();
+    }
+    if (this.battle?.mode === "outdoor" || this.battle?.mode === "event") {
       clearTimeout(this.battle.timer);
       this.battle = null;
     }
@@ -685,6 +1167,10 @@ class DungeonGame {
     const run = this.outdoorRun;
     if (!run) return;
     clearTimeout(run.timer);
+    if (this.pendingEvent) {
+      this.pendingEvent = null;
+      this.ui.closeEventCard?.();
+    }
     const stopped = reduceStopOutdoorRun(run.state);
     const settlement = this.applyOutdoorSettlement(stopped.settlement);
     const previousOutdoor = this.save.outdoor ?? {};
@@ -802,6 +1288,10 @@ class DungeonGame {
       this.resolveOutdoorWave();
       return;
     }
+    if (battle.mode === "event") {
+      this.resolveEventBattle();
+      return;
+    }
     battle.index = battle.result.logs.length;
     this.ui.appendBattleLog({
       type: "info",
@@ -814,7 +1304,7 @@ class DungeonGame {
   retreatBattle() {
     const battle = this.battle;
     if (!battle || battle.settled) return;
-    if (battle.mode === "outdoor") {
+    if (battle.mode === "outdoor" || battle.mode === "event") {
       this.stopOutdoor();
       return;
     }
@@ -845,6 +1335,10 @@ class DungeonGame {
       this.resolveOutdoorWave();
       return;
     }
+    if (battle.mode === "event") {
+      this.resolveEventBattle();
+      return;
+    }
     battle.settled = true;
     clearTimeout(battle.timer);
     if (battle.retreat) {
@@ -862,6 +1356,7 @@ class DungeonGame {
     this.save = clearPendingBattle(this.save);
 
     if (battle.result.victory) {
+      this.recordKillProgress(battle.wave.enemies);
       // 第四批:Boss 必掉双件且稀有度保底,击杀精英有概率追加战利品。
       const drops = this.rollVictoryLoot(battle, previousHero);
       const delivery = resolveLootBatch(this.save, drops);
