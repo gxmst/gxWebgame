@@ -261,6 +261,8 @@ export function sanitizeItem(candidate, options = {}) {
     effect,
     power: clampInteger(candidate.power, 0, CONFIG.stats.maximumValue, 0),
     seed,
+    // 玩家手动锁定的装备不会被单件/批量出售。
+    locked: candidate.locked === true,
   };
 }
 
@@ -305,7 +307,8 @@ export function getHeroStats(hero) {
       ? classCombat.attackPerLevel
       : tuning.attackPerLevel)
     + equipmentBonuses.attack;
-  const classDamageBonus = clean.classId === "mage"
+  // 职业伤害类型决定吃"法术增伤"还是"物理增伤"词条(法师/死灵为法术)。
+  const classDamageBonus = classDefinition.damageType === "magic"
     ? equipmentBonuses.magicDamagePercent
     : equipmentBonuses.physicalDamagePercent;
   const damageMultiplier = Math.max(
@@ -335,22 +338,43 @@ export function getHeroStats(hero) {
         : tuning.speedPerAgility)
       + equipmentBonuses.speed,
   ));
+  const baseCritChance = Number.isFinite(classCombat.baseCritChance)
+    ? classCombat.baseCritChance
+    : tuning.baseCritChance;
+  const critChancePerAgility = Number.isFinite(classCombat.critChancePerAgility)
+    ? classCombat.critChancePerAgility
+    : tuning.critChancePerAgility;
+  const maxCritChance = Number.isFinite(classCombat.maxCritChance)
+    ? classCombat.maxCritChance
+    : tuning.maxCritChance;
   const critChance = clampNumber(
-    tuning.baseCritChance
-      + attributes.agility * tuning.critChancePerAgility
+    baseCritChance
+      + attributes.agility * critChancePerAgility
       + equipmentBonuses.critChance,
     0,
-    tuning.maxCritChance,
-    tuning.baseCritChance,
+    maxCritChance,
+    baseCritChance,
   );
-  const critDamage = Math.max(1, tuning.baseCritDamage + equipmentBonuses.critDamage);
+  const baseCritDamage = Number.isFinite(classCombat.baseCritDamage)
+    ? classCombat.baseCritDamage
+    : tuning.baseCritDamage;
+  const critDamage = Math.max(1, baseCritDamage + equipmentBonuses.critDamage);
+  const baseDodgeChance = Number.isFinite(classCombat.baseDodgeChance)
+    ? classCombat.baseDodgeChance
+    : tuning.baseDodgeChance;
+  const dodgeChancePerAgility = Number.isFinite(classCombat.dodgeChancePerAgility)
+    ? classCombat.dodgeChancePerAgility
+    : tuning.dodgeChancePerAgility;
+  const maxDodgeChance = Number.isFinite(classCombat.maxDodgeChance)
+    ? classCombat.maxDodgeChance
+    : tuning.maxDodgeChance;
   const dodgeChance = clampNumber(
-    tuning.baseDodgeChance
-      + attributes.agility * tuning.dodgeChancePerAgility
+    baseDodgeChance
+      + attributes.agility * dodgeChancePerAgility
       + equipmentBonuses.dodgeChance,
     0,
-    tuning.maxDodgeChance,
-    tuning.baseDodgeChance,
+    maxDodgeChance,
+    baseDodgeChance,
   );
   const damageReduction = clampNumber(
     equipmentBonuses.damageReduction,
@@ -381,6 +405,7 @@ export function getHeroStats(hero) {
     thorns: equipmentBonuses.thorns,
     armorPenetration: equipmentBonuses.armorPenetration,
     multiHitChance: equipmentBonuses.multiHitChance,
+    burnChance: equipmentBonuses.burning,
     equipmentBonuses,
   };
   stats.power = calculatePower(stats);
@@ -580,6 +605,7 @@ function collectEquipmentBonuses(equipment) {
   bonuses.thorns = 0;
   bonuses.armorPenetration = 0;
   bonuses.multiHitChance = 0;
+  bonuses.burning = 0;
 
   for (const item of Object.values(equipment)) {
     if (!item) continue;
@@ -603,6 +629,11 @@ function addBonuses(target, source) {
 
 function calculatePower(stats) {
   const weights = CONFIG.stats.powerWeights;
+  const effectTotal = (stats.lifesteal ?? 0)
+    + (stats.thorns ?? 0)
+    + (stats.armorPenetration ?? 0)
+    + (stats.multiHitChance ?? 0)
+    + (stats.burnChance ?? 0);
   return Math.max(1, Math.round(
     stats.maxHp * weights.maxHp
       + stats.attack * weights.attack
@@ -610,8 +641,10 @@ function calculatePower(stats) {
       + stats.speed * weights.speed
       + stats.critChance * weights.critChance
       + stats.critDamage * weights.critDamage
+      + stats.dodgeChance * (weights.dodgeChance ?? 0)
       + stats.damageReduction * weights.damageReduction
-      + stats.attack * Math.max(0, stats.damageMultiplier - 1) * weights.attack,
+      + stats.attack * Math.max(0, stats.damageMultiplier - 1) * weights.attack
+      + effectTotal * (weights.legendaryEffect ?? 0),
   ));
 }
 

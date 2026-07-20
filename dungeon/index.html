@@ -37,6 +37,10 @@
             <span class="resource-label">已解锁</span>
             <strong>第 <span data-max-floor>1</span> 层</strong>
           </span>
+          <button class="icon-button" type="button" data-toggle-sound aria-label="关闭音效" title="关闭音效">🔊</button>
+          <button class="icon-button" type="button" data-export-save aria-label="导出存档" title="导出存档为文件">⤓</button>
+          <button class="icon-button" type="button" data-import-save aria-label="导入存档" title="从文件导入存档">⤒</button>
+          <input type="file" accept="application/json,.json" data-import-file hidden />
           <button class="icon-button reset-button" type="button" data-reset aria-label="重置存档" title="重置存档">↺</button>
         </div>
       </header>
@@ -94,12 +98,25 @@
                 <small>当前职业 · 转生 <b data-prestige-count>0</b></small>
                 <strong data-class-name>战士</strong>
               </span>
-              <button class="compact-button" type="button" data-class-change>查看职业</button>
+              <button class="compact-button" type="button" data-character-manage>角色管理</button>
             </div>
             <button class="prestige-button" type="button" data-prestige disabled>
               <span aria-hidden="true">✦</span>
               <span><strong>尚未达到转生条件</strong><small>满级后重启征程，获得永久强化</small></span>
             </button>
+          </section>
+
+          <section class="career-section" aria-labelledby="career-title">
+            <div class="section-title-row">
+              <h3 id="career-title">生涯统计</h3>
+              <span class="section-meta">当前角色</span>
+            </div>
+            <dl class="career-grid">
+              <div><dt>胜利</dt><dd data-career-victories>0</dd></div>
+              <div><dt>战败</dt><dd data-career-defeats>0</dd></div>
+              <div><dt>最深纪录</dt><dd data-career-floor>第 1 层</dd></div>
+              <div><dt>野外波次</dt><dd data-career-waves>0</dd></div>
+            </dl>
           </section>
 
           <section class="stat-section" aria-labelledby="combat-stats-title">
@@ -216,7 +233,13 @@
               <p class="panel-kicker">地下遗迹</p>
               <h2 id="dungeon-title">地牢远征</h2>
             </div>
-            <span class="status-indicator" role="status" aria-live="polite"><i aria-hidden="true"></i>等待出发</span>
+            <div class="dungeon-heading-actions">
+              <div class="mode-switch" role="tablist" aria-label="冒险模式">
+                <button class="is-active" type="button" role="tab" data-adventure-mode="dungeon" aria-selected="true">层数挑战</button>
+                <button type="button" role="tab" data-adventure-mode="outdoor" aria-selected="false">野外漫步</button>
+              </div>
+              <span class="status-indicator" role="status" aria-live="polite"><i aria-hidden="true"></i>等待出发</span>
+            </div>
           </header>
 
           <div class="idle-view" data-idle-view>
@@ -251,10 +274,28 @@
             </section>
           </div>
 
+          <section class="outdoor-view" data-outdoor-view hidden aria-labelledby="outdoor-title">
+            <div class="outdoor-emblem" aria-hidden="true">🌲</div>
+            <div class="outdoor-copy">
+              <p class="panel-kicker">自由探索</p>
+              <h3 id="outdoor-title">灰烬荒野</h3>
+              <p>强度随当前角色的远征进度变化。</p>
+            </div>
+            <dl class="outdoor-stats">
+              <div><dt>探索区域</dt><dd data-outdoor-floor>第 1 层附近</dd></div>
+              <div><dt>累计波次</dt><dd data-outdoor-total-waves>0</dd></div>
+              <div><dt>战利品</dt><dd>金币 / 装备</dd></div>
+            </dl>
+            <button class="primary-button outdoor-start-button" type="button" data-start-outdoor>
+              <span aria-hidden="true">▶</span>
+              开始漫步
+            </button>
+          </section>
+
           <div class="battle-view" data-battle-view hidden>
             <div class="battle-toolbar">
               <div>
-                <span class="battle-caption">自动战斗</span>
+                <span class="battle-caption" data-battle-caption>自动战斗</span>
                 <strong>第 <span data-battle-round>1</span> 回合</strong>
               </div>
               <div class="battle-actions">
@@ -268,6 +309,9 @@
                 </button>
                 <button class="secondary-button retreat-button" type="button" data-retreat title="撤退会损失少量经验和金币">
                   <span aria-hidden="true">↩</span> 撤退
+                </button>
+                <button class="secondary-button outdoor-stop-button" type="button" data-stop-outdoor hidden>
+                  <span aria-hidden="true">■</span> 停止并结算
                 </button>
               </div>
             </div>
@@ -293,6 +337,7 @@
                     <span class="meter-fill" data-hero-hp-fill style="width: 100%"></span>
                   </div>
                 </div>
+                <div class="minion-party" data-minions aria-label="召唤物" hidden></div>
               </article>
 
               <div class="versus-mark" aria-hidden="true"><span>VS</span></div>
@@ -334,6 +379,31 @@
               <span class="rarity-excellent">优秀</span>
               <span class="rarity-rare">稀有</span>
               <span class="rarity-legendary">传说</span>
+            </div>
+
+            <div class="inventory-toolbar" aria-label="背包筛选与排序">
+              <div class="chip-row" role="group" aria-label="部位筛选">
+                <button class="chip-button is-active" type="button" data-inventory-filter="all">全部</button>
+                <button class="chip-button" type="button" data-inventory-filter="weapon">武器</button>
+                <button class="chip-button" type="button" data-inventory-filter="helmet">头盔</button>
+                <button class="chip-button" type="button" data-inventory-filter="armor">护甲</button>
+                <button class="chip-button" type="button" data-inventory-filter="accessory">饰品</button>
+              </div>
+              <div class="chip-row" role="group" aria-label="排序方式">
+                <button class="chip-button is-active" type="button" data-inventory-sort="default">最新</button>
+                <button class="chip-button" type="button" data-inventory-sort="power">战力</button>
+                <button class="chip-button" type="button" data-inventory-sort="rarity">稀有度</button>
+                <button class="chip-button" type="button" data-inventory-sort="level">等级</button>
+              </div>
+              <div class="chip-row bulk-sell-row" role="group" aria-label="批量出售">
+                <select class="bulk-rarity-select" data-bulk-rarity aria-label="批量出售的稀有度上限">
+                  <option value="common">仅普通</option>
+                  <option value="uncommon">优秀及以下</option>
+                  <option value="rare">稀有及以下</option>
+                </select>
+                <button class="chip-button bulk-sell-button" type="button" data-bulk-sell>批量出售</button>
+                <span class="bulk-sell-hint">已锁定 🔒 的不会被卖出</span>
+              </div>
             </div>
 
             <div class="inventory-scroll">
@@ -383,41 +453,81 @@
       </button>
     </nav>
 
-    <dialog class="class-dialog" data-class-dialog aria-labelledby="class-dialog-title" aria-describedby="class-dialog-description">
-      <form method="dialog" class="dialog-shell">
+    <dialog class="class-dialog character-dialog" data-character-dialog data-class-dialog aria-labelledby="character-dialog-title" aria-describedby="character-dialog-description">
+      <div class="dialog-shell">
         <div class="dialog-heading">
           <div>
-            <p class="panel-kicker">选择道路</p>
-            <h2 id="class-dialog-title">选择职业</h2>
+            <p class="panel-kicker">冒险者名册</p>
+            <h2 id="character-dialog-title">角色管理</h2>
           </div>
-          <button class="icon-button" type="submit" value="cancel" aria-label="关闭职业选择" title="关闭">×</button>
+          <button class="icon-button" type="button" data-character-close aria-label="关闭角色管理" title="关闭">×</button>
         </div>
-        <div class="class-dialog-content">
-          <p id="class-dialog-description">职业决定属性成长、推荐加点和可用技能。</p>
-          <div class="class-options" role="radiogroup" aria-label="可选职业">
-            <button class="class-option is-selected" type="button" role="radio" data-class-id="warrior" aria-checked="true">
-              <span class="class-option-icon" aria-hidden="true">⚔️</span>
-              <span class="class-option-copy">
-                <strong>战士</strong>
-                <small>近战攻守 · 力量主属性</small>
-                <span>高生命与护甲，兼顾单体爆发和群体清场。</span>
-              </span>
+        <div class="character-manager-content" id="character-dialog-description">
+          <section class="character-roster" aria-labelledby="character-roster-title">
+            <div class="section-title-row">
+              <h3 id="character-roster-title">已有角色</h3>
+              <span class="section-meta"><strong data-character-count>0</strong> / <span data-character-limit>8</span></span>
+            </div>
+            <div class="character-list" data-character-list></div>
+          </section>
+
+          <section class="character-creator" aria-labelledby="character-create-title">
+            <div class="section-title-row">
+              <h3 id="character-create-title">创建角色</h3>
+              <span class="section-meta">选择职业</span>
+            </div>
+            <label class="character-name-field">
+              <span>角色名</span>
+              <input type="text" data-character-name maxlength="20" autocomplete="off" placeholder="使用职业默认名" />
+            </label>
+            <div class="class-options" role="radiogroup" aria-label="可选职业" data-class-options>
+              <button class="class-option is-selected" type="button" role="radio" data-class-id="warrior" aria-checked="true">
+                <span class="class-option-icon" aria-hidden="true">⚔️</span>
+                <span class="class-option-copy">
+                  <strong>战士</strong>
+                  <small>近战攻守 · 力量</small>
+                  <span>高生命与护甲，兼顾单体爆发和群体清场。</span>
+                </span>
+              </button>
+              <button class="class-option" type="button" role="radio" data-class-id="mage" aria-checked="false">
+                <span class="class-option-icon" aria-hidden="true">🧙‍♂️</span>
+                <span class="class-option-copy">
+                  <strong>法师</strong>
+                  <small>远程爆发 · 智力</small>
+                  <span>火球与闪电掌控敌群，奥术护盾提供生存。</span>
+                </span>
+              </button>
+              <button class="class-option" type="button" role="radio" data-class-id="ranger" aria-checked="false">
+                <span class="class-option-icon" aria-hidden="true">🏹</span>
+                <span class="class-option-copy">
+                  <strong>游侠</strong>
+                  <small>多段暴击 · 敏捷</small>
+                  <span>高速连射压制敌群，以闪避姿态避开重击。</span>
+                </span>
+              </button>
+              <button class="class-option" type="button" role="radio" data-class-id="necromancer" aria-checked="false">
+                <span class="class-option-icon" aria-hidden="true">⚰️</span>
+                <span class="class-option-copy">
+                  <strong>死灵法师</strong>
+                  <small>亡灵召唤 · 智力</small>
+                  <span>骷髅军团分摊火力，骨矛与尸爆收割残局。</span>
+                </span>
+              </button>
+              <button class="class-option" type="button" role="radio" data-class-id="druid" aria-checked="false">
+                <span class="class-option-icon" aria-hidden="true">🐻</span>
+                <span class="class-option-copy">
+                  <strong>德鲁伊</strong>
+                  <small>形态搏杀 · 力量</small>
+                  <span>狼魂形态增伤吸血，回春术提供持久续航。</span>
+                </span>
+              </button>
+            </div>
+            <button class="primary-button character-create-button" type="button" data-character-create>
+              <span aria-hidden="true">＋</span> 创建并进入
             </button>
-            <button class="class-option" type="button" role="radio" data-class-id="mage" aria-checked="false">
-              <span class="class-option-icon" aria-hidden="true">🧙‍♂️</span>
-              <span class="class-option-copy">
-                <strong>法师</strong>
-                <small>远程爆发 · 智力主属性</small>
-                <span>生存较弱，以火球、闪电和奥术护盾掌控战场。</span>
-              </span>
-            </button>
-          </div>
+          </section>
         </div>
-        <div class="dialog-actions class-dialog-actions">
-          <button class="secondary-button" type="submit" value="cancel">取消</button>
-          <button class="primary-button" type="button" data-class-confirm>确认职业</button>
-        </div>
-      </form>
+      </div>
     </dialog>
 
     <dialog class="reforge-dialog" data-reforge-dialog aria-labelledby="reforge-title" aria-describedby="reforge-description">
@@ -446,14 +556,15 @@
     <dialog class="result-dialog" data-result-dialog aria-labelledby="result-title" aria-describedby="result-description">
       <div class="dialog-heading">
         <div>
-          <p class="panel-kicker">远征结算</p>
-          <h2 id="result-title">战斗结果</h2>
+          <p class="panel-kicker" data-result-kicker>远征结算</p>
+          <h2 id="result-title" data-result-title>战斗结果</h2>
         </div>
         <button class="icon-button" type="button" data-result-close aria-label="关闭结算" title="关闭">×</button>
       </div>
       <div class="result-content" id="result-description" data-result-content></div>
       <div class="dialog-actions">
-        <button class="primary-button" type="button" data-result-close>返回地牢</button>
+        <button class="secondary-button" type="button" data-result-again hidden>⚔ 再战本层</button>
+        <button class="primary-button" type="button" data-result-close data-result-return>返回地牢</button>
       </div>
     </dialog>
 

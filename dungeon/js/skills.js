@@ -161,7 +161,9 @@ function getClassSkillIds(heroOrClassId) {
   if (configured.length) return configured;
   const fallback = uniqueSkillIds(CONFIG.hero?.startingSkills);
   if (fallback.length) return fallback;
-  return Object.keys(CONFIG.skills ?? {}).filter((id) => id !== "enemy_attack");
+  // 兜底列表要排除敌方专属技能,避免它们漏进职业技能面板。
+  return Object.keys(CONFIG.skills ?? {}).filter((id) =>
+    id !== "enemy_attack" && CONFIG.skills?.[id]?.enemyOnly !== true);
 }
 
 function getHeroSkillEntries(hero) {
@@ -220,6 +222,27 @@ function getCombatGuardCap() {
     0,
     0.99,
     0.8,
+  );
+}
+
+function getCombatDodgeCap() {
+  const damage = firstRecord(CONFIG.combat?.damage, CONFIG.damage) ?? {};
+  return clamp(
+    damage.maxDodgeChance
+      ?? damage.dodgeChanceCap
+      ?? CONFIG.combat?.maxDodgeChance,
+    0,
+    1,
+    0.75,
+  );
+}
+
+function getCombatHitCap() {
+  return integer(
+    CONFIG.combat?.maxHitsPerAction,
+    1,
+    100,
+    12,
   );
 }
 
@@ -286,8 +309,27 @@ function clampResolvedSkill(skill) {
   if (skill.minimumTargets !== undefined) {
     skill.minimumTargets = integer(skill.minimumTargets, 1, 100, 1);
   }
+  if (skill.hitCount !== undefined) {
+    skill.hitCount = integer(skill.hitCount, 1, getCombatHitCap(), 1);
+  }
+  if (skill.critChanceBonus !== undefined) {
+    skill.critChanceBonus = clamp(skill.critChanceBonus, 0, 1, 0);
+  }
+  if (skill.dodgeBonus !== undefined) {
+    skill.dodgeBonus = clamp(skill.dodgeBonus, 0, getCombatDodgeCap(), 0);
+  }
   if (skill.resourceCost !== undefined) skill.resourceCost = clamp(skill.resourceCost, 0, MAX_SAFE, 0);
   if (skill.flatDamage !== undefined) skill.flatDamage = clamp(skill.flatDamage, 0, MAX_SAFE, 0);
+  if (skill.healRatio !== undefined) skill.healRatio = clamp(skill.healRatio, 0, 10, 0);
+  // 召唤/形态类字段:升级成长同样要被钳制,防止异常存档制造失控数值。
+  if (skill.summonCount !== undefined) skill.summonCount = integer(skill.summonCount, 1, 10, 1);
+  if (skill.maxMinions !== undefined) skill.maxMinions = integer(skill.maxMinions, 0, 20, 0);
+  if (skill.minionHpRatio !== undefined) skill.minionHpRatio = clamp(skill.minionHpRatio, 0.01, 10, 0.3);
+  if (skill.minionAttackRatio !== undefined) skill.minionAttackRatio = clamp(skill.minionAttackRatio, 0.01, 10, 0.4);
+  if (skill.minionDefenseRatio !== undefined) skill.minionDefenseRatio = clamp(skill.minionDefenseRatio, 0, 10, 0.35);
+  if (skill.minionSpeedRatio !== undefined) skill.minionSpeedRatio = clamp(skill.minionSpeedRatio, 0.01, 10, 0.85);
+  if (skill.damageBonus !== undefined) skill.damageBonus = clamp(skill.damageBonus, 0, 5, 0);
+  if (skill.lifestealBonus !== undefined) skill.lifestealBonus = clamp(skill.lifestealBonus, 0, 1, 0);
   return skill;
 }
 

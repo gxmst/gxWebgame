@@ -337,6 +337,120 @@ export const tests = [
     },
   },
   {
+    name: "ranger AI uses aimed shot, arrow rain, and evasion stance by situation",
+    run() {
+      const ranger = createHeroCombatant(createHeroForClass("ranger"));
+      const enemies = (count) => Array.from({ length: count }, (_, index) => ({
+        id: `ranger-target-${index}`,
+        hp: 10_000,
+        maxHp: 10_000,
+        attack: 0,
+        defense: 0,
+        speed: 1,
+      }));
+      const run = (player, count, seed) => simulateCombat({
+        player,
+        enemies: enemies(count),
+        seed,
+        config: { ...CONFIG, combat: { ...CONFIG.combat, maxRounds: 1, randomVariance: 0 } },
+      });
+
+      const single = run(ranger, 1, "ranger-single");
+      assert(actions(single, ranger.id)[0]?.skillId === "aimed_shot");
+
+      const fallback = run({ ...ranger, skills: [] }, 1, "ranger-fallback");
+      const fallbackAction = actions(fallback, ranger.id)[0];
+      assert(fallbackAction?.skillId === "quick_shot" && fallbackAction.hitCount === 2);
+
+      const group = run(ranger, 3, "ranger-group");
+      const rain = actions(group, ranger.id)[0];
+      assert(rain?.skillId === "arrow_rain");
+      assert(rain.targets.length === 3 && rain.strikeCount === 9);
+      assert(rain.targets.every((target) => target.hits.length === 3));
+
+      const lowHealth = {
+        ...ranger,
+        stats: { ...ranger.stats, hp: Math.floor(ranger.stats.maxHp * 0.3) },
+      };
+      const defended = run(lowHealth, 1, "ranger-evasion");
+      const stance = actions(defended, ranger.id)[0];
+      assert(stance?.skillId === "evasion_stance" && stance.dodgeBonus > 0);
+      assert(stance.snapshot.player.guard?.dodgeBonus === stance.dodgeBonus);
+    },
+  },
+  {
+    name: "multi-hit damage is independently rolled, clamped, grouped, and reproducible",
+    run() {
+      const player = {
+        id: "multi-hero",
+        hp: 100,
+        maxHp: 100,
+        attack: 0,
+        speed: 100,
+        critChance: 0.5,
+        skills: [{
+          id: "test-rain",
+          name: "Test Rain",
+          type: "aoe",
+          multiplier: 0,
+          hitCount: 3,
+          cooldown: 0,
+          minimumTargets: 2,
+        }],
+      };
+      const enemies = [0, 1, 2].map((index) => ({
+        id: `multi-target-${index}`,
+        hp: 100,
+        maxHp: 100,
+        attack: 0,
+        defense: Number.MAX_VALUE,
+        speed: 1,
+      }));
+      const options = {
+        player,
+        enemies,
+        seed: "multi-hit-fixed",
+        config: { maxRounds: 1, damageVariance: 0, minDamage: 1 },
+      };
+      const before = JSON.stringify({ player, enemies });
+      const first = simulateCombat(options);
+      const repeated = simulateCombat(options);
+      const action = actions(first, player.id)[0];
+
+      assert(JSON.stringify(first) === JSON.stringify(repeated));
+      assert(JSON.stringify({ player, enemies }) === before, "multi-hit combat mutated its input");
+      assert(action.skillId === "test-rain" && action.actionType === "aoe");
+      assert(action.strikeCount === 9 && action.successfulHitCount === 9);
+      assert(action.totalDamage >= 9, `minimum-floor total was ${action.totalDamage}`);
+      assert(action.targets.every((target) => target.hits.length === 3));
+      assert(action.targets.flatMap((target) => target.hits).every((hit) => hit.damage >= 1));
+      assert(
+        action.criticalCount
+          === action.targets.flatMap((target) => target.hits).filter((hit) => hit.critical).length,
+      );
+      assert(action.criticalCount > 0 && action.criticalCount < action.strikeCount);
+      assert(actions(first, player.id).length === 1, "multi-hit segments must share one action log");
+
+      const aimedCritical = calculateDamage(
+        { attack: 10, critChance: 0, critDamage: 2 },
+        { defense: 0, dodgeChance: 0 },
+        { id: "aimed", type: "single", multiplier: 1, critChanceBonus: 1 },
+        createSeededRng("aimed-critical"),
+        { damageVariance: 0 },
+      );
+      assert(aimedCritical.critical && aimedCritical.damage === 20);
+
+      const stanceDodge = calculateDamage(
+        { attack: 10, critChance: 0 },
+        { defense: 0, dodgeChance: 0, guard: { remainingTurns: 1, dodgeBonus: 0.75 } },
+        { id: "hit", type: "single", multiplier: 1 },
+        () => 0.5,
+        { damageVariance: 0, maxDodgeChance: 0.75 },
+      );
+      assert(stanceDodge.dodged && stanceDodge.damage === 0);
+    },
+  },
+  {
     name: "warrior single-target and AoE builds change automatic skill choice",
     run() {
       const makeEnemies = () => [0, 1, 2].map((index) => ({

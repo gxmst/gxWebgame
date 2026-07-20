@@ -1,4 +1,6 @@
 import { getReforgeCost, getSellValue, getShopPrice } from "./economy.js";
+import { getAffixRollQuality } from "./loot.js";
+import { GameAudio } from "./audio.js";
 
 const SLOT_META = {
   weapon: { label: "武器", icon: "🗡️" },
@@ -19,6 +21,7 @@ const STAT_META = {
   vitality: { label: "体质", order: 8 },
   critChance: { label: "暴击", order: 9, percent: true },
   critDamage: { label: "暴伤", order: 10, percent: true },
+  dodgeChance: { label: "闪避", order: 10, percent: true },
   damagePercent: { label: "增伤", order: 11, percent: true },
   physicalDamagePercent: { label: "物理增伤", order: 11, percent: true },
   magicDamagePercent: { label: "法术增伤", order: 11, percent: true },
@@ -48,22 +51,65 @@ export class DungeonUI {
     this.handlers = handlers;
     this.toastTimer = null;
     this.lastResult = null;
+    // 背包视图状态只影响展示,不写入存档。
+    this.inventorySort = "default";
+    this.inventoryFilter = "all";
+    this.lastInventoryRender = null;
+    // 动效开关:尊重系统的"减少动态效果"偏好。
+    this.reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+    this.audio = new GameAudio();
     this.dom = collectDom();
     this.bindEvents();
   }
 
   bindEvents() {
     document.addEventListener("click", (event) => {
-      const classCancel = event.target.closest('[data-class-dialog] button[value="cancel"]');
-      if (classCancel && this.dom.classDialog?.dataset.required === "true") {
-        event.preventDefault();
-        this.showToast("需要先确认一个职业。", "error");
-        return;
-      }
-
       const inventoryTab = event.target.closest("[data-inventory-tab]");
       if (inventoryTab) {
         this.activateInventoryTab(inventoryTab.dataset.inventoryTab);
+        return;
+      }
+
+      const inventoryFilter = event.target.closest("[data-inventory-filter]");
+      if (inventoryFilter) {
+        this.setInventoryView({ filter: inventoryFilter.dataset.inventoryFilter });
+        return;
+      }
+
+      const inventorySort = event.target.closest("[data-inventory-sort]");
+      if (inventorySort) {
+        this.setInventoryView({ sort: inventorySort.dataset.inventorySort });
+        return;
+      }
+
+      if (event.target.closest("[data-bulk-sell]")) {
+        this.handlers.bulkSell?.(this.dom.bulkRarity?.value || "common");
+        return;
+      }
+
+      const lockButton = event.target.closest("[data-lock-id]");
+      if (lockButton) {
+        this.handlers.toggleLock?.(lockButton.dataset.lockId);
+        return;
+      }
+
+      if (event.target.closest("[data-export-save]")) {
+        this.handlers.exportSave?.();
+        return;
+      }
+
+      if (event.target.closest("[data-import-save]")) {
+        this.dom.importFile?.click();
+        return;
+      }
+
+      if (event.target.closest("[data-toggle-sound]")) {
+        this.handlers.toggleSound?.();
+        return;
+      }
+
+      if (event.target.closest("[data-result-again]")) {
+        this.handlers.repeatBattle?.();
         return;
       }
 
@@ -73,13 +119,49 @@ export class DungeonUI {
         return;
       }
 
-      if (event.target.closest("[data-class-confirm]")) {
-        this.handlers.selectClass?.(this.selectedClassId || "warrior");
+      if (event.target.closest("[data-character-create]")) {
+        this.handlers.createCharacter?.(
+          this.selectedClassId || "warrior",
+          this.dom.characterName?.value || "",
+        );
         return;
       }
 
-      if (event.target.closest("[data-class-change]")) {
-        this.handlers.changeClass?.();
+      if (event.target.closest("[data-character-manage], [data-class-change]")) {
+        this.handlers.manageCharacters?.();
+        return;
+      }
+
+      const characterSwitch = event.target.closest("[data-character-switch]");
+      if (characterSwitch) {
+        this.handlers.switchCharacter?.(characterSwitch.dataset.characterSwitch);
+        return;
+      }
+
+      const characterDelete = event.target.closest("[data-character-delete]");
+      if (characterDelete) {
+        this.handlers.deleteCharacter?.(characterDelete.dataset.characterDelete);
+        return;
+      }
+
+      if (event.target.closest("[data-character-close]")) {
+        this.closeClassSelection();
+        return;
+      }
+
+      const adventureMode = event.target.closest("[data-adventure-mode]");
+      if (adventureMode) {
+        this.handlers.setAdventureMode?.(adventureMode.dataset.adventureMode);
+        return;
+      }
+
+      if (event.target.closest("[data-start-outdoor]")) {
+        this.handlers.startOutdoor?.();
+        return;
+      }
+
+      if (event.target.closest("[data-stop-outdoor]")) {
+        this.handlers.stopOutdoor?.();
         return;
       }
 
@@ -194,19 +276,25 @@ export class DungeonUI {
       this.handlers.toggleAutoAllocate?.(event.currentTarget.checked);
     });
 
+    this.dom.importFile?.addEventListener("change", async (event) => {
+      const file = event.currentTarget.files?.[0];
+      event.currentTarget.value = "";
+      if (!file) return;
+      try {
+        const text = await file.text();
+        this.handlers.importSave?.(text);
+      } catch {
+        this.showToast("无法读取所选文件。", "error");
+      }
+    });
+
     for (const closeButton of document.querySelectorAll("[data-result-close]")) {
       closeButton.addEventListener("click", () => this.closeResult());
     }
 
     this.dom.resultDialog?.addEventListener("cancel", () => this.closeResult());
 
-    this.dom.classDialog?.addEventListener("cancel", (event) => {
-      if (this.handlers.selectClass && this.dom.classDialog.dataset.required === "true") {
-        event.preventDefault();
-        return;
-      }
-      this.closeClassSelection();
-    });
+    this.dom.classDialog?.addEventListener("cancel", () => this.closeClassSelection());
     this.dom.reforgeDialog?.addEventListener("cancel", (event) => {
       event.preventDefault();
       this.handlers.resolveReforge?.("keep");
@@ -219,16 +307,20 @@ export class DungeonUI {
 
   render(model) {
     this.renderHeader(model);
+    this.syncSound(model.settings?.soundEnabled !== false);
     this.renderCharacter(model.character);
+    this.renderCareer(model.career);
+    this.renderCharacterManager(model);
     this.renderEquipment(model.character.equipment);
     this.renderFloors(model.floors, model.selectedFloorId);
     this.renderFloorPreview(model.selectedFloor, model.character.power);
+    this.renderAdventureMode(model.adventureMode, model.outdoor);
     this.renderInventory(
       model.character.inventory,
       model.character.equipment,
       model.inventoryLimit,
     );
-    this.renderShop(model.economy?.shop, model.character.gold);
+    this.renderShop(model.economy?.shop, model.character.gold, model.character.equipment);
     const pendingReforge = Boolean(model.economy?.pendingReforge);
     for (const button of document.querySelectorAll("[data-equip-id], [data-sell-id], [data-unequip-slot], [data-reforge-id]")) {
       button.disabled = pendingReforge;
@@ -238,6 +330,21 @@ export class DungeonUI {
   renderHeader(model) {
     setText(this.dom.coins, formatNumber(model.character.gold));
     setText(this.dom.maxFloor, model.highestUnlockedFloor);
+  }
+
+  syncSound(enabled) {
+    this.audio.setEnabled(enabled);
+    if (!this.dom.soundToggle) return;
+    this.dom.soundToggle.textContent = enabled ? "🔊" : "🔇";
+    this.dom.soundToggle.setAttribute("aria-label", enabled ? "关闭音效" : "开启音效");
+    this.dom.soundToggle.title = enabled ? "关闭音效" : "开启音效";
+  }
+
+  renderCareer(career = {}) {
+    setText(this.dom.careerVictories, formatNumber(career.totalVictories));
+    setText(this.dom.careerDefeats, formatNumber(career.totalDefeats));
+    setText(this.dom.careerFloor, `第 ${formatNumber(Math.max(1, numberOr(career.highestFloor, 1)))} 层`);
+    setText(this.dom.careerWaves, formatNumber(career.outdoorWaves));
   }
 
   renderCharacter(character) {
@@ -300,14 +407,45 @@ export class DungeonUI {
   renderSkills(skills = [], pointState = {}) {
     if (!this.dom.skills) return;
     const rows = skills.map((skill) => {
-      const typeLabel = skill.type === "aoe" ? "群体" : skill.type === "guard" ? "自保" : "单体";
+      const typeLabel = {
+        aoe: "群体",
+        guard: "自保",
+        heal: "治疗",
+        summon: "召唤",
+        empower: "形态",
+      }[skill.type] ?? "单体";
       const next = skill.nextLevel;
       const cooldownPreview = next && next.cooldown !== skill.cooldown
         ? `${skill.cooldown}→${next.cooldown}`
         : `${skill.cooldown}`;
-      const effect = skill.type === "guard"
-        ? `减伤 ${Math.round((skill.reduction ?? 0) * 100)}%${next ? `→${Math.round((next.reduction ?? 0) * 100)}%` : ""} · 冷却 ${cooldownPreview}`
-        : `倍率 ${Number(skill.multiplier ?? 1).toFixed(2)}${next ? `→${Number(next.multiplier ?? 1).toFixed(2)}` : ""} · 冷却 ${cooldownPreview}`;
+      const effectParts = [];
+      if (skill.type === "guard") {
+        if (numberOr(skill.reduction, 0) > 0) {
+          effectParts.push(`减伤 ${Math.round(numberOr(skill.reduction, 0) * 100)}%${next ? `→${Math.round(numberOr(next.reduction, 0) * 100)}%` : ""}`);
+        }
+        if (numberOr(skill.dodgeBonus, 0) > 0) {
+          effectParts.push(`闪避 +${Math.round(numberOr(skill.dodgeBonus, 0) * 100)}%${next ? `→${Math.round(numberOr(next.dodgeBonus, 0) * 100)}%` : ""}`);
+        }
+      } else if (skill.type === "heal") {
+        effectParts.push(`恢复 ${Math.round(numberOr(skill.healRatio, 0) * 100)}%${next ? `→${Math.round(numberOr(next.healRatio, 0) * 100)}%` : ""} 生命`);
+      } else if (skill.type === "summon") {
+        effectParts.push(`召唤 ${numberOr(skill.summonCount, 1)}${next && numberOr(next.summonCount, 1) !== numberOr(skill.summonCount, 1) ? `→${numberOr(next.summonCount, 1)}` : ""} 名 · 上限 ${numberOr(skill.maxMinions, 1)}${next && numberOr(next.maxMinions, 1) !== numberOr(skill.maxMinions, 1) ? `→${numberOr(next.maxMinions, 1)}` : ""}`);
+        effectParts.push(`攻 ${Math.round(numberOr(skill.minionAttackRatio, 0) * 100)}%${next ? `→${Math.round(numberOr(next.minionAttackRatio, 0) * 100)}%` : ""}`);
+      } else if (skill.type === "empower") {
+        effectParts.push(`增伤 ${Math.round(numberOr(skill.damageBonus, 0) * 100)}%${next ? `→${Math.round(numberOr(next.damageBonus, 0) * 100)}%` : ""}`);
+        if (numberOr(skill.lifestealBonus, 0) > 0) {
+          effectParts.push(`吸血 +${Math.round(numberOr(skill.lifestealBonus, 0) * 100)}%`);
+        }
+        effectParts.push(`持续 ${numberOr(skill.duration, 1)} 回合`);
+      } else {
+        effectParts.push(`倍率 ${Number(skill.multiplier ?? 1).toFixed(2)}${next ? `→${Number(next.multiplier ?? 1).toFixed(2)}` : ""}`);
+        if (numberOr(skill.hitCount, 1) > 1) effectParts.push(`${numberOr(skill.hitCount, 1)} 段`);
+        if (numberOr(skill.critChanceBonus, 0) > 0) {
+          effectParts.push(`暴击 +${Math.round(numberOr(skill.critChanceBonus, 0) * 100)}%`);
+        }
+      }
+      effectParts.push(`冷却 ${cooldownPreview}`);
+      const effect = effectParts.join(" · ");
       const maxLevel = numberOr(skill.maxLevel, numberOr(skill.level, 1));
       const basic = skill.isBasic === true;
       const canUpgrade = !basic && numberOr(pointState.unspent, 0) > 0 && numberOr(skill.level, 1) < maxLevel;
@@ -420,23 +558,112 @@ export class DungeonUI {
 
   renderInventory(items = [], equipment = {}, limit = 24) {
     if (!this.dom.inventory) return;
+    this.lastInventoryRender = { items, equipment, limit };
     const equippedBySlot = equipment || {};
-    this.dom.inventory.innerHTML = items
-      .map((item) => renderInventoryItem(item, equippedBySlot[item.slot]))
-      .join("");
+    const visible = this.applyInventoryView(items);
+    this.dom.inventory.innerHTML = items.length > 0 && visible.length === 0
+      ? `<div class="empty-state inventory-filter-empty"><span aria-hidden="true">🔍</span><strong>该分类暂无装备</strong><p>换一个筛选条件试试。</p></div>`
+      : visible.map((item) => renderInventoryItem(item, equippedBySlot[item.slot])).join("");
     if (this.dom.inventoryEmpty) this.dom.inventoryEmpty.hidden = items.length > 0;
     setText(this.dom.inventoryCount, `${items.length}`);
     setText(this.dom.inventoryLimit, `${limit}`);
     const capacity = this.dom.inventoryCount?.parentElement;
     if (capacity) capacity.setAttribute("aria-label", `背包容量 ${items.length} / ${limit}`);
+    this.syncInventoryControls();
   }
 
-  renderShop(shop = {}, gold = 0) {
+  /** Pure display-side filter + sort; the save's item order is never touched. */
+  applyInventoryView(items) {
+    const filtered = this.inventoryFilter === "all"
+      ? [...items]
+      : items.filter((item) => item.slot === this.inventoryFilter);
+    const rank = { normal: 0, excellent: 1, rare: 2, legendary: 3 };
+    const byPower = (a, b) => numberOr(b.power, 0) - numberOr(a.power, 0);
+    if (this.inventorySort === "power") filtered.sort(byPower);
+    else if (this.inventorySort === "rarity") {
+      filtered.sort((a, b) =>
+        (rank[rarityKey(b.rarity)] ?? 0) - (rank[rarityKey(a.rarity)] ?? 0) || byPower(a, b));
+    } else if (this.inventorySort === "level") {
+      filtered.sort((a, b) => numberOr(b.level, 0) - numberOr(a.level, 0) || byPower(a, b));
+    }
+    return filtered;
+  }
+
+  setInventoryView({ filter, sort } = {}) {
+    if (filter) this.inventoryFilter = ["weapon", "helmet", "armor", "accessory"].includes(filter) ? filter : "all";
+    if (sort) this.inventorySort = ["power", "rarity", "level"].includes(sort) ? sort : "default";
+    const last = this.lastInventoryRender;
+    if (last) this.renderInventory(last.items, last.equipment, last.limit);
+    else this.syncInventoryControls();
+  }
+
+  syncInventoryControls() {
+    for (const button of document.querySelectorAll("[data-inventory-filter]")) {
+      button.classList.toggle("is-active", button.dataset.inventoryFilter === this.inventoryFilter);
+    }
+    for (const button of document.querySelectorAll("[data-inventory-sort]")) {
+      button.classList.toggle("is-active", button.dataset.inventorySort === this.inventorySort);
+    }
+  }
+
+  renderShop(shop = {}, gold = 0, equipment = {}) {
     if (!this.dom.shop) return;
     const stock = Array.isArray(shop?.stock) ? shop.stock : [];
     this.dom.shop.innerHTML = stock.length > 0
-      ? stock.map((listing) => renderShopItem(listing, gold)).join("")
+      ? stock.map((listing) => renderShopItem(listing, gold, equipment)).join("")
       : `<div class="empty-state shop-empty"><span aria-hidden="true">🏪</span><strong>本轮货架已售空</strong><p>继续远征，胜利后商队会定期补货。</p></div>`;
+  }
+
+  renderCharacterManager(model = {}) {
+    const characters = Array.isArray(model.characters) ? model.characters : [];
+    const activeId = model.activeCharacterId;
+    const limit = Math.max(1, numberOr(model.characterLimit, 8));
+    setText(this.dom.characterCount, characters.length);
+    setText(this.dom.characterLimit, limit);
+    if (this.dom.characterCreate) {
+      this.dom.characterCreate.disabled = characters.length >= limit;
+      this.dom.characterCreate.title = characters.length >= limit ? `最多创建 ${limit} 个角色` : "";
+    }
+    if (!this.dom.characterList) return;
+    this.dom.characterList.innerHTML = characters.length > 0
+      ? characters.map((character) => {
+        const hero = character.hero ?? character;
+        const classMeta = character.classMeta ?? {};
+        const id = String(character.id ?? hero.id ?? "");
+        const active = id === activeId || character.active === true;
+        const name = character.name || hero.name || `无名${classMeta.name ?? "冒险者"}`;
+        const prestige = numberOr(character.prestigeCount ?? hero.prestigeCount, 0);
+        return `
+          <article class="character-card ${active ? "is-active" : ""}" data-character-id="${escapeHtml(id)}">
+            <span class="character-card-icon" aria-hidden="true">${escapeHtml(classMeta.emoji || character.emoji || "⚔️")}</span>
+            <span class="character-card-copy">
+              <strong>${escapeHtml(name)}</strong>
+              <small>${escapeHtml(classMeta.name || character.className || "冒险者")} · Lv.${numberOr(character.level ?? hero.level, 1)} · 转生 ${prestige}</small>
+            </span>
+            <span class="character-card-actions">
+              <button class="character-switch-button" type="button" data-character-switch="${escapeHtml(id)}" ${active ? "disabled" : ""}>${active ? "当前" : "进入"}</button>
+              <button class="icon-button character-delete-button" type="button" data-character-delete="${escapeHtml(id)}" ${characters.length <= 1 ? "disabled" : ""} aria-label="删除${escapeHtml(name)}" title="删除角色">×</button>
+            </span>
+          </article>`;
+      }).join("")
+      : `<div class="character-empty">尚未创建角色</div>`;
+  }
+
+  renderAdventureMode(mode = "dungeon", outdoor = {}) {
+    const selected = mode === "outdoor" ? "outdoor" : "dungeon";
+    this.currentAdventureMode = selected;
+    for (const button of document.querySelectorAll("[data-adventure-mode]")) {
+      const active = button.dataset.adventureMode === selected;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", String(active));
+    }
+    const battleVisible = this.dom.battleView && !this.dom.battleView.hidden;
+    if (!battleVisible) {
+      if (this.dom.idleView) this.dom.idleView.hidden = selected !== "dungeon";
+      if (this.dom.outdoorView) this.dom.outdoorView.hidden = selected !== "outdoor";
+    }
+    setText(this.dom.outdoorFloor, `第 ${numberOr(outdoor.targetFloor ?? outdoor.floorId, 1)} 层附近`);
+    setText(this.dom.outdoorTotalWaves, formatNumber(outdoor.totalWaves ?? outdoor.completedWaves ?? 0));
   }
 
   activateInventoryTab(name) {
@@ -455,13 +682,17 @@ export class DungeonUI {
   showClassSelection(model = {}) {
     if (!this.dom.classDialog) return;
     const hero = model.character?.hero ?? {};
-    this.dom.classDialog.dataset.required = String(hero.classChosen !== true);
+    this.renderCharacterManager(model);
     this.selectClassOption(hero.classId || model.classes?.[0]?.id || "warrior");
     if (typeof this.dom.classDialog.showModal === "function") {
       if (!this.dom.classDialog.open) this.dom.classDialog.showModal();
     } else {
       this.dom.classDialog.setAttribute("open", "");
     }
+  }
+
+  showCharacterManager(model = {}) {
+    this.showClassSelection(model);
   }
 
   selectClassOption(classId) {
@@ -475,12 +706,16 @@ export class DungeonUI {
 
   closeClassSelection() {
     if (!this.dom.classDialog) return;
-    this.dom.classDialog.dataset.required = "false";
     if (this.dom.classDialog.open && typeof this.dom.classDialog.close === "function") {
       this.dom.classDialog.close();
     } else {
       this.dom.classDialog.removeAttribute("open");
     }
+  }
+
+
+  closeCharacterManager() {
+    this.closeClassSelection();
   }
 
   showReforge(pending) {
@@ -511,8 +746,9 @@ export class DungeonUI {
     }
   }
 
-  showBattle({ hero, classMeta, stats, enemies, floor, speed }) {
+  showBattle({ hero, classMeta, stats, enemies, floor, speed, mode = "dungeon", waveNumber = 1 }) {
     this.dom.idleView.hidden = true;
+    if (this.dom.outdoorView) this.dom.outdoorView.hidden = true;
     this.dom.battleView.hidden = false;
     setText(this.dom.heroBattleName, hero.name || "无名战士");
     const portrait = document.querySelector(".hero-combatant .combatant-portrait");
@@ -520,19 +756,28 @@ export class DungeonUI {
     setText(this.dom.battleRound, 1);
     setMeter(this.dom.heroHpFill, 1, this.dom.heroHpFill?.parentElement);
     setText(this.dom.heroHpText, `${formatNumber(stats.maxHp)} / ${formatNumber(stats.maxHp)}`);
+    if (this.dom.minions) {
+      this.dom.minions.replaceChildren();
+      this.dom.minions.hidden = true;
+    }
     this.dom.log?.replaceChildren();
     this.setCharacterControlsDisabled(true);
-    this.setStatus(`第 ${floor.id ?? floor.floorId} 层 · 战斗中`, true);
+    const outdoor = mode === "outdoor";
+    this.currentAdventureMode = outdoor ? "outdoor" : "dungeon";
+    setText(this.dom.battleCaption, outdoor ? `野外漫步 · 第 ${waveNumber} 波` : "自动战斗");
+    if (this.dom.retreat) this.dom.retreat.hidden = outdoor;
+    if (this.dom.outdoorStop) this.dom.outdoorStop.hidden = !outdoor;
+    this.setStatus(outdoor ? `第 ${waveNumber} 波 · 漫步中` : `第 ${floor.id ?? floor.floorId} 层 · 战斗中`, true);
     this.updateSpeed(speed);
     this.setBattleControlsDisabled(false);
 
     if (this.dom.enemies) {
       this.dom.enemies.innerHTML = enemies.map((enemy) => `
-        <article class="enemy-combatant" data-enemy-id="${escapeHtml(enemy.id)}">
+        <article class="enemy-combatant ${enemy.isElite ? "is-elite" : ""} ${enemy.isBoss ? "is-boss" : ""}" data-enemy-id="${escapeHtml(enemy.id)}">
           <span class="enemy-portrait" aria-hidden="true">${escapeHtml(enemy.icon || "💀")}</span>
           <div>
             <div class="enemy-name-row">
-              <strong>${escapeHtml(enemy.name)}</strong>
+              <strong>${enemy.isBoss ? `<span class="unit-badge is-boss">首领</span>` : enemy.isElite ? `<span class="unit-badge is-elite">精英</span>` : ""}${escapeHtml(enemy.name)}</strong>
               <span data-enemy-hp-text>${formatNumber(enemy.hp ?? enemy.maxHp)} / ${formatNumber(enemy.maxHp)}</span>
             </div>
             <div class="meter enemy-hp" role="progressbar" aria-label="${escapeHtml(enemy.name)}生命值"
@@ -550,6 +795,7 @@ export class DungeonUI {
     const heroMaxHp = Math.max(1, numberOr(snapshot.playerMaxHp ?? snapshot.heroMaxHp ?? hero.maxHp, heroHp || 1));
     setMeter(this.dom.heroHpFill, heroHp / heroMaxHp, this.dom.heroHpFill?.parentElement);
     setText(this.dom.heroHpText, `${formatNumber(heroHp)} / ${formatNumber(heroMaxHp)}`);
+    this.applyMinionSnapshot(Array.isArray(snapshot.minions) ? snapshot.minions : []);
 
     const enemies = Array.isArray(snapshot.enemies)
       ? snapshot.enemies
@@ -567,6 +813,31 @@ export class DungeonUI {
     }
   }
 
+  /** Keeps every summoned minion visible as a chip; the dead stay grayed out. */
+  applyMinionSnapshot(minions) {
+    if (!this.dom.minions) return;
+    this.dom.minions.hidden = minions.length === 0;
+    for (const minion of minions) {
+      if (!minion?.id) continue;
+      let chip = this.dom.minions.querySelector(`[data-minion-id="${cssEscape(minion.id)}"]`);
+      if (!chip) {
+        chip = document.createElement("span");
+        chip.className = "minion-chip";
+        chip.dataset.minionId = String(minion.id);
+        chip.innerHTML = `<span class="minion-emoji" aria-hidden="true"></span><span class="minion-hp"><i></i></span>`;
+        this.dom.minions.append(chip);
+      }
+      const hp = Math.max(0, numberOr(minion.hp, 0));
+      const maxHp = Math.max(1, numberOr(minion.maxHp, hp || 1));
+      const emoji = chip.querySelector(".minion-emoji");
+      if (emoji) emoji.textContent = minion.emoji || "💀";
+      const fill = chip.querySelector(".minion-hp i");
+      if (fill) fill.style.width = `${Math.round((hp / maxHp) * 100)}%`;
+      chip.classList.toggle("is-dead", hp <= 0);
+      chip.title = `${minion.name ?? "召唤物"} ${formatNumber(hp)} / ${formatNumber(maxHp)}`;
+    }
+  }
+
   appendBattleLog(entry) {
     if (!this.dom.log) return;
     const item = document.createElement("li");
@@ -576,6 +847,73 @@ export class DungeonUI {
     if (this.dom.log.children.length > 160) this.dom.log.firstElementChild?.remove();
     this.dom.log.scrollTop = this.dom.log.scrollHeight;
     if (Number.isFinite(entry?.round)) setText(this.dom.battleRound, entry.round);
+    this.spawnBattleEffects(entry);
+    this.playLogSound(entry);
+  }
+
+  playLogSound(entry) {
+    if (!entry || typeof entry !== "object") return;
+    if (entry.type === "status") return this.audio.play("burn");
+    if (entry.type === "loot") return this.audio.play("loot");
+    if (entry.type !== "action") return;
+    if (entry.actionType === "heal") return this.audio.play("heal");
+    if (["guard", "empower", "summon"].includes(entry.actionType)) return this.audio.play("buff");
+    if (entry.dodged || (numberOr(entry.dodgedCount, 0) > 0 && numberOr(entry.successfulHitCount, 0) === 0)) {
+      return this.audio.play("dodge");
+    }
+    return this.audio.play(entry.critical || numberOr(entry.criticalCount, 0) > 0 ? "crit" : "hit");
+  }
+
+  /** Floating combat text + hit flash, driven purely by log entries. */
+  spawnBattleEffects(entry) {
+    if (this.reducedMotion || !entry || typeof entry !== "object") return;
+    if (entry.type === "status" && entry.actor) {
+      this.floatOverUnit(entry.actor, `-${formatNumber(entry.damage)}`, "is-burn");
+      return;
+    }
+    if (entry.type !== "action") return;
+    if (entry.actionType === "heal" && entry.actor) {
+      this.floatOverUnit(entry.actor, `+${formatNumber(entry.healing)}`, "is-heal");
+      return;
+    }
+    if (!Array.isArray(entry.targets)) return;
+    for (const target of entry.targets) {
+      if (!target?.id || entry.actionType === "summon") continue;
+      if (target.dodged) {
+        this.floatOverUnit(target, "闪避", "is-dodge");
+      } else {
+        this.floatOverUnit(target, `-${formatNumber(target.damage)}`, target.critical ? "is-crit" : "", true);
+      }
+    }
+  }
+
+  floatOverUnit(unit, text, extraClass = "", flash = false) {
+    const card = this.findUnitCard(unit);
+    if (!card) return;
+    if (flash) {
+      card.classList.remove("is-hit");
+      // 重新触发受击动画需要强制一次 reflow。
+      void card.offsetWidth;
+      card.classList.add("is-hit");
+      setTimeout(() => card.classList.remove("is-hit"), 320);
+    }
+    const float = document.createElement("span");
+    float.className = `damage-float ${extraClass}`.trim();
+    float.textContent = text;
+    card.append(float);
+    const remove = () => float.remove();
+    float.addEventListener("animationend", remove, { once: true });
+    setTimeout(remove, 1300);
+  }
+
+  findUnitCard(unit) {
+    const id = String(unit?.id ?? "");
+    if (!id) return null;
+    if (unit.side === "player") return document.querySelector(".hero-combatant");
+    if (unit.side === "minion") {
+      return this.dom.minions?.querySelector(`[data-minion-id="${cssEscape(id)}"]`);
+    }
+    return this.dom.enemies?.querySelector(`[data-enemy-id="${cssEscape(id)}"]`);
   }
 
   finishBattle(victory, retreat = false) {
@@ -584,12 +922,16 @@ export class DungeonUI {
     this.setStatus(retreat ? "已撤退" : victory ? "远征胜利" : "远征失败", false);
   }
 
-  returnToDungeon() {
+  returnToDungeon(mode = this.currentAdventureMode) {
     this.dom.battleView.hidden = true;
-    this.dom.idleView.hidden = false;
+    const outdoor = mode === "outdoor";
+    this.dom.idleView.hidden = outdoor;
+    if (this.dom.outdoorView) this.dom.outdoorView.hidden = !outdoor;
+    if (this.dom.retreat) this.dom.retreat.hidden = false;
+    if (this.dom.outdoorStop) this.dom.outdoorStop.hidden = true;
     this.setCharacterControlsDisabled(false);
     this.activatePanel("dungeon");
-    this.setStatus("等待出发", false);
+    this.setStatus(outdoor ? "等待漫步" : "等待出发", false);
   }
 
   updateSpeed(speed) {
@@ -606,12 +948,13 @@ export class DungeonUI {
     }
     if (this.dom.skip) this.dom.skip.disabled = disabled;
     if (this.dom.retreat) this.dom.retreat.disabled = disabled;
+    if (this.dom.outdoorStop) this.dom.outdoorStop.disabled = disabled;
   }
 
   setCharacterControlsDisabled(disabled) {
     if (this.dom.autoAllocate) this.dom.autoAllocate.disabled = disabled;
     for (const button of document.querySelectorAll(
-      "[data-allocate-stat], [data-unequip-slot], [data-equip-id], [data-sell-id], [data-reforge-id], [data-upgrade-skill], [data-reset-skills], [data-prestige], [data-class-change], [data-shop-refresh], [data-buy-listing]",
+      "[data-allocate-stat], [data-unequip-slot], [data-equip-id], [data-sell-id], [data-reforge-id], [data-upgrade-skill], [data-reset-skills], [data-prestige], [data-character-manage], [data-class-change], [data-shop-refresh], [data-buy-listing], [data-adventure-mode], [data-start-outdoor]",
     )) {
       button.disabled = disabled;
     }
@@ -620,7 +963,28 @@ export class DungeonUI {
   showResult(result) {
     this.lastResult = result;
     if (!this.dom.resultContent || !this.dom.resultDialog) return;
+    setText(this.dom.resultKicker, "远征结算");
+    setText(this.dom.resultTitle, "战斗结果");
+    setText(this.dom.resultReturn, "返回地牢");
+    if (this.dom.resultAgain) {
+      const canRepeat = result.canRepeat === true;
+      this.dom.resultAgain.hidden = !canRepeat;
+      if (canRepeat) {
+        const advances = result.victory && result.nextFloorId
+          && result.nextFloorId !== result.floorId;
+        setText(this.dom.resultAgain, advances ? `⚔ 挑战第 ${result.nextFloorId} 层` : "⚔ 再战本层");
+      }
+    }
+    this.audio.play(result.victory ? "victory" : "defeat");
+    if (result.victory && result.levelsGained) this.audio.play("levelup");
     const retreated = result.retreat === true;
+    const lootItems = Array.isArray(result.lootItems)
+      ? result.lootItems
+      : result.loot ? [result.loot] : [];
+    const salvagedItems = Array.isArray(result.salvagedItems)
+      ? result.salvagedItems
+      : result.salvagedItem ? [result.salvagedItem] : [];
+    const previousEquipment = result.previousEquipment || {};
     const rewardMarkup = result.victory
       ? `
         <div class="result-rewards" aria-label="战斗收益">
@@ -628,8 +992,8 @@ export class DungeonUI {
           <div><span>金币</span><strong>+${formatNumber(result.gold)}</strong></div>
         </div>
         ${result.levelsGained ? `<p class="level-up-callout">✦ 等级提升至 Lv.${result.level}${result.skillPointsGained ? `，技能点 +${result.skillPointsGained}` : ""}</p>` : result.skillPointsGained ? `<p class="level-up-callout">✦ 技能点 +${result.skillPointsGained}</p>` : ""}
-        ${result.loot ? `<section class="loot-result"><h3>获得装备</h3>${renderResultLoot(result.loot, result.equippedItem)}</section>` : ""}
-        ${result.salvagedItem ? `<p class="salvage-note">💰 背包已满，${escapeHtml(result.salvagedItem.name)} 已自动分解为 ${formatNumber(result.salvageGold)} 枚金币。</p>` : ""}`
+        ${lootItems.length > 0 ? `<section class="loot-result"><h3>获得装备${lootItems.length > 1 ? `（${lootItems.length} 件）` : ""}</h3>${lootItems.map((item) => renderResultLoot(item, previousEquipment[item.slot] ?? result.equippedItem)).join("")}</section>` : ""}
+        ${salvagedItems.length > 0 ? `<p class="salvage-note">💰 背包已满，${salvagedItems.map((item) => escapeHtml(item.name)).join("、")} 已自动分解为 ${formatNumber(result.salvageGold)} 枚金币。</p>` : ""}`
       : `
         <div class="result-rewards is-defeat" aria-label="${retreated ? "撤退损失" : "战败损失"}">
           <div><span>损失经验</span><strong>-${formatNumber(result.experienceLost)}</strong></div>
@@ -643,7 +1007,39 @@ export class DungeonUI {
         <div><strong>${result.victory ? "清剿完成" : retreated ? "已撤退" : "远征失利"}</strong><p>${escapeHtml(result.summary || "")}</p></div>
       </div>
       ${result.saveFailed ? `<p class="save-error-note" role="alert">进度暂时无法写入浏览器存储，请检查存储权限后再继续。</p>` : ""}
-      ${rewardMarkup}`;
+      ${rewardMarkup}
+      ${renderBattleReport(result.statistics)}`;
+    if (typeof this.dom.resultDialog.showModal === "function") {
+      if (!this.dom.resultDialog.open) this.dom.resultDialog.showModal();
+    } else {
+      this.dom.resultDialog.setAttribute("open", "");
+    }
+  }
+
+  showOutdoorResult(result = {}) {
+    this.lastResult = { ...result, outdoor: true };
+    if (!this.dom.resultContent || !this.dom.resultDialog) return;
+    setText(this.dom.resultKicker, "野外漫步");
+    setText(this.dom.resultTitle, "漫步结算");
+    setText(this.dom.resultReturn, "返回荒野");
+    if (this.dom.resultAgain) this.dom.resultAgain.hidden = true;
+    this.audio.play(result.reason === "defeat" ? "defeat" : "victory");
+    const stopped = result.reason === "manual" || result.reason === "complete";
+    const bannerTitle = result.reason === "defeat" ? "漫步中止" : "收益已结算";
+    const stored = numberOr(result.itemsStored, 0);
+    const salvaged = numberOr(result.itemsSalvaged, 0);
+    this.dom.resultContent.innerHTML = `
+      <div class="result-banner ${result.reason === "defeat" ? "is-defeat" : "is-victory"}">
+        <span aria-hidden="true">${result.reason === "defeat" ? "☠️" : "🌲"}</span>
+        <div><strong>${bannerTitle}</strong><p>${escapeHtml(result.summary || "")}</p></div>
+      </div>
+      <div class="result-rewards outdoor-rewards" aria-label="野外收益">
+        <div><span>完成波次</span><strong>${formatNumber(result.completedWaves)}</strong></div>
+        <div><span>经验</span><strong>+${formatNumber(result.experience)}</strong></div>
+        <div><span>金币</span><strong>+${formatNumber(result.gold)}</strong></div>
+      </div>
+      <p class="outdoor-settlement-note">装备收入背包 ${formatNumber(stored)} 件${salvaged ? `，${formatNumber(salvaged)} 件已分解为金币` : ""}${result.materialCount ? `；材料 ${formatNumber(result.materialCount)} 件` : ""}。</p>
+      ${result.saveFailed ? `<p class="save-error-note" role="alert">进度暂时无法写入浏览器存储，请检查存储权限后再继续。</p>` : ""}`;
     if (typeof this.dom.resultDialog.showModal === "function") {
       if (!this.dom.resultDialog.open) this.dom.resultDialog.showModal();
     } else {
@@ -745,6 +1141,7 @@ function collectDom() {
     heroBattleName: hook("hero-battle-name"),
     heroHpFill: hook("hero-hp-fill"),
     heroHpText: hook("hero-hp-text"),
+    minions: hook("minions"),
     battleRound: hook("battle-round"),
     log: hook("log"),
     speedControls: hook("speed-controls"),
@@ -757,11 +1154,32 @@ function collectDom() {
     shop: hook("shop"),
     shopRefresh: hook("shop-refresh"),
     classDialog: hook("class-dialog"),
+    characterList: hook("character-list"),
+    characterCount: hook("character-count"),
+    characterLimit: hook("character-limit"),
+    characterName: hook("character-name"),
+    characterCreate: hook("character-create"),
+    outdoorView: hook("outdoor-view"),
+    outdoorFloor: hook("outdoor-floor"),
+    outdoorTotalWaves: hook("outdoor-total-waves"),
+    outdoorStop: hook("stop-outdoor"),
+    battleCaption: hook("battle-caption"),
     reforgeDialog: hook("reforge-dialog"),
     reforgeContent: hook("reforge-content"),
     reforgeClose: hook("reforge-close"),
     resultDialog: hook("result-dialog"),
     resultContent: hook("result-content"),
+    resultKicker: hook("result-kicker"),
+    resultTitle: hook("result-title"),
+    resultReturn: hook("result-return"),
+    resultAgain: hook("result-again"),
+    soundToggle: hook("toggle-sound"),
+    importFile: hook("import-file"),
+    bulkRarity: hook("bulk-rarity"),
+    careerVictories: hook("career-victories"),
+    careerDefeats: hook("career-defeats"),
+    careerFloor: hook("career-floor"),
+    careerWaves: hook("career-waves"),
     toast: hook("toast"),
     status: document.querySelector(".status-indicator"),
   };
@@ -779,17 +1197,20 @@ function renderInventoryItem(item, equippedItem) {
     }).join("")
     : "<span>无额外属性</span>";
   const effectMarkup = renderEffect(item.effect);
+  const locked = item.locked === true;
   return `
-    <article class="inventory-item rarity-${rarityKey(item.rarity)}">
+    <article class="inventory-item rarity-${rarityKey(item.rarity)} ${locked ? "is-locked" : ""}">
       <div class="inventory-item-header">
         <span class="slot-icon" aria-hidden="true">${escapeHtml(item.icon || meta.icon)}</span>
         <span class="inventory-item-name">
           <strong>${escapeHtml(item.name)}</strong>
           <small>${RARITY_LABELS[rarityKey(item.rarity)] || "普通"} · ${meta.label} · Lv.${numberOr(item.level, 1)}</small>
         </span>
+        <button class="icon-button lock-button ${locked ? "is-locked" : ""}" type="button" data-lock-id="${escapeHtml(item.id)}" aria-label="${locked ? "解锁" : "锁定"}${escapeHtml(item.name)}" title="${locked ? "解锁(允许出售)" : "锁定(防止出售)"}">${locked ? "🔒" : "🔓"}</button>
         <span class="item-power">✦ ${formatNumber(item.power)}</span>
       </div>
       <p class="item-stats">${stats}</p>
+      ${renderAffixQuality(item)}
       ${effectMarkup}
       <div class="item-actions">
         <button class="secondary-button equip-button" type="button" data-equip-id="${escapeHtml(item.id)}">
@@ -798,24 +1219,41 @@ function renderInventoryItem(item, equippedItem) {
         <button class="secondary-button reforge-button" type="button" data-reforge-id="${escapeHtml(item.id)}" data-reforge-location="inventory">
           重铸 ${formatNumber(getReforgeCost(item))}
         </button>
-        <button class="secondary-button sell-button" type="button" data-sell-id="${escapeHtml(item.id)}">
+        <button class="secondary-button sell-button" type="button" data-sell-id="${escapeHtml(item.id)}" ${locked ? "disabled title=\"已锁定,无法出售\"" : ""}>
           出售 ${formatNumber(getSellValue(item))}
         </button>
       </div>
     </article>`;
 }
 
-function renderShopItem(listing, gold) {
+/** Per-affix roll-quality chips: how close each roll is to its level ceiling. */
+function renderAffixQuality(item) {
+  const affixes = Array.isArray(item?.affixes) ? item.affixes : [];
+  if (affixes.length === 0) return "";
+  const chips = affixes.map((affix) => {
+    const quality = getAffixRollQuality(affix, item.level);
+    if (!quality) return "";
+    const tier = quality.percent >= 80 ? "q-high" : quality.percent >= 40 ? "q-mid" : "q-low";
+    return `<span class="affix-chip ${tier}" title="${escapeHtml(affix.name || affix.id)}:本词条区间的 ${quality.percent}% 位">${escapeHtml(affix.name || affix.id)} ${quality.percent}%</span>`;
+  }).join("");
+  return chips ? `<p class="item-affix-quality" aria-label="词条成色">${chips}</p>` : "";
+}
+
+function renderShopItem(listing, gold, equipment = {}) {
   const item = listing?.item;
   if (!item) return "";
   const meta = SLOT_META[item.slot] || { label: "装备", icon: "◆" };
   const price = getShopPrice(item);
-  const stats = readItemStats(item);
-  const statMarkup = Object.entries(stats)
-    .filter(([, value]) => Number.isFinite(value) && value !== 0)
-    .slice(0, 5)
-    .map(([key, value]) => `<span>${escapeHtml(STAT_META[key]?.label || key)} +${formatStatValue(key, value)}</span>`)
-    .join("") || "<span>无额外属性</span>";
+  // 与身上同部位装备对比(↑绿↓红),买前一眼看出值不值。
+  const comparison = compareStats(item, equipment?.[item.slot]);
+  const statMarkup = comparison.length > 0
+    ? comparison.slice(0, 6).map(({ key, value, delta }) => {
+      const deltaMarkup = delta === 0
+        ? ""
+        : `<span class="${delta > 0 ? "comparison-up" : "comparison-down"}">${delta > 0 ? "↑" : "↓"}${formatStatValue(key, Math.abs(delta))}</span>`;
+      return `<span>${STAT_META[key]?.label || escapeHtml(key)} +${formatStatValue(key, value)} ${deltaMarkup}</span>`;
+    }).join("")
+    : "<span>无额外属性</span>";
   return `
     <article class="shop-item rarity-${rarityKey(item.rarity)}">
       <div class="inventory-item-header">
@@ -824,6 +1262,7 @@ function renderShopItem(listing, gold) {
         <span class="item-power">✦ ${formatNumber(item.power)}</span>
       </div>
       <p class="item-stats">${statMarkup}</p>
+      ${renderEffect(item.effect)}
       <button class="secondary-button shop-buy-button" type="button" data-buy-listing="${escapeHtml(listing.listingId)}" ${numberOr(gold, 0) < price ? "disabled" : ""}>
         ◈ ${formatNumber(price)}
       </button>
@@ -832,7 +1271,12 @@ function renderShopItem(listing, gold) {
 
 function renderReforgeColumn(label, item, tone) {
   const affixes = Array.isArray(item.affixes) && item.affixes.length
-    ? item.affixes.map((affix) => `<li>${escapeHtml(affix.name || affix.id)} <strong>+${formatStatValue(affix.stat, affix.value)}</strong></li>`).join("")
+    ? item.affixes.map((affix) => {
+      const quality = getAffixRollQuality(affix, item.level);
+      const tier = !quality ? "" : quality.percent >= 80 ? "q-high" : quality.percent >= 40 ? "q-mid" : "q-low";
+      const badge = quality ? ` <em class="affix-roll ${tier}">${quality.percent}%</em>` : "";
+      return `<li>${escapeHtml(affix.name || affix.id)} <strong>+${formatStatValue(affix.stat, affix.value)}</strong>${badge}</li>`;
+    }).join("")
     : "<li>无词条</li>";
   return `
     <section class="reforge-column ${tone === "new" ? "is-new" : "is-old"}">
@@ -864,8 +1308,41 @@ function renderResultLoot(item, equippedItem) {
 function renderEffect(effect) {
   if (!effect) return "";
   const label = effect.name || effect.id || "特殊效果";
-  const description = effect.description || "特殊效果将在后续战斗扩展中生效。";
+  const description = effect.description || "传说特效，会在战斗中自动触发。";
   return `<p class="item-effect">🔥 ${escapeHtml(label)}：${escapeHtml(description)}</p>`;
+}
+
+/** Compact end-of-battle report; rows with zero value are hidden. */
+function renderBattleReport(statistics) {
+  if (!statistics) return "";
+  const skillHealing = Math.max(
+    0,
+    numberOr(statistics.playerHealing, 0) - numberOr(statistics.lifestealHealing, 0),
+  );
+  const rows = [
+    ["造成伤害", statistics.playerDamageDealt],
+    ["召唤物伤害", statistics.minionDamageDealt],
+    ["承受伤害", statistics.playerDamageTaken],
+    ["最大一击", statistics.playerMaxHit],
+    ["暴击次数", statistics.playerCriticalHits],
+    ["闪避次数", statistics.playerDodges],
+    ["技能治疗", skillHealing],
+    ["吸血回复", statistics.lifestealHealing],
+    ["燃烧伤害", statistics.burnDamage],
+    ["荆棘反伤", statistics.thornsDamage],
+    ["连击触发", statistics.extraStrikes],
+    ["召唤 / 折损", statistics.minionsSummoned > 0
+      ? `${formatNumber(statistics.minionsSummoned)} / ${formatNumber(statistics.minionsLost)}`
+      : 0],
+  ].filter(([, value]) => typeof value === "string" || numberOr(value, 0) > 0);
+  if (rows.length === 0) return "";
+  return `
+    <section class="battle-report" aria-label="战报统计">
+      <h3>战报 · ${formatNumber(statistics.rounds)} 回合</h3>
+      <div class="battle-report-grid">
+        ${rows.map(([label, value]) => `<div><span>${label}</span><strong>${typeof value === "string" ? escapeHtml(value) : formatNumber(value)}</strong></div>`).join("")}
+      </div>
+    </section>`;
 }
 
 function compareStats(item, equippedItem) {
@@ -905,8 +1382,9 @@ function setText(element, value) {
 function logType(entry) {
   const type = entry?.type;
   if (type === "action") {
-    return ["aoe", "guard", "heal"].includes(entry.actionType) ? "skill" : "damage";
+    return ["aoe", "guard", "heal", "summon", "empower"].includes(entry.actionType) ? "skill" : "damage";
   }
+  if (type === "status") return "status";
   if (["attack", "damage", "critical", "death", "defeat"].includes(type)) return "damage";
   if (["skill", "aoe", "buff", "dodge", "guard"].includes(type)) return "skill";
   if (["reward", "victory", "loot"].includes(type)) return "reward";

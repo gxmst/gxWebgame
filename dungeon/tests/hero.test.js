@@ -1,4 +1,4 @@
-import { CONFIG } from "../js/config.js";
+import { CONFIG, createSeededRng } from "../js/config.js";
 import {
   addExperience,
   applyAutoAllocation,
@@ -14,6 +14,7 @@ import {
   prestigeHero,
   resolveSkillAtLevel,
 } from "../js/skills.js";
+import { rollAffixes } from "../js/loot.js";
 
 const assert = (condition, message = "Assertion failed") => {
   if (!condition) throw new Error(message);
@@ -54,6 +55,19 @@ export const tests = [
       warrior.baseStats.strength += 1;
       const freshWarrior = createDefaultHero("warrior");
       assert(freshWarrior.baseStats.strength === CONFIG.classes.warrior.startingStats.strength);
+    },
+  },
+  {
+    name: "ranger creation uses agility as its primary stat and keeps its own skill kit",
+    run() {
+      const ranger = createHeroForClass("ranger");
+      assert(ranger.classId === "ranger" && ranger.classChosen);
+      assert(ranger.baseStats.agility === CONFIG.classes.ranger.startingStats.agility);
+      assert(ranger.skills.join(",") === CONFIG.classes.ranger.skills.join(","));
+      assert(ranger.skills[0] === CONFIG.classes.ranger.basicSkillId);
+      assert(ranger.skills.includes("aimed_shot"));
+      assert(ranger.skills.includes("arrow_rain"));
+      assert(ranger.skills.includes("evasion_stance"));
     },
   },
   {
@@ -106,6 +120,71 @@ export const tests = [
       assert(warrior.defense > mage.defense, `${warrior.defense} should exceed ${mage.defense}`);
       assert(mage.attack > warrior.attack, `${mage.attack} should exceed ${warrior.attack}`);
       assert(mage.speed > warrior.speed, `${mage.speed} should exceed ${warrior.speed}`);
+    },
+  },
+  {
+    name: "ranger stats emphasize speed, criticals, and evasion with medium survival",
+    run() {
+      const warrior = getHeroStats(createHeroForClass("warrior"));
+      const mage = getHeroStats(createHeroForClass("mage"));
+      const ranger = getHeroStats(createHeroForClass("ranger"));
+
+      assert(ranger.speed > warrior.speed && ranger.speed > mage.speed);
+      assert(ranger.critChance > warrior.critChance && ranger.critChance > mage.critChance);
+      assert(ranger.dodgeChance > warrior.dodgeChance && ranger.dodgeChance > mage.dodgeChance);
+      assert(ranger.maxHp < warrior.maxHp && ranger.maxHp > mage.maxHp);
+      assert(ranger.defense < warrior.defense && ranger.defense > mage.defense);
+      assert(ranger.critDamage > warrior.critDamage);
+    },
+  },
+  {
+    name: "ranger auto-allocation favors agility before support attributes",
+    run() {
+      const ranger = createHeroForClass("ranger");
+      const allocated = applyAutoAllocation({ ...ranger, unspentStatPoints: 30 });
+      const invested = investedStats(allocated, "ranger");
+      assert(invested.agility > invested.vitality);
+      assert(invested.agility > invested.strength);
+      assert(invested.strength > 0 && invested.vitality > 0);
+      assert(invested.intelligence === 0);
+    },
+  },
+  {
+    name: "ranger loot rolls prefer agility, critical, and speed affixes deterministically",
+    run() {
+      const preferred = new Set(["agility", "critChance", "critDamage", "speed"]);
+      let rangerPreferred = 0;
+      let warriorPreferred = 0;
+      let rangerTotal = 0;
+      let warriorTotal = 0;
+      for (let index = 0; index < 240; index += 1) {
+        const seed = `affix-bias-${index}`;
+        const rangerAffixes = rollAffixes(
+          "accessory",
+          20,
+          "legendary",
+          CONFIG.rarities.legendary,
+          createSeededRng(seed),
+          "ranger",
+        );
+        const warriorAffixes = rollAffixes(
+          "accessory",
+          20,
+          "legendary",
+          CONFIG.rarities.legendary,
+          createSeededRng(seed),
+          "warrior",
+        );
+        rangerPreferred += rangerAffixes.filter((affix) => preferred.has(affix.id)).length;
+        warriorPreferred += warriorAffixes.filter((affix) => preferred.has(affix.id)).length;
+        rangerTotal += rangerAffixes.length;
+        warriorTotal += warriorAffixes.length;
+      }
+      assert(rangerTotal > 0 && warriorTotal > 0);
+      assert(
+        rangerPreferred / rangerTotal > warriorPreferred / warriorTotal * 1.35,
+        `${rangerPreferred}/${rangerTotal} should exceed ${warriorPreferred}/${warriorTotal}`,
+      );
     },
   },
   {
@@ -194,4 +273,3 @@ export const tests = [
     },
   },
 ];
-

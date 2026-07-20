@@ -4,8 +4,13 @@ import { tests as skills } from "./skills.test.js";
 import { tests as hero } from "./hero.test.js";
 import { tests as dungeon } from "./dungeon.test.js";
 import { tests as economy } from "./economy.test.js";
+import { tests as outdoor } from "./outdoor.test.js";
+import { tests as loot } from "./loot.test.js";
+import { tests as effects } from "./effects.test.js";
+import { tests as classes } from "./classes.test.js";
+import { tests as qol } from "./qol.test.js";
 
-const tests = [...combat, ...save, ...skills, ...hero, ...dungeon, ...economy];
+const tests = [...combat, ...save, ...skills, ...hero, ...dungeon, ...economy, ...outdoor, ...loot, ...effects, ...classes, ...qol];
 let passed = 0;
 
 for (const test of tests) {

@@ -13,6 +13,7 @@ import {
   upgradeSkill,
 } from "../js/skills.js";
 import { CONFIG } from "../js/config.js";
+import { createHeroForClass } from "../js/hero.js";
 
 const assert = (condition, message = "Assertion failed") => {
   if (!condition) throw new Error(message);
@@ -90,6 +91,30 @@ export const tests = [
       }));
       assert(mageSkills.some((skill) => skill.id === "arcane_bolt" && skill.isBasic));
       assert(!mageSkills.some((skill) => skill.id === "basic_attack"));
+    },
+  },
+  {
+    name: "ranger skill resolution preserves multi-hit, aimed-crit, and evasion fields",
+    run() {
+      const ranger = createHeroForClass("ranger");
+      const skills = getHeroSkills(ranger);
+      const quick = skills.find((skill) => skill.id === "quick_shot");
+      const aimed = skills.find((skill) => skill.id === "aimed_shot");
+      const rain = skills.find((skill) => skill.id === "arrow_rain");
+      const stance = skills.find((skill) => skill.id === "evasion_stance");
+
+      assert(quick?.isBasic && quick.hitCount === 2);
+      assert(aimed?.type === "single" && aimed.critChanceBonus > 0);
+      assert(rain?.type === "aoe" && rain.hitCount >= 2);
+      assert(stance?.type === "guard" && stance.dodgeBonus > 0);
+
+      ranger.skillLevels.aimed_shot = CONFIG.skills.aimed_shot.leveling.maxLevel;
+      ranger.skillLevels.evasion_stance = CONFIG.skills.evasion_stance.leveling.maxLevel;
+      const maxAimed = getHeroSkills(ranger).find((skill) => skill.id === "aimed_shot");
+      const maxStance = getHeroSkills(ranger).find((skill) => skill.id === "evasion_stance");
+      assert(maxAimed.multiplier > aimed.multiplier);
+      assert(maxAimed.critChanceBonus > aimed.critChanceBonus);
+      assert(maxStance.dodgeBonus > stance.dodgeBonus);
     },
   },
   {

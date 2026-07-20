@@ -100,6 +100,12 @@ export const tests = [
         assert(current >= previous * 0.75, `floor 100 ${key} should stay within the variance band`);
         assert(current <= previous * 1.5, `floor 100 ${key} growth should stay smooth`);
       }
+      for (let id = 2; id <= CONFIG.dungeon.maxFloor; id += 1) {
+        assert(
+          getFloor(id).recommendedPower >= getFloor(id - 1).recommendedPower,
+          `recommended power must not drop from floor ${id - 1} to ${id}`,
+        );
+      }
     },
   },
   {

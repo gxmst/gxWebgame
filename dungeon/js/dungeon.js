@@ -90,13 +90,23 @@ export function createEnemyWave(floor = MIN_FLOOR, seed = 0) {
   const maxCount = clampInteger(configuredMax, minCount, MAX_ENEMY_COUNT, minCount);
   const count = boss ? 1 : rng.int(minCount, maxCount);
   const enemyPool = getEnemyPool(definition, boss);
+  const eliteTuning = getEliteTuning();
+  let eliteBudget = boss ? 0 : eliteTuning.maxPerWave;
   const enemies = [];
 
   for (let index = 0; index < count && enemyPool.length > 0; index += 1) {
     const templateId = rng.pick(enemyPool);
     const template = CONFIG.enemyTemplates?.[templateId];
     if (!template) continue;
-    enemies.push(createEnemy(template, definition, index, stableSeed, rng, boss));
+    // 精英判定与词缀抽取先于个体属性掷点,保证同种子完全可复现。
+    const makeElite = eliteBudget > 0
+      && eliteTuning.enabled
+      && definition.id >= eliteTuning.minFloor
+      && rng() < eliteChanceForFloor(definition.id, eliteTuning);
+    const modifier = makeElite ? rng.pick(eliteTuning.modifiers) ?? null : null;
+    const enemy = createEnemy(template, definition, index, stableSeed, rng, boss, modifier, eliteTuning);
+    if (enemy.isElite) eliteBudget -= 1;
+    enemies.push(enemy);
   }
 
   const rewards = enemies.reduce((total, enemy) => ({
@@ -135,47 +145,82 @@ export function getFloorStatus(save, floor) {
   };
 }
 
-function createEnemy(template, floor, index, stableSeed, rng, floorIsBoss) {
+function createEnemy(template, floor, index, stableSeed, rng, floorIsBoss, eliteModifier = null, eliteTuning = null) {
   const variance = clampNumber(CONFIG.dungeon?.enemyStatVariance, 0, 1, 0);
   const scales = getEnemyScales(floor);
   const stats = template.stats && typeof template.stats === "object" ? template.stats : {};
-  const maxHp = rollStat(stats.maxHp, scales.hp, variance, rng, 1);
-  const attack = rollStat(stats.attack, scales.attack, variance, rng, 1);
-  const defense = rollStat(stats.defense, scales.defense, variance, rng, 0);
-  const speed = rollStat(stats.speed, scales.speed, variance * 0.4, rng, 1);
   const boss = floorIsBoss || template.boss === true;
+  const elite = !boss && eliteModifier !== null && eliteModifier !== undefined;
+  const tuning = eliteTuning ?? getEliteTuning();
+  let maxHp = rollStat(stats.maxHp, scales.hp, variance, rng, 1);
+  let attack = rollStat(stats.attack, scales.attack, variance, rng, 1);
+  let defense = rollStat(stats.defense, scales.defense, variance, rng, 0);
+  let speed = rollStat(stats.speed, scales.speed, variance * 0.4, rng, 1);
   const rewardBossMultiplier = boss
     ? clampNumber(CONFIG.dungeon?.bossRewardMultiplier, 1, MAX_SCALE, 4)
     : 1;
+  const rewardEliteMultiplier = elite ? tuning.rewardMultiplier : 1;
   const experience = rollReward(
     CONFIG.dungeon?.experiencePerEnemy,
     getRewardScale(floor, "experience"),
-    rewardBossMultiplier,
+    rewardBossMultiplier * rewardEliteMultiplier,
   );
   const gold = rollReward(
     CONFIG.dungeon?.goldPerEnemy,
     getRewardScale(floor, "gold"),
-    rewardBossMultiplier,
+    rewardBossMultiplier * rewardEliteMultiplier,
   );
   const templateId = String(template.id ?? "enemy").slice(0, 80);
   const suffix = hashSeed(`${String(stableSeed)}|${floor.id}|${index}|${templateId}`)
     .toString(16)
     .padStart(8, "0");
-  const critChance = clampNumber(stats.critChance, 0, 0.75, 0.05);
+  let critChance = clampNumber(stats.critChance, 0, 0.75, 0.05);
   const critDamage = clampNumber(
     stats.critDamage,
     1,
     10,
     clampNumber(CONFIG.dungeon?.defaultEnemyCritDamage, 1, 10, 1.5),
   );
+  // 模板可携带的战斗特效(余烬恶鬼点燃、石像鬼荆棘等)。
+  let dodgeChance = clampNumber(stats.dodgeChance, 0, 0.75, 0);
+  let lifesteal = clampNumber(stats.lifesteal, 0, 1, 0);
+  let thorns = clampNumber(stats.thorns, 0, 1, 0);
+  let armorPenetration = clampNumber(stats.armorPenetration, 0, 1, 0);
+  let multiHitChance = clampNumber(stats.multiHitChance, 0, 1, 0);
+  let burnChance = clampNumber(stats.burnChance, 0, 1, 0);
 
+  if (elite) {
+    maxHp = Math.max(1, Math.round(maxHp * tuning.statMultipliers.maxHp));
+    attack = Math.max(1, Math.round(attack * tuning.statMultipliers.attack));
+    const changes = eliteModifier.stats && typeof eliteModifier.stats === "object"
+      ? eliteModifier.stats
+      : {};
+    for (const [key, rawValue] of Object.entries(changes)) {
+      const value = clampNumber(rawValue, 0, MAX_SCALE, 0);
+      if (key === "maxHpMultiplier") maxHp = Math.max(1, Math.round(maxHp * value));
+      else if (key === "attackMultiplier") attack = Math.max(1, Math.round(attack * value));
+      else if (key === "defenseMultiplier") defense = Math.max(0, Math.round(defense * value));
+      else if (key === "speedMultiplier") speed = Math.max(1, Math.round(speed * value));
+      else if (key === "dodgeChance") dodgeChance = clampNumber(dodgeChance + value, 0, 0.75, dodgeChance);
+      else if (key === "critChance") critChance = clampNumber(critChance + value, 0, 0.75, critChance);
+      else if (key === "lifesteal") lifesteal = clampNumber(lifesteal + value, 0, 1, lifesteal);
+      else if (key === "thorns") thorns = clampNumber(thorns + value, 0, 1, thorns);
+      else if (key === "armorPenetration") armorPenetration = clampNumber(armorPenetration + value, 0, 1, armorPenetration);
+      else if (key === "multiHitChance") multiHitChance = clampNumber(multiHitChance + value, 0, 1, multiHitChance);
+      else if (key === "burnChance") burnChance = clampNumber(burnChance + value, 0, 1, burnChance);
+    }
+  }
+
+  const baseName = String(template.name ?? "无名敌人").slice(0, 72);
   return {
     id: `enemy-${floor.id}-${String(index).padStart(2, "0")}-${suffix}`,
     templateId,
-    name: String(template.name ?? "无名敌人").slice(0, 80),
+    name: elite ? `${String(eliteModifier.prefix ?? "精英的").slice(0, 8)}${baseName}` : baseName,
     emoji: String(template.emoji ?? "💀").slice(0, 8),
     level: clampInteger(floor.id, MIN_FLOOR, MAX_FLOOR, MIN_FLOOR),
     isBoss: boss,
+    isElite: elite,
+    eliteModifierId: elite ? String(eliteModifier.id ?? "") : null,
     stats: {
       maxHp,
       hp: maxHp,
@@ -186,9 +231,14 @@ function createEnemy(template, floor, index, stableSeed, rng, floorIsBoss) {
       speed,
       critChance,
       critDamage,
-      dodgeChance: 0,
+      dodgeChance,
       damageMultiplier: 1,
       damageReduction: 0,
+      lifesteal,
+      thorns,
+      armorPenetration,
+      multiHitChance,
+      burnChance,
     },
     skills: Array.isArray(template.skills) && template.skills.length > 0
       ? [...template.skills]
@@ -201,6 +251,42 @@ function createEnemy(template, floor, index, stableSeed, rng, floorIsBoss) {
     rewardGold: gold,
   };
 }
+
+/** Elite tuning with hard bounds so a bad config can never flood waves. */
+function getEliteTuning() {
+  const source = CONFIG.dungeon?.elites && typeof CONFIG.dungeon.elites === "object"
+    ? CONFIG.dungeon.elites
+    : {};
+  const rawMultipliers = source.statMultipliers && typeof source.statMultipliers === "object"
+    ? source.statMultipliers
+    : {};
+  const modifiers = (Array.isArray(source.modifiers) ? source.modifiers : [])
+    .filter((entry) => entry && typeof entry === "object" && entry.id);
+  return {
+    enabled: source.enabled === true && modifiers.length > 0,
+    minFloor: clampInteger(source.minFloor, MIN_FLOOR, MAX_FLOOR, MIN_FLOOR),
+    baseChance: clampNumber(source.baseChance, 0, 1, 0),
+    chancePerFloor: clampNumber(source.chancePerFloor, 0, 1, 0),
+    maxChance: clampNumber(source.maxChance, 0, 1, 0),
+    maxPerWave: clampInteger(source.maxPerWave, 0, MAX_ENEMY_COUNT, 0),
+    statMultipliers: {
+      maxHp: clampNumber(rawMultipliers.maxHp, 0.01, MAX_SCALE, 1),
+      attack: clampNumber(rawMultipliers.attack, 0.01, MAX_SCALE, 1),
+    },
+    rewardMultiplier: clampNumber(source.rewardMultiplier, 1, MAX_SCALE, 1),
+    bonusLootChance: clampNumber(source.bonusLootChance, 0, 1, 0),
+    modifiers,
+  };
+}
+
+function eliteChanceForFloor(floorId, tuning) {
+  return Math.min(
+    tuning.maxChance,
+    tuning.baseChance + Math.max(0, floorId - tuning.minFloor) * tuning.chancePerFloor,
+  );
+}
+
+export { getEliteTuning };
 
 function getEnemyScales(floor) {
   const configured = floor?.enemyScales ?? floor?.enemyScale;

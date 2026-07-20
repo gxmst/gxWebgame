@@ -864,6 +864,41 @@ button.equipment-slot {
   min-height: 70px;
 }
 
+.dungeon-heading-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.mode-switch {
+  display: grid;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #121417;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mode-switch button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.mode-switch button:hover,
+.mode-switch button.is-active,
+.mode-switch button[aria-selected="true"] {
+  background: var(--surface-raised);
+  color: var(--gold-soft);
+}
+
 .status-indicator,
 .live-label {
   display: inline-flex;
@@ -894,6 +929,91 @@ button.equipment-slot {
   min-height: 0;
   flex: 1;
   grid-template-columns: minmax(190px, 0.7fr) minmax(270px, 1.3fr);
+}
+
+.outdoor-view {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 30px clamp(20px, 5vw, 64px);
+  text-align: center;
+}
+
+.outdoor-emblem {
+  display: grid;
+  width: 92px;
+  height: 92px;
+  place-items: center;
+  margin-bottom: 20px;
+  border: 1px solid #3f5d4e;
+  border-radius: 8px;
+  background: #17231d;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 24%);
+  font-size: 44px;
+}
+
+.outdoor-copy {
+  max-width: 430px;
+}
+
+.outdoor-copy .panel-kicker {
+  color: var(--teal);
+}
+
+.outdoor-copy h3 {
+  margin: 0;
+  font-family: Georgia, "Noto Serif SC", serif;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.outdoor-copy > p:last-child {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.outdoor-stats {
+  display: grid;
+  width: min(100%, 440px);
+  margin: 26px 0 22px;
+  border-block: 1px solid var(--line);
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.outdoor-stats > div {
+  min-width: 0;
+  padding: 10px 8px;
+}
+
+.outdoor-stats > div + div {
+  border-left: 1px solid var(--line);
+}
+
+.outdoor-stats dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.outdoor-stats dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.outdoor-start-button {
+  width: min(100%, 260px);
+  border-color: #438172;
+  background: #285f55;
+}
+
+.outdoor-start-button:hover:not(:disabled) {
+  background: #34776a;
 }
 
 .floor-select {
@@ -1388,6 +1508,11 @@ button.equipment-slot {
   color: var(--gold-soft);
 }
 
+.combat-log li[data-log-type="status"] {
+  border-left-color: var(--orange);
+  color: var(--orange);
+}
+
 .inventory-capacity {
   color: var(--muted);
   font-size: 12px;
@@ -1708,6 +1833,10 @@ button.equipment-slot {
   box-shadow: var(--shadow);
 }
 
+.character-dialog {
+  width: min(980px, calc(100% - 28px));
+}
+
 .reforge-dialog {
   width: min(720px, calc(100% - 28px));
 }
@@ -1742,6 +1871,169 @@ button.equipment-slot {
   margin: 0 0 14px;
   color: var(--muted);
   font-size: 11px;
+}
+
+.character-manager-content {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  grid-template-columns: minmax(250px, 0.85fr) minmax(390px, 1.45fr);
+}
+
+.character-roster,
+.character-creator {
+  min-width: 0;
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.character-roster {
+  border-right: 1px solid var(--line);
+  background: #15181b;
+}
+
+.character-roster .section-title-row,
+.character-creator .section-title-row {
+  margin-bottom: 13px;
+}
+
+.character-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.character-card {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+}
+
+.character-card.is-active {
+  border-color: #765c32;
+  box-shadow: inset 3px 0 var(--gold);
+}
+
+.character-card-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #14171a;
+  font-size: 23px;
+}
+
+.character-card-copy {
+  min-width: 0;
+}
+
+.character-card-copy strong,
+.character-card-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-card-copy strong {
+  font-size: 12px;
+}
+
+.character-card-copy small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.character-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.character-switch-button {
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #171a1e;
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.character-switch-button:hover:not(:disabled) {
+  border-color: var(--teal);
+}
+
+.character-delete-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  color: var(--danger);
+  font-size: 15px;
+}
+
+.character-empty {
+  padding: 24px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.character-name-field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.character-name-field input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  outline: 0;
+  background: #121417;
+  color: var(--text);
+}
+
+.character-name-field input:focus {
+  border-color: var(--gold);
+}
+
+.character-creator .class-options {
+  grid-template-columns: 1fr;
+}
+
+.character-creator .class-option {
+  padding: 10px;
+  grid-template-columns: 42px minmax(0, 1fr);
+}
+
+.character-creator .class-option-icon {
+  width: 42px;
+  height: 42px;
+  font-size: 23px;
+}
+
+.character-create-button {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .class-options {
@@ -2006,6 +2298,20 @@ button.equipment-slot {
   color: var(--danger);
 }
 
+.outdoor-rewards {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.outdoor-settlement-note {
+  margin: 12px 0 0;
+  padding: 9px 11px;
+  border: 1px solid #315a54;
+  border-radius: 5px;
+  background: #17231f;
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
 .level-up-callout,
 .defeat-note {
   margin: 12px 0;
@@ -2190,6 +2496,12 @@ button.equipment-slot {
     border-top: 1px solid var(--line);
     border-left: 0;
   }
+
+  .dungeon-heading-actions {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 4px;
+  }
 }
 
 @media (max-width: 1000px) {
@@ -2212,7 +2524,8 @@ button.equipment-slot {
   }
 
   .brand-lockup h1 {
-    font-size: 16px;
+    font-size: 14px;
+    white-space: nowrap;
   }
 
   .brand-kicker {
@@ -2263,6 +2576,20 @@ button.equipment-slot {
     padding: 11px 14px;
   }
 
+  .dungeon-heading {
+    align-items: flex-start;
+  }
+
+  .dungeon-heading-actions {
+    align-items: flex-end;
+  }
+
+  .mode-switch button {
+    min-height: 28px;
+    padding: 0 7px;
+    font-size: 9px;
+  }
+
   .idle-view {
     display: flex;
     flex-direction: column;
@@ -2297,6 +2624,23 @@ button.equipment-slot {
   .floor-preview {
     flex: 1;
     padding: 20px 18px 26px;
+  }
+
+  .outdoor-view {
+    min-height: 500px;
+    padding: 24px 18px 30px;
+  }
+
+  .outdoor-emblem {
+    width: 72px;
+    height: 72px;
+    margin-bottom: 16px;
+    font-size: 35px;
+  }
+
+  .outdoor-stats {
+    width: 100%;
+    margin: 20px 0 18px;
   }
 
   .floor-emblem {
@@ -2434,6 +2778,22 @@ button.equipment-slot {
     bottom: calc(var(--mobile-tabs-height) + var(--safe-bottom) + 10px);
     width: calc(100% - 24px);
   }
+
+  .character-manager-content {
+    display: flex;
+    overflow-y: auto;
+    flex-direction: column;
+  }
+
+  .character-roster,
+  .character-creator {
+    overflow: visible;
+  }
+
+  .character-roster {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
 }
 
 @media (max-width: 430px) {
@@ -2476,6 +2836,10 @@ button.equipment-slot {
     width: calc(100% - 20px);
   }
 
+  .character-dialog {
+    width: calc(100% - 20px);
+  }
+
   .class-options,
   .reforge-comparison {
     grid-template-columns: 1fr;
@@ -2483,6 +2847,31 @@ button.equipment-slot {
 
   .class-option {
     padding: 11px;
+  }
+
+  .character-card {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .character-card-icon {
+    width: 38px;
+    height: 38px;
+  }
+
+  .character-card-actions {
+    grid-column: 2;
+    justify-content: flex-end;
+  }
+
+  .dungeon-heading-actions {
+    max-width: 58%;
+  }
+
+  .status-indicator {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .reforge-actions {
@@ -2500,7 +2889,577 @@ button.equipment-slot {
   *,
   *::before,
   *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================
+   第四批新增:背包工具条 / 精英与首领徽标 / 战报统计
+   ============================================================ */
+
+.inventory-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  padding: 0 16px 10px;
+  gap: 6px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip-button {
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.chip-button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--text-soft);
+}
+
+.chip-button.is-active {
+  border-color: var(--gold);
+  background: #1d1b17;
+  color: var(--gold-soft);
+}
+
+.inventory-filter-empty {
+  padding: 24px 12px;
+}
+
+.unit-badge {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+.unit-badge.is-elite {
+  border: 1px solid #6b5a2c;
+  background: #221d12;
+  color: var(--gold-soft);
+}
+
+.unit-badge.is-boss {
+  border: 1px solid #79404a;
+  background: #27191d;
+  color: #f0a4ab;
+}
+
+.enemy-combatant.is-elite {
+  border-color: #6b5a2c;
+}
+
+.enemy-combatant.is-boss {
+  border-color: #79404a;
+}
+
+.loot-result .result-loot-card + .result-loot-card {
+  margin-top: 8px;
+}
+
+.battle-report {
+  margin-top: 14px;
+}
+
+.battle-report h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.battle-report-grid {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+}
+
+.battle-report-grid > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  gap: 6px;
+}
+
+.battle-report-grid span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.battle-report-grid strong {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   第五批新增:召唤物棋子 / 战斗飘字与受击动效 / 界面入场动画
+   ============================================================ */
+
+.hero-combatant {
+  position: relative;
+  flex-wrap: wrap;
+}
+
+.enemy-combatant {
+  position: relative;
+}
+
+.minion-party {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  gap: 6px;
+}
+
+.minion-chip {
+  position: relative;
+  display: inline-flex;
+  min-width: 34px;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 6px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  gap: 3px;
+  animation: minion-in 0.28s ease-out;
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+.minion-emoji {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.minion-hp {
+  width: 26px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #0c0e10;
+}
+
+.minion-hp i {
+  display: block;
+  height: 100%;
+  background: var(--teal, #4db6ac);
+  transition: width 0.25s ease;
+}
+
+.minion-chip.is-dead {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+@keyframes minion-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* —— 战斗飘字 —— */
+.damage-float {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  z-index: 6;
+  color: #f0a4ab;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 13px;
+  font-weight: 800;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  animation: float-up 0.95s ease-out forwards;
+  pointer-events: none;
+}
+
+.damage-float.is-crit {
+  color: var(--orange);
+  font-size: 16px;
+}
+
+.damage-float.is-heal {
+  color: #8fd694;
+}
+
+.damage-float.is-burn {
+  color: var(--orange);
+}
+
+.damage-float.is-dodge {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-22px);
+  }
+}
+
+/* —— 受击闪烁 —— */
+.is-hit {
+  animation: hit-flash 0.3s ease-out;
+}
+
+@keyframes hit-flash {
+  0% {
+    filter: brightness(1.75);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+.enemy-combatant.is-defeated {
+  filter: grayscale(0.9);
+  transition: opacity 0.4s ease, filter 0.4s ease;
+}
+
+/* —— 日志逐条滑入 —— */
+.combat-log li {
+  animation: log-in 0.18s ease-out;
+}
+
+@keyframes log-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* —— 弹窗与提示入场 —— */
+dialog[open] {
+  animation: dialog-in 0.22s ease-out;
+}
+
+dialog[open]::backdrop {
+  animation: backdrop-in 0.22s ease-out;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.toast:not([hidden]) {
+  animation: toast-in 0.24s ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* —— 结算内容入场 —— */
+.result-banner,
+.result-rewards,
+.loot-result .result-loot-card,
+.battle-report {
+  animation: rise-in 0.26s ease-out backwards;
+}
+
+.loot-result .result-loot-card:nth-child(2) {
+  animation-delay: 0.06s;
+}
+
+.loot-result .result-loot-card:nth-child(3) {
+  animation-delay: 0.12s;
+}
+
+.battle-report {
+  animation-delay: 0.08s;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.level-up-callout {
+  animation: callout-pulse 0.5s ease-out;
+}
+
+@keyframes callout-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  60% {
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ============================================================
+   第六批新增:生涯统计 / 批量出售 / 锁定 / 词条成色 / 顶栏工具
+   ============================================================ */
+
+.career-section .career-grid {
+  display: grid;
+  margin: 0;
+  gap: 5px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.career-grid > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  gap: 6px;
+}
+
+.career-grid dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.career-grid dd {
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.bulk-sell-row {
+  align-items: center;
+}
+
+.bulk-rarity-select {
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.bulk-sell-hint {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.lock-button {
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+}
+
+.lock-button.is-locked {
+  border-color: var(--gold);
+  color: var(--gold-soft);
+}
+
+.inventory-item.is-locked {
+  box-shadow: inset 0 0 0 1px rgba(201, 162, 84, 0.25);
+}
+
+.inventory-item .inventory-item-header {
+  align-items: center;
+}
+
+/* —— 词条成色徽标 —— */
+.item-affix-quality {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 6px 0 0;
+  gap: 4px;
+}
+
+.affix-chip {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.affix-roll {
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.q-high {
+  color: var(--gold-soft);
+  border-color: #6b5a2c;
+}
+
+.q-mid {
+  color: var(--text-soft);
+}
+
+.q-low {
+  color: var(--muted);
+}
+
+/* 结算弹窗双按钮 */
+.dialog-actions [data-result-again] {
+  margin-right: auto;
+}
+
+/* Desktop workspace: keep the three core columns inside the viewport. */
+@media (min-width: 1001px) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .app-shell {
+    height: 100vh;
+    height: 100svh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .game-grid {
+    height: calc(100vh - var(--header-height));
+    height: calc(100svh - var(--header-height));
+    min-height: 0;
+  }
+
+  .game-panel {
+    min-height: 0;
+  }
+
+  .character-panel {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-width: thin;
+  }
+
+  .character-panel > .panel-heading {
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    background: var(--surface);
+  }
+
+  .inventory-panel,
+  .dungeon-panel,
+  .idle-view {
+    overflow: hidden;
+  }
+
+  .floor-select {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    padding: 14px;
+  }
+
+  .floor-list {
+    min-height: 0;
+    flex: 1;
+    max-height: none;
+  }
+
+  .floor-preview {
+    min-height: 0;
+    justify-content: flex-start;
+    padding: 20px clamp(18px, 2.6vw, 38px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-width: thin;
+  }
+
+  .floor-emblem {
+    width: 76px;
+    height: 76px;
+    margin: auto auto 14px;
+    font-size: 37px;
+  }
+
+  .preview-details {
+    margin: 18px 0 16px;
+  }
+
+  .floor-preview .enter-button {
+    margin-bottom: auto;
+  }
+
+  .outdoor-view,
+  .battle-view {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-width: thin;
   }
 }

@@ -34,9 +34,10 @@ export const tests = [
 
       assert(JSON.stringify(first) === JSON.stringify(second), "same seed must reproduce the same reforge");
       assert(JSON.stringify(item) === before, "reforging must not mutate the input item");
-      for (const key of ["id", "name", "emoji", "slot", "rarity", "level", "seed"]) {
+      for (const key of ["id", "emoji", "slot", "rarity", "level", "seed"]) {
         assert(first[key] === item[key], `reforge must preserve ${key}`);
       }
+      assert(typeof first.name === "string" && first.name.length > 0);
       assert(JSON.stringify(first.baseStats) === JSON.stringify(item.baseStats), "base stats must be preserved");
       assert(JSON.stringify(first.effect) === JSON.stringify(item.effect), "legendary effects must be preserved");
       assert(first.power === calculateItemPower(first), "reforge power must be recalculated from the candidate");

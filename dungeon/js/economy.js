@@ -482,7 +482,6 @@ function sameImmutableItem(left, right) {
 function readImmutableItemFields(item) {
   return {
     id: item.id,
-    name: item.name,
     emoji: item.emoji,
     slot: item.slot,
     rarity: item.rarity,

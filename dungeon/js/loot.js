@@ -29,7 +29,15 @@ export function getRarityMeta(rarity) {
 export function generateLoot(floor = 1, seed = 0, hero = null, options = {}) {
   const floorId = resolveFloorId(floor);
   const rng = createSeededRng(`${String(seed ?? "0")}|loot|${floorId}`);
-  const rarity = rollRarity(floorId, rng);
+  // 稀有度保底(Boss 掉落等场景):掷出更低档时直接抬升,不消耗额外随机数。
+  const minimumRarity = RARITY_IDS.includes(options?.minimumRarity)
+    ? options.minimumRarity
+    : null;
+  let rarity = rollRarity(floorId, rng);
+  if (minimumRarity
+    && RARITY_IDS.indexOf(rarity) < RARITY_IDS.indexOf(minimumRarity)) {
+    rarity = minimumRarity;
+  }
   const forcedSlot = EQUIPMENT_SLOT_IDS.includes(options?.forcedSlot)
     ? options.forcedSlot
     : null;
@@ -43,13 +51,17 @@ export function generateLoot(floor = 1, seed = 0, hero = null, options = {}) {
     floorId + rng.int(-CONFIG.loot.itemLevelVariance, CONFIG.loot.itemLevelVariance),
   );
   const baseStats = rollBaseStats(slot, floorId, rarityMeta.multiplier, rng);
-  const affixes = rollAffixes(slot, floorId, rarity, rarityMeta, rng, classId);
+  const affixes = rollAffixes(slot, itemLevel, rarity, rarityMeta, rng, classId);
   const effect = rarity === "legendary" && CONFIG.loot.enableLegendaryEffects
     ? rollLegendaryEffect(rng)
     : null;
   const baseName = rng.pick(CONFIG.loot.namesBySlot[slot])
     ?? CONFIG.equipmentSlots[slot].name;
-  const name = `${rarityMeta.name}${baseName}`;
+  const name = generateEquipmentName(baseName, {
+    level: itemLevel,
+    affixes,
+    effect,
+  });
   const stableSeed = typeof seed === "number" && Number.isFinite(seed)
     ? seed
     : String(seed ?? "0").slice(0, 100);
@@ -113,6 +125,7 @@ export function calculateItemPower(item) {
   power += finite(baseStats.critChance, 0) * CONFIG.stats.powerWeights.critChance;
   power += finite(baseStats.critDamage, 0) * CONFIG.stats.powerWeights.critDamage;
   power += finite(baseStats.damageReduction, 0) * CONFIG.stats.powerWeights.damageReduction;
+  power += finite(baseStats.dodgeChance, 0) * finite(CONFIG.stats.powerWeights.dodgeChance, 0);
   for (const affix of affixes) {
     const stat = affix?.stat;
     const value = finite(affix?.value, 0);
@@ -123,6 +136,7 @@ export function calculateItemPower(item) {
     else if (stat === "critChance") power += value * CONFIG.stats.powerWeights.critChance;
     else if (stat === "critDamage") power += value * CONFIG.stats.powerWeights.critDamage;
     else if (stat === "damageReduction") power += value * CONFIG.stats.powerWeights.damageReduction;
+    else if (stat === "dodgeChance") power += value * finite(CONFIG.stats.powerWeights.dodgeChance, 0);
     else if (["damagePercent", "physicalDamagePercent", "magicDamagePercent"].includes(stat)) {
       const weight = finite(
         CONFIG.stats.powerWeights[stat],
@@ -162,8 +176,13 @@ export function rerollItemAffixes(item, seed = 0, options = {}) {
     rng,
     options?.classId,
   );
+  const baseName = extractEquipmentBaseName(current.name);
   const candidate = {
     ...current,
+    name: generateEquipmentName(baseName, {
+      ...current,
+      affixes,
+    }),
     affixes,
     // `power` is derived from the complete item, never copied from a stale
     // save field. This also keeps shop/re-forge pricing consistent.
@@ -175,6 +194,131 @@ export function rerollItemAffixes(item, seed = 0, options = {}) {
 /** Explicit aliases make the operation discoverable to economy/UI callers. */
 export const reforgeItem = rerollItemAffixes;
 export const rerollAffixes = rerollItemAffixes;
+
+/**
+ * Returns the mapped affix that best represents an item. Rarer affix families
+ * win first; rolls within one family are compared by their level-normalized
+ * percentile. The final id comparison makes ties independent of array order.
+ */
+export function getMostSignificantAffix(item, inputConfig = CONFIG) {
+  const source = item && typeof item === "object" ? item : {};
+  const affixes = Array.isArray(source.affixes) ? source.affixes : [];
+  const naming = getNamingConfig(inputConfig);
+  const definitions = inputConfig?.affixes ?? CONFIG.affixes;
+  const level = Math.max(1, Math.floor(finite(source.level, 1)));
+  const scored = affixes.map((affix) => {
+    const definition = definitions?.[affix?.id]
+      ?? Object.values(definitions ?? {}).find((entry) => entry?.stat === affix?.stat);
+    const mapping = readPrefixMapping(
+      naming.affixPrefixes,
+      affix?.id,
+      affix?.stat,
+    );
+    if (!definition || !mapping.prefix) return null;
+    const floorBonus = (level - 1) * finite(definition.perFloor, 0);
+    const minimum = finite(definition.min, 0) + floorBonus;
+    const maximum = finite(definition.max, minimum) + floorBonus;
+    const span = Math.max(Number.EPSILON, maximum - minimum);
+    const percentile = Math.max(0, Math.min(
+      1,
+      (finite(affix?.value, minimum) - minimum) / span,
+    ));
+    const rarityRank = Math.max(
+      0,
+      RARITY_ORDER.indexOf(definition.minimumRarity ?? "common"),
+    );
+    return {
+      affix,
+      prefix: mapping.prefix,
+      priority: mapping.priority,
+      rarityRank,
+      percentile,
+      id: String(definition.id ?? affix?.id ?? affix?.stat ?? ""),
+    };
+  }).filter(Boolean);
+
+  scored.sort((left, right) =>
+    right.priority - left.priority
+      || right.rarityRank - left.rarityRank
+      || right.percentile - left.percentile
+      || compareStableText(left.id, right.id));
+  return scored[0]?.affix ?? null;
+}
+
+/**
+ * Returns how well one affix rolled within its possible range at the item's
+ * level: { ratio: 0..1, percent: 0..100, minimum, maximum }, or null for an
+ * unknown affix. Pure and deterministic — used by roll-quality badges.
+ */
+export function getAffixRollQuality(affix, level = 1) {
+  const definition = CONFIG.affixes[affix?.id]
+    ?? Object.values(CONFIG.affixes).find((entry) => entry.stat === affix?.stat);
+  if (!definition) return null;
+  const safeLevel = Math.max(1, Math.floor(finite(level, 1)));
+  const floorBonus = (safeLevel - 1) * finite(definition.perFloor, 0);
+  const minimum = finite(definition.min, 0) + floorBonus;
+  const maximum = finite(definition.max, minimum) + floorBonus;
+  const span = Math.max(Number.EPSILON, maximum - minimum);
+  const ratio = Math.max(0, Math.min(1, (finite(affix?.value, minimum) - minimum) / span));
+  return { ratio, percent: Math.round(ratio * 100), minimum, maximum };
+}
+
+/** Legendary effects take naming priority over ordinary affixes. */
+export function getEquipmentPrefix(item, inputConfig = CONFIG) {
+  const source = item && typeof item === "object" ? item : {};
+  const naming = getNamingConfig(inputConfig);
+  if (source.effect) {
+    const effect = typeof source.effect === "string"
+      ? { id: source.effect, type: source.effect }
+      : source.effect;
+    const effectPrefix = readPrefixMapping(
+      naming.effectPrefixes,
+      effect?.id,
+      effect?.type,
+    ).prefix;
+    if (effectPrefix) return effectPrefix;
+  }
+  const affix = getMostSignificantAffix(source, inputConfig);
+  if (!affix) return "";
+  return readPrefixMapping(naming.affixPrefixes, affix.id, affix.stat).prefix;
+}
+
+/** Builds a stable display name without consuming or creating random values. */
+export function generateEquipmentName(baseName, item = {}, inputConfig = CONFIG) {
+  const cleanBaseName = extractEquipmentBaseName(baseName, inputConfig)
+    || "装备";
+  return `${getEquipmentPrefix(item, inputConfig)}${cleanBaseName}`.slice(0, 50);
+}
+
+/** Removes known generated prefixes (and legacy rarity labels) from a name. */
+export function extractEquipmentBaseName(name, inputConfig = CONFIG) {
+  let result = typeof name === "string" ? name.trim() : "";
+  if (!result) return "";
+  const naming = getNamingConfig(inputConfig);
+  const generatedPrefixes = [
+    ...Object.values(naming.effectPrefixes),
+    ...Object.values(naming.affixPrefixes),
+  ].map((entry) => normalizePrefixEntry(entry).prefix)
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length || compareStableText(left, right));
+  const rarityNames = Object.values(inputConfig?.rarities ?? CONFIG.rarities)
+    .map((rarity) => typeof rarity?.name === "string" ? rarity.name : "")
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length || compareStableText(left, right));
+  const removable = [...generatedPrefixes, ...rarityNames];
+
+  let changed = true;
+  while (changed && result) {
+    changed = false;
+    for (const prefix of removable) {
+      if (!result.startsWith(prefix)) continue;
+      result = result.slice(prefix.length).trim();
+      changed = true;
+      break;
+    }
+  }
+  return result;
+}
 
 function rollSlot(rng, hero, forcedSlot = null) {
   if (EQUIPMENT_SLOT_IDS.includes(forcedSlot)) return forcedSlot;
@@ -216,7 +360,8 @@ export function rollAffixes(slot, floor, rarity, rarityMeta, rng, classId = null
   const result = [];
   const pool = [...candidates];
   for (let index = 0; index < count && pool.length > 0; index += 1) {
-    const definition = pool.splice(rng.int(0, pool.length - 1), 1)[0];
+    const selectedIndex = selectAffixIndex(pool, rng, classId);
+    const definition = pool.splice(selectedIndex, 1)[0];
     const floorBonus = (floor - 1) * finite(definition.perFloor, 0);
     const min = finite(definition.min, 0) + floorBonus;
     const max = finite(definition.max, min) + floorBonus;
@@ -235,6 +380,28 @@ export function rollAffixes(slot, floor, rarity, rarityMeta, rng, classId = null
   return result;
 }
 
+/**
+ * Selects a candidate with class-specific weights while keeping the draw seeded.
+ * A missing weight means neutral weight 1, so existing warrior/mage rolls stay
+ * uniform unless a class explicitly opts into a preference table.
+ */
+function selectAffixIndex(pool, rng, classId) {
+  const weights = CONFIG.classes?.[classId]?.affixWeights ?? {};
+  const values = pool.map((definition) => Math.max(
+    0,
+    finite(weights[definition.id], 1),
+  ));
+  const total = values.reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return Math.max(0, Math.min(pool.length - 1, rng.int(0, pool.length - 1)));
+  const roll = typeof rng === "function" ? rng() : rng.int(0, 1);
+  let cursor = Math.max(0, Math.min(1 - Number.EPSILON, roll)) * total;
+  for (let index = 0; index < values.length; index += 1) {
+    cursor -= values[index];
+    if (cursor < 0) return index;
+  }
+  return values.length - 1;
+}
+
 function rollLegendaryEffect(rng) {
   const definitions = Object.values(CONFIG.legendaryEffects);
   const definition = rng.pick(definitions);
@@ -247,6 +414,52 @@ function rollLegendaryEffect(rng) {
       value: definition.value,
     }
     : null;
+}
+
+function getNamingConfig(inputConfig) {
+  const root = inputConfig && typeof inputConfig === "object" ? inputConfig : {};
+  const source = root.equipmentNaming && typeof root.equipmentNaming === "object"
+    ? root.equipmentNaming
+    : {};
+  return {
+    affixPrefixes: source.affixPrefixes && typeof source.affixPrefixes === "object"
+      ? source.affixPrefixes
+      : root.affixPrefixes && typeof root.affixPrefixes === "object"
+        ? root.affixPrefixes
+        : {},
+    effectPrefixes: source.effectPrefixes && typeof source.effectPrefixes === "object"
+      ? source.effectPrefixes
+      : root.effectPrefixes && typeof root.effectPrefixes === "object"
+        ? root.effectPrefixes
+        : {},
+  };
+}
+
+function readPrefixMapping(mapping, ...keys) {
+  for (const key of keys) {
+    if (typeof key !== "string" || !key) continue;
+    const normalized = normalizePrefixEntry(mapping?.[key]);
+    if (normalized.prefix) return normalized;
+  }
+  return { prefix: "", priority: 0 };
+}
+
+function normalizePrefixEntry(entry) {
+  if (typeof entry === "string") {
+    return { prefix: entry.trim().slice(0, 24), priority: 0 };
+  }
+  if (!entry || typeof entry !== "object") return { prefix: "", priority: 0 };
+  const rawPrefix = entry.prefix ?? entry.name ?? entry.label;
+  return {
+    prefix: typeof rawPrefix === "string" ? rawPrefix.trim().slice(0, 24) : "",
+    priority: finite(entry.priority, 0),
+  };
+}
+
+function compareStableText(left, right) {
+  const a = String(left ?? "");
+  const b = String(right ?? "");
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function resolveFloorId(floor) {

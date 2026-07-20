@@ -57,6 +57,7 @@ export const DEFAULT_PLAYER_SKILL_IDS = Object.freeze([
 
 export const DEFAULT_COMBAT_CONFIG = Object.freeze({
   maxRounds: 200,
+  maxHitsPerAction: 12,
   speedTieBreaker: "initialOrder",
   damage: Object.freeze({
     defenseCoefficient: 0.5,
@@ -74,7 +75,20 @@ export const DEFAULT_COMBAT_CONFIG = Object.freeze({
     aoeMinTargets: 3,
     guardHpThreshold: 0.35,
     targetStrategy: "lowestHp",
-    priority: Object.freeze(["survival", "aoe", "single", "basic"]),
+    priority: Object.freeze(["survival", "summon", "empower", "aoe", "single", "basic"]),
+  }),
+  minions: Object.freeze({
+    maxActive: 5,
+    maxSummonsPerCast: 3,
+  }),
+  effects: Object.freeze({
+    burnDuration: 2,
+    burnDamageRatio: 0.4,
+    maxLifesteal: 0.5,
+    maxThorns: 0.6,
+    maxArmorPenetration: 0.6,
+    maxMultiHitChance: 0.5,
+    maxBurnChance: 0.75,
   }),
 });
 
@@ -123,7 +137,7 @@ function configNumber(sources, keys, fallback, min, max) {
 function normalizePriority(value) {
   const fallback = [...DEFAULT_COMBAT_CONFIG.ai.priority];
   if (!Array.isArray(value)) return fallback;
-  const known = new Set(["survival", "aoe", "single", "basic"]);
+  const known = new Set(["survival", "summon", "empower", "aoe", "single", "basic"]);
   const normalized = value
     .map((item) => String(item ?? "").toLowerCase())
     .map((item) => {
@@ -131,6 +145,8 @@ function normalizePriority(value) {
         return "survival";
       }
       if (["area", "group", "all"].includes(item)) return "aoe";
+      if (["pet", "pets", "minion", "minions"].includes(item)) return "summon";
+      if (["buff", "form", "stance", "transform"].includes(item)) return "empower";
       return item;
     })
     .filter((item, index, items) => known.has(item) && items.indexOf(item) === index);
@@ -150,6 +166,9 @@ export function normalizeCombatConfig(input = {}) {
   const rootAi = isRecord(root.ai) ? root.ai : {};
   const combatAi = isRecord(combat.ai) ? combat.ai : {};
   const aiSources = [combatAi, rootAi, combat, root];
+  const rootEffects = isRecord(root.effects) ? root.effects : {};
+  const combatEffects = isRecord(combat.effects) ? combat.effects : {};
+  const effectSources = [combatEffects, rootEffects, combat, root];
 
   return {
     maxRounds: Math.floor(configNumber(
@@ -158,6 +177,13 @@ export function normalizeCombatConfig(input = {}) {
       DEFAULT_COMBAT_CONFIG.maxRounds,
       1,
       100_000,
+    )),
+    maxHitsPerAction: Math.floor(configNumber(
+      [combat, root],
+      ["maxHitsPerAction", "maximumHitsPerAction", "hitCountCap"],
+      DEFAULT_COMBAT_CONFIG.maxHitsPerAction,
+      1,
+      100,
     )),
     speedTieBreaker: String(firstDefined(
       [combat, root],
@@ -274,6 +300,74 @@ export function normalizeCombatConfig(input = {}) {
         DEFAULT_COMBAT_CONFIG.ai.priority,
       )),
     },
+    minions: {
+      maxActive: Math.floor(configNumber(
+        [isRecord(combat.minions) ? combat.minions : {}, isRecord(root.minions) ? root.minions : {}, combat, root],
+        ["maxActive", "maxMinions", "minionCap"],
+        DEFAULT_COMBAT_CONFIG.minions.maxActive,
+        0,
+        20,
+      )),
+      maxSummonsPerCast: Math.floor(configNumber(
+        [isRecord(combat.minions) ? combat.minions : {}, isRecord(root.minions) ? root.minions : {}, combat, root],
+        ["maxSummonsPerCast", "summonsPerCastCap"],
+        DEFAULT_COMBAT_CONFIG.minions.maxSummonsPerCast,
+        1,
+        10,
+      )),
+    },
+    effects: {
+      burnDuration: Math.floor(configNumber(
+        effectSources,
+        ["burnDuration", "burningDuration"],
+        DEFAULT_COMBAT_CONFIG.effects.burnDuration,
+        1,
+        100,
+      )),
+      burnDamageRatio: configNumber(
+        effectSources,
+        ["burnDamageRatio", "burningDamageRatio"],
+        DEFAULT_COMBAT_CONFIG.effects.burnDamageRatio,
+        0,
+        10,
+      ),
+      maxLifesteal: configNumber(
+        effectSources,
+        ["maxLifesteal", "lifestealCap"],
+        DEFAULT_COMBAT_CONFIG.effects.maxLifesteal,
+        0,
+        1,
+      ),
+      maxThorns: configNumber(
+        effectSources,
+        ["maxThorns", "thornsCap"],
+        DEFAULT_COMBAT_CONFIG.effects.maxThorns,
+        0,
+        1,
+      ),
+      maxArmorPenetration: configNumber(
+        effectSources,
+        ["maxArmorPenetration", "armorPenetrationCap"],
+        DEFAULT_COMBAT_CONFIG.effects.maxArmorPenetration,
+        0,
+        1,
+      ),
+      maxMultiHitChance: configNumber(
+        effectSources,
+        ["maxMultiHitChance", "multiHitChanceCap"],
+        DEFAULT_COMBAT_CONFIG.effects.maxMultiHitChance,
+        0,
+        1,
+      ),
+      maxBurnChance: configNumber(
+        effectSources,
+        ["maxBurnChance", "burnChanceCap"],
+        DEFAULT_COMBAT_CONFIG.effects.maxBurnChance,
+        0,
+        1,
+      ),
+    },
+    classDefinitions: isRecord(root.classes) ? root.classes : {},
     skillRegistry: createSkillRegistry(root, combat),
   };
 }
@@ -317,6 +411,8 @@ function normalizeSkillType(value, id, definition) {
   if (["aoe", "area", "group", "all", "all_enemies"].includes(type)) return "aoe";
   if (["guard", "defense", "defensive", "block"].includes(type)) return "guard";
   if (["heal", "healing", "restore"].includes(type)) return "heal";
+  if (["summon", "minion", "pet", "raise"].includes(type)) return "summon";
+  if (["empower", "transform", "form", "stance", "shapeshift"].includes(type)) return "empower";
   if (["single", "attack", "basic", "damage", "single_target"].includes(type)) {
     return "single";
   }
@@ -397,11 +493,81 @@ function normalizeSkill(skillOrId, config) {
       100,
       config.ai.aoeMinTargets,
     )),
+    hitCount: Math.floor(clamp(
+      firstDefined([definition], ["hitCount", "hits", "strikeCount"], 1),
+      1,
+      config.maxHitsPerAction,
+      1,
+    )),
+    critChanceBonus: clamp(
+      firstDefined([definition], ["critChanceBonus", "criticalChanceBonus", "bonusCritChance"], 0),
+      0,
+      1,
+      0,
+    ),
+    dodgeBonus: clamp(
+      firstDefined([definition], ["dodgeBonus", "evasionBonus", "bonusDodgeChance"], 0),
+      0,
+      config.damage.maxDodgeChance,
+      0,
+    ),
     triggerBelowHpRatio: clamp(
       firstDefined([definition], ["triggerBelowHpRatio", "hpThreshold", "healthThreshold"], config.ai.guardHpThreshold),
       0,
       1,
       config.ai.guardHpThreshold,
+    ),
+    // 召唤类字段:召唤物属性 = 施法者当前属性 × 各比例。
+    summonCount: Math.floor(clamp(
+      firstDefined([definition], ["summonCount", "summons", "castCount"], 1),
+      1,
+      config.minions.maxSummonsPerCast,
+      1,
+    )),
+    maxMinions: Math.floor(clamp(
+      firstDefined([definition], ["maxMinions", "minionCap", "maxActiveMinions"], config.minions.maxActive),
+      0,
+      config.minions.maxActive,
+      config.minions.maxActive,
+    )),
+    minionName: String(definition.minionName ?? definition.minion?.name ?? "召唤物").slice(0, 20),
+    minionEmoji: String(definition.minionEmoji ?? definition.minion?.emoji ?? "💀").slice(0, 8),
+    minionHpRatio: clamp(
+      firstDefined([definition], ["minionHpRatio"], definition.minion?.hpRatio ?? 0.3),
+      0.01,
+      10,
+      0.3,
+    ),
+    minionAttackRatio: clamp(
+      firstDefined([definition], ["minionAttackRatio"], definition.minion?.attackRatio ?? 0.4),
+      0.01,
+      10,
+      0.4,
+    ),
+    minionDefenseRatio: clamp(
+      firstDefined([definition], ["minionDefenseRatio"], definition.minion?.defenseRatio ?? 0.35),
+      0,
+      10,
+      0.35,
+    ),
+    minionSpeedRatio: clamp(
+      firstDefined([definition], ["minionSpeedRatio"], definition.minion?.speedRatio ?? 0.85),
+      0.01,
+      10,
+      0.85,
+    ),
+    // empower 类字段:主动保持覆盖的输出增益。
+    damageBonus: clamp(
+      firstDefined([definition], ["damageBonus", "empowerDamageBonus", "attackBonus"], 0),
+      0,
+      5,
+      0,
+    ),
+    lifestealBonus: clamp(
+      firstDefined([definition], ["lifestealBonus", "empowerLifesteal"], 0),
+      0,
+      config.effects.maxLifesteal,
+      0,
     ),
     canCrit: definition.canCrit !== false,
     ignoreDefense: Boolean(definition.ignoreDefense),
@@ -411,6 +577,12 @@ function normalizeSkill(skillOrId, config) {
 }
 
 function normalizeSkills(raw, side, config) {
+  const classDefinition = side === "player"
+    ? config.classDefinitions?.[raw.classId]
+    : null;
+  const classSkills = Array.isArray(classDefinition?.skills)
+    ? classDefinition.skills
+    : null;
   const hasExplicitSkills = hasOwn(raw, "skills") || hasOwn(raw, "skillIds");
   const rawSkillSource = hasOwn(raw, "skills") ? raw.skills : raw.skillIds;
   const source = hasExplicitSkills
@@ -421,7 +593,7 @@ function normalizeSkills(raw, side, config) {
           isRecord(skill) ? { ...skill, id: skill.id ?? id } : id)
         : [])
     : side === "player"
-      ? DEFAULT_PLAYER_SKILL_IDS
+      ? classSkills ?? DEFAULT_PLAYER_SKILL_IDS
       : ["basic_attack"];
   const skills = [];
   const seen = new Set();
@@ -434,7 +606,9 @@ function normalizeSkills(raw, side, config) {
   }
 
   if (!skills.some((skill) => skill.isBasic && skill.cooldown === 0 && skill.resourceCost === 0)) {
-    const fallback = normalizeSkill("basic_attack", config)
+    const fallbackId = classDefinition?.basicSkillId ?? "basic_attack";
+    const fallback = normalizeSkill(fallbackId, config)
+      ?? normalizeSkill("basic_attack", config)
       ?? { ...DEFAULT_SKILLS.basic_attack };
     if (fallback) {
       fallback.cooldown = 0;
@@ -519,7 +693,71 @@ function normalizeGuard(raw, config) {
       config.damage.maxGuardReduction,
       0,
     ),
+    dodgeBonus: clamp(
+      supplied.dodgeBonus ?? supplied.evasionBonus,
+      0,
+      config.damage.maxDodgeChance,
+      0,
+    ),
     sourceSkillId: supplied.sourceSkillId ?? supplied.skillId ?? null,
+  };
+}
+
+/** Empower status shape: { remainingTurns, damageBonus, lifestealBonus, sourceSkillId|null }. */
+function normalizeEmpower(raw, config) {
+  const status = isRecord(raw.status) ? raw.status : {};
+  const supplied = isRecord(status.empower)
+    ? status.empower
+    : isRecord(raw.empower)
+      ? raw.empower
+      : null;
+  if (!supplied) return null;
+  const remainingTurns = Math.floor(clamp(
+    supplied.remainingTurns ?? supplied.turns ?? supplied.duration,
+    0,
+    10_000,
+    0,
+  ));
+  if (remainingTurns <= 0) return null;
+  return {
+    remainingTurns,
+    damageBonus: clamp(supplied.damageBonus ?? supplied.attackBonus, 0, 5, 0),
+    lifestealBonus: clamp(
+      supplied.lifestealBonus ?? supplied.lifesteal,
+      0,
+      config.effects.maxLifesteal,
+      0,
+    ),
+    sourceSkillId: supplied.sourceSkillId ?? supplied.skillId ?? null,
+  };
+}
+
+/** Burn status shape: { remainingTurns, damagePerTurn, sourceId|null }. */
+function normalizeBurn(raw) {
+  const status = isRecord(raw.status) ? raw.status : {};
+  const supplied = isRecord(status.burn)
+    ? status.burn
+    : isRecord(raw.burn)
+      ? raw.burn
+      : null;
+  if (!supplied) return null;
+  const remainingTurns = Math.floor(clamp(
+    supplied.remainingTurns ?? supplied.turns ?? supplied.duration,
+    0,
+    10_000,
+    0,
+  ));
+  const damagePerTurn = Math.floor(clamp(
+    supplied.damagePerTurn ?? supplied.damage,
+    0,
+    MAX_STAT,
+    0,
+  ));
+  if (remainingTurns <= 0 || damagePerTurn <= 0) return null;
+  return {
+    remainingTurns,
+    damagePerTurn,
+    sourceId: supplied.sourceId ?? supplied.ownerId ?? null,
   };
 }
 
@@ -575,6 +813,38 @@ function normalizeUnit(value, side, order, config) {
       config.damage.maxPassiveReduction,
       0,
     ),
+    lifesteal: clamp(
+      firstDefined(sources, ["lifesteal", "lifeSteal", "lifeLeech"], 0),
+      0,
+      config.effects.maxLifesteal,
+      0,
+    ),
+    thorns: clamp(
+      firstDefined(sources, ["thorns", "reflectDamage", "damageReflection"], 0),
+      0,
+      config.effects.maxThorns,
+      0,
+    ),
+    armorPenetration: clamp(
+      firstDefined(sources, ["armorPenetration", "armorPen", "armorBreak"], 0),
+      0,
+      config.effects.maxArmorPenetration,
+      0,
+    ),
+    multiHitChance: clamp(
+      firstDefined(sources, ["multiHitChance", "extraStrikeChance", "doubleStrikeChance"], 0),
+      0,
+      config.effects.maxMultiHitChance,
+      0,
+    ),
+    burnChance: clamp(
+      firstDefined(sources, ["burnChance", "burningChance", "igniteChance", "burning"], 0),
+      0,
+      config.effects.maxBurnChance,
+      0,
+    ),
+    burn: normalizeBurn(raw),
+    empower: normalizeEmpower(raw, config),
     resource,
     maxResource,
     skills: normalizeSkills(raw, side, config),
@@ -675,8 +945,24 @@ export function calculateDamage(attacker, target, skill = DEFAULT_SKILLS.basic_a
         flatDamage: clamp(skill.flatDamage, 0, MAX_STAT, 0),
       }
     : normalizeSkill(skill?.id ?? skill ?? "basic_attack", config);
+  const targetGuard = isRecord(target?.guard)
+    ? target.guard
+    : isRecord(target?.status?.guard)
+      ? target.status.guard
+      : null;
+  const guardActive = targetGuard
+    && finiteNumber(targetGuard.remainingTurns ?? targetGuard.turns, 0) > 0;
+  const guardDodgeBonus = guardActive
+    ? clamp(
+        targetGuard.dodgeBonus ?? targetGuard.evasionBonus,
+        0,
+        config.damage.maxDodgeChance,
+        0,
+      )
+    : 0;
   const dodgeChance = clamp(
-    firstDefined(targetSources, ["dodgeChance", "evasion", "evadeChance"], 0),
+    finiteNumber(firstDefined(targetSources, ["dodgeChance", "evasion", "evadeChance"], 0), 0)
+      + guardDodgeBonus,
     0,
     config.damage.maxDodgeChance,
     0,
@@ -700,10 +986,26 @@ export function calculateDamage(attacker, target, skill = DEFAULT_SKILLS.basic_a
     100,
     1,
   );
+  // empower(形态)增益提升攻方输出。
+  const attackerEmpower = isRecord(attacker?.empower)
+    ? attacker.empower
+    : isRecord(attacker?.status?.empower)
+      ? attacker.status.empower
+      : null;
+  const empowerBonus = attackerEmpower
+    && finiteNumber(attackerEmpower.remainingTurns ?? attackerEmpower.turns, 0) > 0
+    ? clamp(attackerEmpower.damageBonus ?? attackerEmpower.attackBonus, 0, 5, 0)
+    : 0;
   const attackPower = Math.min(
     MAX_STAT * 100,
     (attack * multiplier + clamp(normalizedSkill?.flatDamage, 0, MAX_STAT, 0))
-      * outgoingMultiplier,
+      * outgoingMultiplier * (1 + empowerBonus),
+  );
+  const armorPenetration = clamp(
+    firstDefined(attackerSources, ["armorPenetration", "armorPen", "armorBreak"], 0),
+    0,
+    config.effects?.maxArmorPenetration ?? 1,
+    0,
   );
   const defense = normalizedSkill?.ignoreDefense
     ? 0
@@ -712,7 +1014,7 @@ export function calculateDamage(attacker, target, skill = DEFAULT_SKILLS.basic_a
         0,
         MAX_STAT,
         0,
-      ) * config.damage.defenseCoefficient;
+      ) * (1 - armorPenetration) * config.damage.defenseCoefficient;
   const cappedDefense = Math.min(
     defense,
     attackPower * config.damage.maxDefenseReduction,
@@ -720,7 +1022,8 @@ export function calculateDamage(attacker, target, skill = DEFAULT_SKILLS.basic_a
   const mitigated = Math.max(config.damage.minDamage, attackPower - cappedDefense);
   const critical = normalizedSkill?.canCrit !== false
     && randomValue(rng) < clamp(
-      firstDefined(attackerSources, ["critChance", "criticalChance", "criticalRate"], 0),
+      finiteNumber(firstDefined(attackerSources, ["critChance", "criticalChance", "criticalRate"], 0), 0)
+        + clamp(normalizedSkill?.critChanceBonus, 0, 1, 0),
       0,
       1,
       0,
@@ -740,13 +1043,7 @@ export function calculateDamage(attacker, target, skill = DEFAULT_SKILLS.basic_a
     config.damage.maxPassiveReduction,
     0,
   );
-  const targetGuard = isRecord(target?.guard)
-    ? target.guard
-    : isRecord(target?.status?.guard)
-      ? target.status.guard
-      : null;
-  const guardReduction = targetGuard
-    && finiteNumber(targetGuard.remainingTurns ?? targetGuard.turns, 0) > 0
+  const guardReduction = guardActive
     ? clamp(targetGuard.reduction ?? targetGuard.damageReduction, 0, config.damage.maxGuardReduction, 0)
     : 0;
   const combinedReduction = Math.min(
@@ -781,8 +1078,24 @@ function pickBest(skills, score) {
   })[0] ?? null;
 }
 
-/** Configurable automatic skill decision with an unconditional basic fallback. */
-export function chooseSkill(actor, opponents, inputConfig = {}) {
+function offensiveSkillScore(skill, config) {
+  const hits = Math.floor(clamp(skill?.hitCount, 1, config.maxHitsPerAction, 1));
+  return finiteNumber(skill?.multiplier, 0) * hits;
+}
+
+function survivalSkillScore(skill, actor) {
+  const duration = Math.max(1, finiteNumber(skill?.duration, 1));
+  return (finiteNumber(skill?.reduction, 0) + finiteNumber(skill?.dodgeBonus, 0)) * duration
+    + finiteNumber(skill?.healRatio, 0)
+    + finiteNumber(skill?.healAmount, 0) / Math.max(1, finiteNumber(actor?.maxHp, 1));
+}
+
+/**
+ * Configurable automatic skill decision with an unconditional basic fallback.
+ * `context.activeMinions` lets summon skills respect the on-field cap;
+ * summons are currently a player-side ability only.
+ */
+export function chooseSkill(actor, opponents, inputConfig = {}, context = {}) {
   const config = inputConfig?.skillRegistry ? inputConfig : normalizeCombatConfig(inputConfig);
   const livingCount = Array.isArray(opponents) ? opponents.filter(isAlive).length : 0;
   if (livingCount === 0) return null;
@@ -790,6 +1103,25 @@ export function chooseSkill(actor, opponents, inputConfig = {}) {
   const ready = skills.filter((skill) => skillIsReady(actor, skill));
   const hpRatio = clamp(actor?.hp, 0, Math.max(1, finiteNumber(actor?.maxHp, 1)), 0)
     / Math.max(1, finiteNumber(actor?.maxHp, 1));
+  const activeMinions = Math.max(0, Math.floor(finiteNumber(context?.activeMinions, 0)));
+
+  const pickSummon = () => {
+    if (actor?.side === "enemy") return null;
+    const candidates = ready.filter((skill) =>
+      skill.type === "summon"
+      && activeMinions < Math.min(
+        Math.floor(clamp(skill.maxMinions, 0, 100, 0)),
+        config.minions.maxActive,
+      ));
+    return pickBest(candidates, (skill) => finiteNumber(skill.summonCount, 1));
+  };
+  const pickEmpower = () => {
+    if (actor?.empower && finiteNumber(actor.empower.remainingTurns, 0) > 0) return null;
+    const candidates = ready.filter((skill) => skill.type === "empower");
+    return pickBest(candidates, (skill) =>
+      (finiteNumber(skill.damageBonus, 0) + finiteNumber(skill.lifestealBonus, 0))
+        * Math.max(1, finiteNumber(skill.duration, 1)));
+  };
 
   if (config.ai.buildAwareOffense) {
     const defensive = ready.filter((skill) =>
@@ -800,11 +1132,13 @@ export function chooseSkill(actor, opponents, inputConfig = {}) {
         1,
         config.ai.guardHpThreshold,
       ));
-    const survival = pickBest(defensive, (skill) =>
-      skill.reduction * Math.max(1, skill.duration)
-        + skill.healRatio
-        + skill.healAmount / Math.max(1, actor.maxHp));
+    const survival = pickBest(defensive, (skill) => survivalSkillScore(skill, actor));
     if (survival) return survival;
+
+    const summon = pickSummon();
+    if (summon) return summon;
+    const empower = pickEmpower();
+    if (empower) return empower;
 
     const offense = ready.filter((skill) =>
       (skill.type === "single" && !skill.isBasic)
@@ -815,15 +1149,26 @@ export function chooseSkill(actor, opponents, inputConfig = {}) {
         config.ai.aoeMinTargets,
       ))));
     const selected = pickBest(offense, (skill) => skill.type === "aoe"
-      ? skill.multiplier * livingCount * config.ai.aoeUtilityWeight
-      : skill.multiplier);
+      ? offensiveSkillScore(skill, config) * livingCount * config.ai.aoeUtilityWeight
+      : offensiveSkillScore(skill, config));
     if (selected) return selected;
 
-    const basic = pickBest(ready.filter((skill) => skill.isBasic), (skill) => skill.multiplier);
+    const basic = pickBest(
+      ready.filter((skill) => skill.isBasic),
+      (skill) => offensiveSkillScore(skill, config),
+    );
     if (basic) return basic;
   }
 
   for (const category of config.ai.priority) {
+    if (category === "summon") {
+      const selected = pickSummon();
+      if (selected) return selected;
+    }
+    if (category === "empower") {
+      const selected = pickEmpower();
+      if (selected) return selected;
+    }
     if (category === "survival") {
       const defensive = ready.filter((skill) =>
         (skill.type === "guard" || skill.type === "heal")
@@ -833,10 +1178,7 @@ export function chooseSkill(actor, opponents, inputConfig = {}) {
           1,
           config.ai.guardHpThreshold,
         ));
-      const selected = pickBest(defensive, (skill) =>
-        skill.reduction * Math.max(1, skill.duration)
-          + skill.healRatio
-          + skill.healAmount / Math.max(1, actor.maxHp));
+      const selected = pickBest(defensive, (skill) => survivalSkillScore(skill, actor));
       if (selected) return selected;
     }
     if (category === "aoe") {
@@ -848,27 +1190,27 @@ export function chooseSkill(actor, opponents, inputConfig = {}) {
             100,
             config.ai.aoeMinTargets,
           ))),
-        (skill) => skill.multiplier * livingCount,
+        (skill) => offensiveSkillScore(skill, config) * livingCount,
       );
       if (selected) return selected;
     }
     if (category === "single") {
       const selected = pickBest(
         ready.filter((skill) => skill.type === "single" && !skill.isBasic),
-        (skill) => skill.multiplier,
+        (skill) => offensiveSkillScore(skill, config),
       );
       if (selected) return selected;
     }
     if (category === "basic") {
       const selected = pickBest(
         ready.filter((skill) => skill.isBasic),
-        (skill) => skill.multiplier,
+        (skill) => offensiveSkillScore(skill, config),
       );
       if (selected) return selected;
     }
   }
 
-  return pickBest(ready, (skill) => skill.multiplier) ?? null;
+  return pickBest(ready, (skill) => offensiveSkillScore(skill, config)) ?? null;
 }
 
 function unitSummary(unit) {
@@ -877,6 +1219,18 @@ function unitSummary(unit) {
     name: unit.name,
     emoji: unit.emoji,
     side: unit.side,
+  };
+}
+
+function skillSummary(skill) {
+  return {
+    id: skill.id,
+    name: skill.name,
+    emoji: skill.emoji,
+    type: skill.type,
+    hitCount: skill.hitCount,
+    critChanceBonus: skill.critChanceBonus,
+    dodgeBonus: skill.dodgeBonus,
   };
 }
 
@@ -896,6 +1250,13 @@ function publicUnit(unit) {
     dodgeChance: clamp(source.dodgeChance, 0, 1, 0),
     damageMultiplier: clamp(source.damageMultiplier, 0, 100, 1),
     damageReduction: clamp(source.damageReduction, 0, 1, 0),
+    lifesteal: clamp(source.lifesteal, 0, 1, 0),
+    thorns: clamp(source.thorns, 0, 1, 0),
+    armorPenetration: clamp(source.armorPenetration, 0, 1, 0),
+    multiHitChance: clamp(source.multiHitChance, 0, 1, 0),
+    burnChance: clamp(source.burnChance, 0, 1, 0),
+    burn: isRecord(source.burn) ? { ...source.burn } : null,
+    empower: isRecord(source.empower) ? { ...source.empower } : null,
     resource: clamp(source.resource, 0, MAX_STAT, 0),
     maxResource: clamp(source.maxResource, 0, MAX_STAT, 0),
     cooldowns: isRecord(source.cooldowns) ? { ...source.cooldowns } : {},
@@ -906,16 +1267,17 @@ function publicUnit(unit) {
   };
 }
 
-export function createCombatSnapshot(player, enemies) {
+export function createCombatSnapshot(player, enemies, minions = []) {
   const enemySnapshots = (Array.isArray(enemies) ? enemies : []).map(publicUnit);
   return {
     player: publicUnit(player),
+    minions: (Array.isArray(minions) ? minions : []).map(publicUnit),
     enemies: enemySnapshots,
     aliveEnemyCount: enemySnapshots.filter((enemy) => enemy.alive).length,
   };
 }
 
-function consumeTurn(actor, usedSkill, appliedGuard = false) {
+function consumeTurn(actor, usedSkill, appliedGuard = false, appliedEmpower = false) {
   for (const [id, remaining] of Object.entries(actor.cooldowns)) {
     if (id !== usedSkill?.id) {
       actor.cooldowns[id] = Math.max(0, Math.floor(finiteNumber(remaining, 0)) - 1);
@@ -933,6 +1295,10 @@ function consumeTurn(actor, usedSkill, appliedGuard = false) {
   if (actor.guard && !appliedGuard) {
     actor.guard.remainingTurns = Math.max(0, actor.guard.remainingTurns - 1);
     if (actor.guard.remainingTurns === 0) actor.guard = null;
+  }
+  if (actor.empower && !appliedEmpower) {
+    actor.empower.remainingTurns = Math.max(0, actor.empower.remainingTurns - 1);
+    if (actor.empower.remainingTurns === 0) actor.empower = null;
   }
 }
 
@@ -952,19 +1318,37 @@ function resolveSingleTarget(actor, opponents, strategy) {
   return { target, retargetedFrom };
 }
 
+/** Folds legendary-effect outcomes into one readable log suffix. */
+function formatEffectNotes(roll, targetCount = 1) {
+  const parts = [];
+  if (roll.extraStrike) parts.push("连击追加一击");
+  if (roll.lifestealHealing > 0) parts.push(`吸血 +${roll.lifestealHealing}`);
+  if (roll.burnAppliedCount > 0) {
+    parts.push(targetCount > 1 ? `点燃 ${roll.burnAppliedCount} 个目标` : "目标被点燃");
+  }
+  if (roll.thornsDamage > 0) parts.push(`受荆棘反伤 ${roll.thornsDamage}`);
+  return parts.length ? `（${parts.join("，")}）` : "";
+}
+
 function formatSingleAction(actor, target, skill, roll) {
+  const notes = formatEffectNotes(roll, 1);
+  if (roll.hitCount > 1) {
+    const critical = roll.criticalCount ? `（${roll.criticalCount} 次暴击）` : "";
+    const dodged = roll.dodgedCount ? `（${roll.dodgedCount} 次闪避）` : "";
+    return `${actor.emoji} ${actor.name} 对 ${target.name} 使用 ${skill.emoji} ${skill.name}，${roll.successfulHitCount}/${roll.hitCount} 段命中，共造成 ${roll.damage} 点伤害${critical}${dodged}${notes}。`;
+  }
   if (roll.dodged) {
     return `${target.emoji} ${target.name} 闪避了 ${actor.name} 的 ${skill.emoji} ${skill.name}。`;
   }
   const critical = roll.critical ? "（暴击）" : "";
   const guarded = roll.reduction > 0 ? `（减伤 ${Math.round(roll.reduction * 100)}%）` : "";
-  return `${actor.emoji} ${actor.name} 对 ${target.name} 使用 ${skill.emoji} ${skill.name}，造成 ${roll.damage} 点伤害${critical}${guarded}。`;
+  return `${actor.emoji} ${actor.name} 对 ${target.name} 使用 ${skill.emoji} ${skill.name}，造成 ${roll.damage} 点伤害${critical}${guarded}${notes}。`;
 }
 
 function parseSimulationArgs(playerOrOptions, enemiesArg, seedArg, configArg) {
   if (isRecord(playerOrOptions) && hasOwn(playerOrOptions, "player")) {
     const secondIsConfig = isRecord(enemiesArg)
-      && ["combat", "skills", "maxRounds", "damage", "ai"].some((key) => hasOwn(enemiesArg, key));
+      && ["combat", "skills", "maxRounds", "maxHitsPerAction", "damage", "ai"].some((key) => hasOwn(enemiesArg, key));
     return {
       player: playerOrOptions.player,
       enemies: playerOrOptions.enemies ?? playerOrOptions.enemyGroup ?? [],
@@ -984,7 +1368,7 @@ function parseSimulationArgs(playerOrOptions, enemiesArg, seedArg, configArg) {
     };
   }
   if (isRecord(seedArg)
-    && ["combat", "skills", "maxRounds", "damage", "ai"].some((key) => hasOwn(seedArg, key))) {
+    && ["combat", "skills", "maxRounds", "maxHitsPerAction", "damage", "ai"].some((key) => hasOwn(seedArg, key))) {
     return {
       player: playerOrOptions,
       enemies: enemiesArg,
@@ -1020,6 +1404,9 @@ export function simulateCombat(playerOrOptions, enemiesArg, seedArg, configArg) 
       : [];
   const enemies = enemyInput.map((enemy, index) =>
     normalizeUnit(enemy, "enemy", index + 1, config));
+  // 玩家侧召唤物:战斗中由召唤技能创建,阵亡后保留在数组里供结算与快照。
+  const minions = [];
+  let minionCounter = 0;
   const rng = createSeededRng(options.seed);
   const logs = [];
   const defeatedEnemyIds = [];
@@ -1027,7 +1414,26 @@ export function simulateCombat(playerOrOptions, enemiesArg, seedArg, configArg) 
   let outcome = null;
   let reason = null;
 
-  const snapshot = () => createCombatSnapshot(player, enemies);
+  // 玩家视角的整场统计,用于结算战报。
+  const statistics = {
+    playerDamageDealt: 0,
+    playerDamageTaken: 0,
+    playerHealing: 0,
+    playerCriticalHits: 0,
+    playerDodges: 0,
+    playerMaxHit: 0,
+    lifestealHealing: 0,
+    thornsDamage: 0,
+    burnDamage: 0,
+    burnsApplied: 0,
+    extraStrikes: 0,
+    minionDamageDealt: 0,
+    minionDamageTaken: 0,
+    minionsSummoned: 0,
+    minionsLost: 0,
+  };
+
+  const snapshot = () => createCombatSnapshot(player, enemies, minions);
   const appendLog = (event) => {
     const entry = {
       sequence: logs.length + 1,
@@ -1073,6 +1479,7 @@ export function simulateCombat(playerOrOptions, enemiesArg, seedArg, configArg) 
         target._defeatedRound = rounds;
         defeatedEnemyIds.push(target.id);
       }
+      if (target.side === "minion") statistics.minionsLost += 1;
     }
     appendLog({
       type: "defeat",
@@ -1088,33 +1495,262 @@ export function simulateCombat(playerOrOptions, enemiesArg, seedArg, configArg) 
 
   if (!isAlive(player) && outcome === "defeat") recordDeaths([player]);
 
+  const applyHits = (actor, target, skill) => {
+    const hpBefore = target.hp;
+    const configuredHitCount = Math.floor(clamp(
+      skill.hitCount,
+      1,
+      config.maxHitsPerAction,
+      1,
+    ));
+    const hits = [];
+
+    const performHit = (index, extra) => {
+      const hitHpBefore = target.hp;
+      const roll = calculateDamage(actor, target, skill, rng, config);
+      target.hp = clamp(target.hp - roll.damage, 0, target.maxHp, target.hp);
+      const hit = {
+        index,
+        damage: roll.damage,
+        critical: roll.critical,
+        dodged: roll.dodged,
+        reduction: roll.reduction,
+        hpBefore: hitHpBefore,
+        hpAfter: target.hp,
+        extra,
+        lifesteal: 0,
+        thorns: 0,
+        burnApplied: false,
+      };
+      if (roll.damage > 0) {
+        // 吸血:按实际伤害回复,受自身生命上限约束;empower(形态)可附加吸血。
+        const empowerLifesteal = actor.empower && actor.empower.remainingTurns > 0
+          ? clamp(actor.empower.lifestealBonus, 0, config.effects.maxLifesteal, 0)
+          : 0;
+        const lifestealRatio = clamp(
+          actor.lifesteal + empowerLifesteal,
+          0,
+          config.effects.maxLifesteal,
+          0,
+        );
+        if (lifestealRatio > 0 && isAlive(actor)) {
+          const before = actor.hp;
+          actor.hp = clamp(actor.hp + roll.damage * lifestealRatio, 0, actor.maxHp, actor.hp);
+          hit.lifesteal = Math.round(actor.hp - before);
+        }
+        // 点燃:命中后按概率给目标挂上燃烧,取更高的每回合伤害并刷新时长。
+        if (actor.burnChance > 0 && isAlive(target) && randomValue(rng) < actor.burnChance) {
+          const damagePerTurn = Math.max(1, Math.round(roll.damage * config.effects.burnDamageRatio));
+          target.burn = {
+            remainingTurns: config.effects.burnDuration,
+            damagePerTurn: Math.max(target.burn?.damagePerTurn ?? 0, damagePerTurn),
+            sourceId: actor.id,
+          };
+          hit.burnApplied = true;
+        }
+        // 荆棘:反伤是真实伤害,不可闪避,也不会再次触发吸血/荆棘。
+        if (target.thorns > 0) {
+          const reflected = Math.round(roll.damage * target.thorns);
+          if (reflected > 0) {
+            actor.hp = clamp(actor.hp - reflected, 0, actor.maxHp, actor.hp);
+            hit.thorns = reflected;
+          }
+        }
+      }
+      hits.push(hit);
+      return hit;
+    };
+
+    for (let index = 0; index < configuredHitCount && isAlive(target) && isAlive(actor); index += 1) {
+      performHit(index + 1, false);
+    }
+    // 连击:每次行动至多追加一次额外打击,仍受多段数硬上限约束。
+    let extraStrike = false;
+    if (
+      actor.multiHitChance > 0
+      && hits.length > 0
+      && hits.length < config.maxHitsPerAction
+      && isAlive(target)
+      && isAlive(actor)
+      && randomValue(rng) < actor.multiHitChance
+    ) {
+      extraStrike = true;
+      performHit(hits.length + 1, true);
+    }
+
+    const damage = hits.reduce((sum, hit) => sum + hit.damage, 0);
+    const criticalCount = hits.filter((hit) => hit.critical).length;
+    const dodgedCount = hits.filter((hit) => hit.dodged).length;
+    const successfulHitCount = hits.length - dodgedCount;
+    const lifestealHealing = hits.reduce((sum, hit) => sum + hit.lifesteal, 0);
+    const thornsDamage = hits.reduce((sum, hit) => sum + hit.thorns, 0);
+    const burnAppliedCount = hits.filter((hit) => hit.burnApplied).length;
+    if (actor.side === "player") {
+      statistics.playerDamageDealt += damage;
+      statistics.playerCriticalHits += criticalCount;
+      statistics.playerMaxHit = Math.max(statistics.playerMaxHit, ...hits.map((hit) => hit.damage), 0);
+      statistics.lifestealHealing += lifestealHealing;
+      statistics.playerHealing += lifestealHealing;
+      statistics.burnsApplied += burnAppliedCount;
+      statistics.extraStrikes += extraStrike ? 1 : 0;
+      statistics.playerDamageTaken += thornsDamage;
+    } else if (actor.side === "minion") {
+      statistics.minionDamageDealt += damage;
+    } else if (target.side === "player") {
+      statistics.playerDamageTaken += damage;
+      statistics.playerDodges += dodgedCount;
+      statistics.thornsDamage += thornsDamage;
+    } else {
+      statistics.minionDamageTaken += damage;
+    }
+    return {
+      ...unitSummary(target),
+      damage,
+      totalDamage: damage,
+      critical: criticalCount > 0,
+      dodged: hits.length > 0 && dodgedCount === hits.length,
+      reduction: hits.reduce((maximum, hit) => Math.max(maximum, hit.reduction), 0),
+      hpBefore,
+      hpAfter: target.hp,
+      defeated: hpBefore > 0 && target.hp === 0,
+      configuredHitCount,
+      hitCount: hits.length,
+      successfulHitCount,
+      criticalCount,
+      dodgedCount,
+      lifestealHealing,
+      thornsDamage,
+      burnAppliedCount,
+      extraStrike,
+      hits,
+    };
+  };
+
+  /** Minions derive their sheet from the caster at cast time. */
+  const createMinion = (caster, skill) => {
+    minionCounter += 1;
+    const raw = {
+      id: `minion-${minionCounter}`,
+      name: `${skill.minionName}·${minionCounter}`,
+      emoji: skill.minionEmoji,
+      stats: {
+        maxHp: Math.max(1, Math.round(caster.maxHp * skill.minionHpRatio)),
+        attack: Math.max(1, Math.round(caster.attack * skill.minionAttackRatio)),
+        defense: Math.max(0, Math.round(caster.defense * skill.minionDefenseRatio)),
+        speed: Math.max(1, Math.round(caster.speed * skill.minionSpeedRatio)),
+        critChance: 0.05,
+        critDamage: 1.5,
+      },
+      skills: [{
+        id: "minion_attack",
+        name: "撕咬",
+        emoji: skill.minionEmoji,
+        type: "single",
+        multiplier: 1,
+        cooldown: 0,
+        isBasic: true,
+      }],
+    };
+    // _order 从 100 起,避免与玩家(0)和敌人(1..20)的同速排序冲突。
+    return normalizeUnit(raw, "minion", 100 + minionCounter, config);
+  };
+
   const performAction = (actor) => {
-    const opponents = actor.side === "player"
-      ? enemies.filter(isAlive)
-      : isAlive(player)
-        ? [player]
-        : [];
+    const opponents = actor.side === "enemy"
+      ? [player, ...minions].filter(isAlive)
+      : enemies.filter(isAlive);
     if (opponents.length === 0) return;
-    const skill = chooseSkill(actor, opponents, config);
+    const skill = chooseSkill(actor, opponents, config, {
+      activeMinions: minions.filter(isAlive).length,
+    });
     if (!skill) return;
+
+    if (skill.type === "summon") {
+      const cap = Math.min(skill.maxMinions, config.minions.maxActive);
+      const living = minions.filter(isAlive).length;
+      const count = Math.max(0, Math.min(
+        skill.summonCount,
+        cap - living,
+        config.minions.maxSummonsPerCast,
+      ));
+      const summoned = [];
+      for (let index = 0; index < count; index += 1) {
+        const minion = createMinion(actor, skill);
+        minions.push(minion);
+        summoned.push(minion);
+      }
+      consumeTurn(actor, skill);
+      statistics.minionsSummoned += summoned.length;
+      appendLog({
+        type: "action",
+        actionType: "summon",
+        message: summoned.length > 0
+          ? `${actor.emoji} ${actor.name} 使用 ${skill.emoji} ${skill.name}，召唤了 ${summoned.length} 名${skill.minionName}加入战斗。`
+          : `${actor.emoji} ${actor.name} 的 ${skill.emoji} ${skill.name} 没有唤起新的仆从。`,
+        actor: unitSummary(actor),
+        actorId: actor.id,
+        skill: skillSummary(skill),
+        skillId: skill.id,
+        targets: summoned.map((minion) => ({
+          ...unitSummary(minion),
+          hp: minion.hp,
+          maxHp: minion.maxHp,
+        })),
+        targetIds: summoned.map((minion) => minion.id),
+        summonedCount: summoned.length,
+      });
+      return;
+    }
+
+    if (skill.type === "empower") {
+      actor.empower = {
+        remainingTurns: skill.duration,
+        damageBonus: skill.damageBonus,
+        lifestealBonus: skill.lifestealBonus,
+        sourceSkillId: skill.id,
+      };
+      consumeTurn(actor, skill, false, true);
+      const effects = [];
+      if (skill.damageBonus > 0) effects.push(`伤害 +${Math.round(skill.damageBonus * 100)}%`);
+      if (skill.lifestealBonus > 0) effects.push(`吸血 +${Math.round(skill.lifestealBonus * 100)}%`);
+      appendLog({
+        type: "action",
+        actionType: "empower",
+        message: `${actor.emoji} ${actor.name} 使用 ${skill.emoji} ${skill.name}，${effects.join("、") || "进入强化形态"}，持续 ${skill.duration} 回合。`,
+        actor: unitSummary(actor),
+        actorId: actor.id,
+        skill: skillSummary(skill),
+        skillId: skill.id,
+        targetIds: [actor.id],
+        damageBonus: skill.damageBonus,
+        lifestealBonus: skill.lifestealBonus,
+        duration: skill.duration,
+      });
+      return;
+    }
 
     if (skill.type === "guard") {
       actor.guard = {
         remainingTurns: skill.duration,
         reduction: skill.reduction,
+        dodgeBonus: skill.dodgeBonus,
         sourceSkillId: skill.id,
       };
       consumeTurn(actor, skill, true);
+      const effects = [];
+      if (skill.reduction > 0) effects.push(`${Math.round(skill.reduction * 100)}% 减伤`);
+      if (skill.dodgeBonus > 0) effects.push(`${Math.round(skill.dodgeBonus * 100)}% 闪避`);
       appendLog({
         type: "action",
         actionType: "guard",
-        message: `${actor.emoji} ${actor.name} 使用 ${skill.emoji} ${skill.name}，获得 ${Math.round(skill.reduction * 100)}% 减伤，持续 ${skill.duration} 回合。`,
+        message: `${actor.emoji} ${actor.name} 使用 ${skill.emoji} ${skill.name}，获得 ${effects.join("与") || "防御姿态"}，持续 ${skill.duration} 回合。`,
         actor: unitSummary(actor),
         actorId: actor.id,
-        skill: { id: skill.id, name: skill.name, emoji: skill.emoji, type: skill.type },
+        skill: skillSummary(skill),
         skillId: skill.id,
         targetIds: [actor.id],
         reduction: skill.reduction,
+        dodgeBonus: skill.dodgeBonus,
         duration: skill.duration,
       });
       return;
@@ -1125,6 +1761,7 @@ export function simulateCombat(playerOrOptions, enemiesArg, seedArg, configArg) 
       const requested = skill.healAmount + actor.maxHp * skill.healRatio;
       actor.hp = clamp(actor.hp + requested, 0, actor.maxHp, actor.hp);
       const healing = Math.max(0, Math.round(actor.hp - before));
+      if (actor.side === "player") statistics.playerHealing += healing;
       consumeTurn(actor, skill);
       appendLog({
         type: "action",
@@ -1132,7 +1769,7 @@ export function simulateCombat(playerOrOptions, enemiesArg, seedArg, configArg) 
         message: `${actor.emoji} ${actor.name} 使用 ${skill.emoji} ${skill.name}，恢复 ${healing} 点生命。`,
         actor: unitSummary(actor),
         actorId: actor.id,
-        skill: { id: skill.id, name: skill.name, emoji: skill.emoji, type: skill.type },
+        skill: skillSummary(skill),
         skillId: skill.id,
         targetIds: [actor.id],
         healing,
@@ -1142,42 +1779,54 @@ export function simulateCombat(playerOrOptions, enemiesArg, seedArg, configArg) 
 
     if (skill.type === "aoe") {
       const targets = opponents.filter(isAlive);
-      const details = targets.map((target) => {
-        const roll = calculateDamage(actor, target, skill, rng, config);
-        const hpBefore = target.hp;
-        target.hp = clamp(target.hp - roll.damage, 0, target.maxHp, target.hp);
-        return {
-          ...unitSummary(target),
-          damage: roll.damage,
-          critical: roll.critical,
-          dodged: roll.dodged,
-          hpBefore,
-          hpAfter: target.hp,
-          defeated: hpBefore > 0 && target.hp === 0,
-        };
-      });
+      const details = [];
+      for (const target of targets) {
+        // 荆棘反伤可能在扫场途中击倒施法者,此时立即停手。
+        if (!isAlive(actor)) break;
+        details.push(applyHits(actor, target, skill));
+      }
       consumeTurn(actor, skill);
       const totalDamage = details.reduce((sum, target) => sum + target.damage, 0);
-      const hitCount = details.filter((target) => !target.dodged).length;
-      const criticalCount = details.filter((target) => target.critical).length;
-      const dodgedCount = details.filter((target) => target.dodged).length;
+      const hitCount = details.filter((target) => target.successfulHitCount > 0).length;
+      const strikeCount = details.reduce((sum, target) => sum + target.hitCount, 0);
+      const successfulHitCount = details.reduce(
+        (sum, target) => sum + target.successfulHitCount,
+        0,
+      );
+      const criticalCount = details.reduce((sum, target) => sum + target.criticalCount, 0);
+      const dodgedCount = details.reduce((sum, target) => sum + target.dodgedCount, 0);
+      const effectTotals = {
+        extraStrike: details.some((target) => target.extraStrike),
+        lifestealHealing: details.reduce((sum, target) => sum + target.lifestealHealing, 0),
+        thornsDamage: details.reduce((sum, target) => sum + target.thornsDamage, 0),
+        burnAppliedCount: details.filter((target) => target.burnAppliedCount > 0).length,
+      };
+      const segment = skill.hitCount > 1
+        ? `，${successfulHitCount}/${strikeCount} 段命中`
+        : "";
       appendLog({
         type: "action",
         actionType: "aoe",
-        message: `${actor.emoji} ${actor.name} 使用 ${skill.emoji} ${skill.name} 命中 ${hitCount} 名敌人，共造成 ${totalDamage} 点伤害${criticalCount ? `（${criticalCount} 次暴击）` : ""}${dodgedCount ? `（${dodgedCount} 次闪避）` : ""}。`,
+        message: `${actor.emoji} ${actor.name} 使用 ${skill.emoji} ${skill.name} 命中 ${hitCount} 名敌人${segment}，共造成 ${totalDamage} 点伤害${criticalCount ? `（${criticalCount} 次暴击）` : ""}${dodgedCount ? `（${dodgedCount} 次闪避）` : ""}${formatEffectNotes(effectTotals, details.length)}。`,
         actor: unitSummary(actor),
         actorId: actor.id,
-        skill: { id: skill.id, name: skill.name, emoji: skill.emoji, type: skill.type },
+        skill: skillSummary(skill),
         skillId: skill.id,
         targets: details,
         targetIds: details.map((target) => target.id),
         damage: totalDamage,
         totalDamage,
         hitCount,
+        strikeCount,
+        successfulHitCount,
         criticalCount,
         dodgedCount,
+        lifestealHealing: effectTotals.lifestealHealing,
+        thornsDamage: effectTotals.thornsDamage,
+        burnAppliedCount: effectTotals.burnAppliedCount,
       });
       recordDeaths(targets);
+      if (!isAlive(actor)) recordDeaths([actor]);
       return;
     }
 
@@ -1187,42 +1836,43 @@ export function simulateCombat(playerOrOptions, enemiesArg, seedArg, configArg) 
       actor.side === "player" ? config.ai.targetStrategy : "lowestHp",
     );
     if (!target) return;
-    const hpBefore = target.hp;
-    const roll = calculateDamage(actor, target, skill, rng, config);
-    target.hp = clamp(target.hp - roll.damage, 0, target.maxHp, target.hp);
+    const detail = applyHits(actor, target, skill);
     consumeTurn(actor, skill);
     appendLog({
       type: "action",
       actionType: "single",
-      message: formatSingleAction(actor, target, skill, roll),
+      message: formatSingleAction(actor, target, skill, detail),
       actor: unitSummary(actor),
       actorId: actor.id,
-      skill: { id: skill.id, name: skill.name, emoji: skill.emoji, type: skill.type },
+      skill: skillSummary(skill),
       skillId: skill.id,
-      targets: [{
-        ...unitSummary(target),
-        damage: roll.damage,
-        critical: roll.critical,
-        dodged: roll.dodged,
-        hpBefore,
-        hpAfter: target.hp,
-        defeated: hpBefore > 0 && target.hp === 0,
-      }],
+      targets: [detail],
       targetIds: [target.id],
-      damage: roll.damage,
-      totalDamage: roll.damage,
-      critical: roll.critical,
-      dodged: roll.dodged,
-      reduction: roll.reduction,
+      damage: detail.damage,
+      totalDamage: detail.damage,
+      critical: detail.critical,
+      dodged: detail.dodged,
+      reduction: detail.reduction,
+      hitCount: detail.hitCount,
+      successfulHitCount: detail.successfulHitCount,
+      criticalCount: detail.criticalCount,
+      dodgedCount: detail.dodgedCount,
+      lifestealHealing: detail.lifestealHealing,
+      thornsDamage: detail.thornsDamage,
+      burnAppliedCount: detail.burnAppliedCount,
+      extraStrike: detail.extraStrike,
+      hits: detail.hits,
       retargetedFrom,
     });
     recordDeaths([target]);
+    if (!isAlive(actor)) recordDeaths([actor]);
     if (!isAlive(player)) recordDeaths([player]);
   };
 
   while (!outcome && rounds < config.maxRounds) {
     rounds += 1;
-    const turnOrder = [player, ...enemies]
+    // 本回合中途召唤出的随从不在本回合行动(下一轮才进入行动序)。
+    const turnOrder = [player, ...minions, ...enemies]
       .filter(isAlive)
       .sort((a, b) => compareTurnOrder(a, b, config.speedTieBreaker));
     appendLog({
@@ -1246,6 +1896,51 @@ export function simulateCombat(playerOrOptions, enemiesArg, seedArg, configArg) 
         break;
       }
       if (!isAlive(actor)) continue;
+
+      // 燃烧在单位自己的回合开始时结算;被烧死则跳过其本回合行动。
+      if (actor.burn) {
+        const burnDamage = Math.min(
+          Math.max(1, Math.floor(actor.burn.damagePerTurn)),
+          Math.max(1, Math.ceil(actor.hp)),
+        );
+        actor.hp = clamp(actor.hp - burnDamage, 0, actor.maxHp, 0);
+        actor.burn.remainingTurns -= 1;
+        const expired = actor.burn.remainingTurns <= 0;
+        if (expired) actor.burn = null;
+        if (actor.side === "player") {
+          statistics.playerDamageTaken += burnDamage;
+        } else if (actor.side === "minion") {
+          statistics.minionDamageTaken += burnDamage;
+        } else {
+          statistics.burnDamage += burnDamage;
+          statistics.playerDamageDealt += burnDamage;
+        }
+        appendLog({
+          type: "status",
+          actionType: "burn",
+          message: `🔥 ${actor.name} 被烈焰灼烧，损失 ${burnDamage} 点生命${expired ? "，火焰随之熄灭" : ""}。`,
+          actor: unitSummary(actor),
+          actorId: actor.id,
+          targetIds: [actor.id],
+          damage: burnDamage,
+          expired,
+        });
+        if (!isAlive(actor)) {
+          recordDeaths([actor]);
+          if (!isAlive(player)) {
+            outcome = "defeat";
+            reason = "player-defeated";
+            break;
+          }
+          if (!enemies.some(isAlive)) {
+            outcome = "victory";
+            reason = "all-enemies-defeated";
+            break;
+          }
+          continue;
+        }
+      }
+
       performAction(actor);
 
       if (!isAlive(player)) {
@@ -1316,8 +2011,10 @@ export function simulateCombat(playerOrOptions, enemiesArg, seedArg, configArg) 
 
   const playerResult = publicUnit(player);
   const enemyResults = enemies.map(publicUnit);
+  const minionResults = minions.map(publicUnit);
   const finalState = {
     player: playerResult,
+    minions: minionResults,
     enemies: enemyResults,
     aliveEnemyCount: enemyResults.filter((enemy) => enemy.alive).length,
   };
@@ -1347,7 +2044,13 @@ export function simulateCombat(playerOrOptions, enemiesArg, seedArg, configArg) 
     experience: rewards.experience,
     gold: rewards.gold,
     defeatedRewards,
+    statistics: {
+      ...statistics,
+      rounds,
+      defeatedEnemies: defeatedEnemyIds.length,
+    },
     player: playerResult,
+    minions: minionResults,
     enemies: enemyResults,
     finalState,
     state: finalState,

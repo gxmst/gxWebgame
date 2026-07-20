@@ -1,20 +1,34 @@
 import {
+  applyBattleResult,
   applyDefeat,
   applyPrestige,
   applyVictory,
   clearProgress,
+  createCharacter,
   createDefaultSave,
+  deleteCharacter,
   getDefeatPenalty,
+  getActiveCharacter,
   loadSave,
+  projectActiveCharacter,
   saveSave,
+  setPendingBattle,
   sanitizeSave,
   selectStartingClass,
+  switchCharacter,
+  updateActiveCharacter,
 } from "../js/save.js";
 import { CONFIG } from "../js/config.js";
 import { createEnemyWave, getAvailableFloors, isFloorUnlocked } from "../js/dungeon.js";
 import { generateLoot } from "../js/loot.js";
 import { getExperienceRequirement } from "../js/hero.js";
-import { getSellValue, resolveLootDelivery } from "../js/game.js";
+import {
+  DungeonGame,
+  getSellValue,
+  resolveImportedPendingBattle,
+  resolveLootBatch,
+  resolveLootDelivery,
+} from "../js/game.js";
 
 const assert = (condition, message = "Assertion failed") => {
   if (!condition) throw new Error(message);
@@ -65,6 +79,172 @@ export const tests = [
       assert(migrated.hero.unspentSkillPoints > 0);
       assert(migrated.economy?.shop && migrated.economy.pendingReforge === null);
       assert(migrated.progress.highestUnlockedFloor === 5);
+      assert(migrated.characters.length === 1);
+      assert(migrated.activeCharacterId === migrated.characters[0].id);
+      assert(migrated.hero === migrated.characters[0].hero, "top-level hero must project the active record");
+    },
+  },
+  {
+    name: "v2 single-character saves migrate without losing equipment prestige economy or progress",
+    run() {
+      const legacyWeapon = {
+        id: "legacy-v2-weapon",
+        name: "旧档长剑",
+        emoji: "⚔️",
+        slot: "weapon",
+        rarity: "rare",
+        level: 12,
+        baseStats: { attack: 27 },
+        affixes: [],
+        effect: null,
+        power: 27,
+        seed: "legacy-v2-weapon-seed",
+      };
+      const legacyPackItem = {
+        ...legacyWeapon,
+        id: "legacy-v2-pack",
+        name: "旧档备用剑",
+        seed: "legacy-v2-pack-seed",
+      };
+      const legacy = {
+        version: 2,
+        hero: {
+          id: "legacy-v2-hero",
+          name: "二批老角色",
+          classId: "warrior",
+          classChosen: true,
+          level: 19,
+          experience: 234,
+          totalExperience: 8_765,
+          prestigeCount: 3,
+          baseStats: { strength: 42, agility: 14, intelligence: 2, vitality: 31 },
+          equipment: { weapon: legacyWeapon },
+          inventory: [legacyPackItem],
+          skills: ["basic_attack", "heavy_strike", "whirlwind", "block"],
+          gold: 54_321,
+        },
+        progress: {
+          highestUnlockedFloor: 28,
+          clearedFloors: Array.from({ length: 27 }, (_, index) => index + 1),
+          totalVictories: 90,
+          totalDefeats: 7,
+        },
+        settings: { autoAllocate: false, battleSpeed: 3 },
+        economy: {
+          reforgeCounter: 6,
+          pendingReforge: null,
+          shop: {
+            initialized: true,
+            rotation: 4,
+            lastRefreshVictory: 88,
+            stock: [],
+          },
+        },
+        pendingBattle: { floorId: 28, seed: "legacy-v2-battle", startedAt: 456 },
+      };
+
+      const migrated = sanitizeSave(legacy);
+      const character = migrated.characters[0];
+      assert(migrated.version === CONFIG.save.version && migrated.characters.length === 1);
+      assert(character.name === "二批老角色" && character.hero.level === 19);
+      assert(character.hero.gold === 54_321 && character.hero.prestigeCount === 3);
+      assert(character.hero.equipment.weapon?.id === legacyWeapon.id);
+      assert(character.hero.inventory[0]?.id === legacyPackItem.id);
+      assert(character.progress.highestUnlockedFloor === 28);
+      assert(character.progress.clearedFloors.length === 27);
+      assert(character.progress.totalVictories === 90 && character.progress.totalDefeats === 7);
+      assert(character.economy.reforgeCounter === 6 && character.economy.shop.rotation === 4);
+      assert(character.outdoor?.status === "idle");
+      assert(character.pendingBattle?.characterId === character.id);
+      assert(character.pendingBattle.floorId === 28 && character.pendingBattle.seed === "legacy-v2-battle");
+
+      const storage = new MemoryStorage();
+      assert(saveSave(migrated, storage));
+      const stored = JSON.parse(storage.getItem(CONFIG.save.key));
+      assert(Array.isArray(stored.characters) && stored.activeCharacterId === character.id);
+      assert(!Object.hasOwn(stored, "hero") && !Object.hasOwn(stored, "economy"), "disk schema must be canonical");
+      const loaded = loadSave(storage);
+      assert(loaded.hero.equipment.weapon?.id === legacyWeapon.id);
+      assert(loaded.hero.gold === 54_321 && loaded.progress.highestUnlockedFloor === 28);
+    },
+  },
+  {
+    name: "character creation reuses the initial placeholder and enforces the configured limit",
+    run() {
+      const initial = createDefaultSave();
+      assert(initial.characters.length === 1 && initial.hero.classChosen === false);
+      let created = createCharacter(initial, { classId: "warrior", name: "守门人" });
+      assert(created.ok, created.reason);
+      assert(created.save.characters.length === 1, "first creation should replace the placeholder");
+      assert(created.save.hero.classChosen && created.save.hero.name === "守门人");
+
+      let save = created.save;
+      for (let index = 1; index < CONFIG.save.maxCharacters; index += 1) {
+        created = createCharacter(save, { classId: "mage", name: `法师${index}` });
+        assert(created.ok, created.reason);
+        save = created.save;
+      }
+      assert(save.characters.length === CONFIG.save.maxCharacters);
+      const blocked = createCharacter(save, { classId: "warrior", name: "超额角色" });
+      assert(!blocked.ok && blocked.reason === "character-limit");
+      assert(blocked.save.characters.length === CONFIG.save.maxCharacters);
+    },
+  },
+  {
+    name: "switching deleting and battle ownership keep character state isolated",
+    run() {
+      let result = createCharacter(createDefaultSave(), { classId: "warrior", name: "甲" });
+      let save = updateActiveCharacter(result.save, (character) => ({
+        ...character,
+        hero: { ...character.hero, gold: 111 },
+        progress: { ...character.progress, highestUnlockedFloor: 6 },
+      }));
+      const firstId = save.activeCharacterId;
+
+      result = createCharacter(save, { classId: "mage", name: "乙" });
+      assert(result.ok && result.save.characters.length === 2);
+      save = updateActiveCharacter(result.save, (character) => ({
+        ...character,
+        hero: { ...character.hero, gold: 222 },
+        progress: { ...character.progress, highestUnlockedFloor: 3 },
+      }));
+      const secondId = save.activeCharacterId;
+      save = setPendingBattle(save, { floorId: 3, seed: "second-battle", startedAt: 99 });
+      assert(save.pendingBattle?.characterId === secondId);
+
+      const staleSpread = { ...save, activeCharacterId: firstId };
+      const safelySwitched = sanitizeSave(staleSpread);
+      assert(safelySwitched.hero.gold === 111, "stale top-level projection must not overwrite a new active id");
+
+      const switched = switchCharacter(save, firstId);
+      assert(switched.ok && switched.save.hero.gold === 111);
+      assert(switched.save.progress.highestUnlockedFloor === 6);
+      assert(switched.save.pendingBattle === null, "another character's battle marker must stay hidden");
+      assert(switched.save.characters.find((entry) => entry.id === secondId).pendingBattle?.characterId === secondId);
+
+      const projected = projectActiveCharacter({
+        ...switched.save,
+        economy: { ...switched.save.economy, reforgeCounter: 9 },
+      });
+      assert(projected.economy.reforgeCounter === 9);
+      assert(getActiveCharacter(projected).economy.reforgeCounter === 9);
+
+      const beforeWrongOwner = JSON.stringify(projected);
+      const rejected = applyBattleResult(projected, {
+        characterId: secondId,
+        outcome: "victory",
+        experience: 50,
+        gold: 50,
+        floorId: 1,
+      });
+      assert(JSON.stringify(rejected) === beforeWrongOwner, "stale combat must not settle onto the active character");
+
+      const selectedSecond = switchCharacter(projected, secondId);
+      const deleted = deleteCharacter(selectedSecond.save, secondId);
+      assert(deleted.ok && deleted.save.activeCharacterId === firstId);
+      assert(deleted.save.characters.length === 1 && deleted.save.hero.gold === 111);
+      const refused = deleteCharacter(deleted.save, firstId);
+      assert(!refused.ok && refused.reason === "last-character");
     },
   },
   {
@@ -213,6 +393,59 @@ export const tests = [
       assert(delivery.save.hero.inventory.map((item) => item.id).join(",") === beforeIds.join(","));
       assert(delivery.save.hero.gold === delivery.salvageGold);
       assert(save.hero.gold === 0, "overflow handling must not mutate the source save");
+    },
+  },
+  {
+    name: "multi-item drops reserve inventory slots and salvage only overflow",
+    run() {
+      const save = createDefaultSave();
+      save.hero.inventory = Array.from({ length: CONFIG.save.maxInventoryItems - 1 }, (_, index) =>
+        generateLoot(1, `nearly-full-${index}`, save.hero));
+      const first = generateLoot(5, "batch-first", save.hero);
+      const second = generateLoot(5, "batch-second", save.hero);
+      const result = resolveLootBatch(save, [first, second]);
+      assert(result.storedItems.length === 1, "one remaining slot should store exactly one drop");
+      assert(result.salvagedItems.length === 1, "the second drop should be salvaged");
+      assert(result.salvageGold === getSellValue(second));
+      assert(result.save.hero.inventory.length === CONFIG.save.maxInventoryItems - 1,
+        "delivery must not mutate inventory before applyVictory");
+      assert(result.save.hero.gold === getSellValue(second));
+    },
+  },
+  {
+    name: "imported pending battles settle immediately as retreat",
+    run() {
+      const save = createDefaultSave();
+      save.hero.gold = 100;
+      save.pendingBattle = {
+        floorId: 4,
+        characterId: save.activeCharacterId,
+        seed: "import-pending",
+        startedAt: 1,
+      };
+      const result = resolveImportedPendingBattle(save);
+      assert(result.interrupted?.floorId === 4);
+      assert(result.save.pendingBattle === null);
+      assert(result.save.progress.totalDefeats === 1);
+      assert(result.save.hero.gold < 100, "retreat penalty should apply during import");
+      assert(save.pendingBattle?.floorId === 4, "import settlement must not mutate source save");
+    },
+  },
+  {
+    name: "locked equipment cannot be sold through the game handler",
+    run() {
+      const save = createDefaultSave();
+      const item = generateLoot(2, "locked-sale", save.hero);
+      save.hero.inventory = [{ ...item, locked: true }];
+      const game = Object.create(DungeonGame.prototype);
+      game.save = save;
+      game.battle = null;
+      game.ui = { showToast() {} };
+      game.persist = () => { throw new Error("locked item should return before persist"); };
+      game.render = () => {};
+      const before = JSON.stringify(save);
+      game.sellItem(item.id);
+      assert(JSON.stringify(save) === before, "locked item must remain untouched");
     },
   },
   {
