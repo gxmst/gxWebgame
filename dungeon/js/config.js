@@ -1093,7 +1093,9 @@ export const CONFIG = deepFreeze({
         hpPerLevel: 5,
         baseAttack: 6,
         attackPerLevel: 2.1,
-        attackPerAttribute: { strength: 0.1, agility: 0.2, intelligence: 2.15, vitality: 0 },
+        // 平衡:死灵定位是"低成长本体 + 骷髅军团补伤",智力系数从 2.15 下调到 1.8,
+        // 让本体输出真正低于法师(2.25),战力主要靠召唤物承伤与叠加,符合设计定位。
+        attackPerAttribute: { strength: 0.1, agility: 0.2, intelligence: 1.8, vitality: 0 },
         baseDefense: 1.2,
         defensePerVitality: 0.6,
         defensePerStrength: 0.1,
