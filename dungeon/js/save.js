@@ -167,6 +167,11 @@ export function sanitizeSave(candidate) {
         rawSettings.soundEnabled ?? source.soundEnabled,
         true,
       ),
+      // 世界地图表现偏好（map=SVG 沉浸 / list=列表兜底），与进度无关。
+      worldMapViewMode: rawSettings.worldMapViewMode === "list"
+        || source.worldMapViewMode === "list"
+        ? "list"
+        : "map",
     },
   });
 }
@@ -455,7 +460,12 @@ export function clearProgress(save) {
 }
 
 function createDefaultSettings() {
-  return { autoAllocate: true, battleSpeed: 1, soundEnabled: true };
+  return {
+    autoAllocate: true,
+    battleSpeed: 1,
+    soundEnabled: true,
+    worldMapViewMode: "map",
+  };
 }
 
 export function createDefaultProgress() {

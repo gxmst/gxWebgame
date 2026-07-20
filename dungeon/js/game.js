@@ -126,6 +126,7 @@ class DungeonGame {
       toggleSound: () => this.toggleSound(),
       enterWorldNode: (nodeId) => this.enterWorldNode(nodeId),
       returnToWorldMap: () => this.returnToWorldMap(),
+      setWorldMapViewMode: (mode) => this.setWorldMapViewMode(mode),
       openTownShop: () => this.openTownShop(),
       openTownInventory: () => this.openTownInventory(),
       startOutdoor: () => this.startOutdoor(),
@@ -259,7 +260,10 @@ class DungeonGame {
         highestFloor: highest,
         outdoorWaves,
       },
-      settings: { soundEnabled: this.save.settings.soundEnabled !== false },
+      settings: {
+        soundEnabled: this.save.settings.soundEnabled !== false,
+        worldMapViewMode: this.save.settings.worldMapViewMode === "list" ? "list" : "map",
+      },
       classes: Object.values(CONFIG.classes),
     };
   }
@@ -337,6 +341,22 @@ class DungeonGame {
     this.persist();
     this.ui.returnToDungeon("map");
     this.render();
+  }
+
+  setWorldMapViewMode(mode) {
+    const next = mode === "list" ? "list" : "map";
+    const previous = this.save.settings?.worldMapViewMode === "list" ? "list" : "map";
+    // 始终先立刻切换 UI，避免 persist/render 失败时用户感觉“点了没反应”。
+    this.ui.applyWorldMapViewMode?.(next);
+    if (previous === next) return;
+    this.save.settings = {
+      ...this.save.settings,
+      worldMapViewMode: next,
+    };
+    this.persist();
+    this.render();
+    this.ui.applyWorldMapViewMode?.(next);
+    this.ui.showToast(next === "list" ? "已切换为列表视图。" : "已切换为地图视图。");
   }
 
   openTownShop() {

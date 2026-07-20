@@ -246,7 +246,7 @@
             </div>
           </header>
 
-          <!-- 世界地图：导航枢纽 -->
+          <!-- 世界地图：SVG 沉浸视图 + 列表降级 -->
           <section class="world-map-view" data-world-map-view aria-labelledby="world-map-title">
             <div class="world-map-summary">
               <div>
@@ -254,12 +254,38 @@
                 <h3 id="world-map-title">世界地图</h3>
                 <p data-world-map-blurb>点击节点进入城镇补给、野外刷怪或地牢挑战。</p>
               </div>
-              <dl class="world-map-meta">
-                <div><dt>世界等级</dt><dd data-world-map-level>1</dd></div>
-                <div><dt>当前区域</dt><dd data-world-map-region>腐化林地</dd></div>
-              </dl>
+              <div class="world-map-summary-aside">
+                <dl class="world-map-meta">
+                  <div><dt>世界等级</dt><dd data-world-map-level>1</dd></div>
+                  <div><dt>当前区域</dt><dd data-world-map-region>腐化林地</dd></div>
+                </dl>
+                <div class="world-map-view-toggle" role="group" aria-label="地图视图切换">
+                  <button type="button" class="is-active" data-world-map-mode="map" aria-pressed="true" title="SVG 地图视图">
+                    <span aria-hidden="true">🗺️</span> 地图
+                  </button>
+                  <button type="button" data-world-map-mode="list" aria-pressed="false" title="列表视图（无障碍/窄屏兜底）">
+                    <span aria-hidden="true">☰</span> 列表
+                  </button>
+                </div>
+              </div>
             </div>
-            <div class="world-map-board" data-world-map-board aria-label="世界区域与节点"></div>
+            <div class="world-map-stage" data-world-map-stage data-view-mode="map">
+              <div class="world-map-svg-host" data-world-map-svg-host aria-label="世界地图画布">
+                <div class="world-map-svg-mount" data-world-map-svg></div>
+              </div>
+              <div class="world-map-board" data-world-map-board aria-label="世界区域与节点列表"></div>
+              <aside class="world-map-card" data-world-map-card hidden aria-live="polite">
+                <div class="world-map-card-main">
+                  <p class="world-map-card-kicker" data-world-map-card-kicker>地点</p>
+                  <h4 data-world-map-card-title>—</h4>
+                  <p class="world-map-card-desc" data-world-map-card-desc></p>
+                  <p class="world-map-card-meta" data-world-map-card-meta></p>
+                </div>
+                <button class="compact-button world-map-card-enter" type="button" data-world-map-card-enter hidden>
+                  进入
+                </button>
+              </aside>
+            </div>
             <p class="world-map-legend">
               <span><i aria-hidden="true">🏰</i> 城镇</span>
               <span><i aria-hidden="true">🌲</i> 野外</span>

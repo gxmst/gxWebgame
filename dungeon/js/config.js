@@ -902,7 +902,7 @@ const PENALTIES = {
 export const CONFIG = deepFreeze({
   game: {
     title: "文字地牢",
-    version: "0.6.0",
+    version: "0.6.1",
   },
 
   save: {
@@ -1299,13 +1299,58 @@ export const CONFIG = deepFreeze({
   },
 
   /**
-   * 世界地图（第一批：骨架 + 腐化林地）。
-   * 世界等级与 highestUnlockedFloor 对齐；新区解锁留给第二批区域 Boss。
-   * x/y 为 0–100 的相对坐标，供节点图布局。
+   * 世界地图（骨架 + 腐化林地 + SVG 沉浸布局）。
+   * 世界等级与 highestUnlockedFloor 对齐；新区解锁留给后续区域 Boss。
+   * 节点 x/y 为列表视图相对坐标；mapX/mapY 为 SVG viewBox 坐标（缺省回退 x/y 映射）。
+   * map 段仅为表现层：区域色块路径、连线、装饰——不进入逻辑判断。
    */
   world: {
     starterRegionId: "forest",
     regionOrder: ["forest", "desert", "abyss", "void"],
+    map: {
+      // 约 16:9 画布；可玩区（林地）占左侧大半，锁定区缩在右侧，避免「地图太空/比例怪」。
+      viewBox: [0, 0, 1000, 560],
+      edges: [
+        ["forest_town", "forest_wild_path"],
+        ["forest_town", "forest_wild_vale"],
+        ["forest_wild_path", "forest_dungeon"],
+        ["forest_wild_vale", "forest_dungeon"],
+      ],
+      regionShapes: {
+        // 林地：主舞台，约占画布 55% 宽
+        forest: {
+          path: "M30,50 C120,18 260,12 400,40 C520,68 580,140 575,250 C570,360 500,460 360,500 C220,535 90,500 45,380 C15,280 10,140 30,50 Z",
+          fill: "#1f3a28",
+          stroke: "#3d6b45",
+          label: { x: 260, y: 70 },
+        },
+        // 右侧未解锁区收成竖条，不抢主视野
+        desert: {
+          path: "M590,60 C680,35 760,55 790,130 C815,200 800,300 760,360 C720,415 640,420 600,360 C565,300 555,160 590,60 Z",
+          fill: "#4a3a22",
+          stroke: "#8a6a3a",
+          label: { x: 690, y: 210 },
+        },
+        abyss: {
+          path: "M780,150 C850,120 920,145 945,220 C965,285 950,370 900,420 C850,465 780,450 755,380 C735,320 740,200 780,150 Z",
+          fill: "#3a1818",
+          stroke: "#7a3030",
+          label: { x: 860, y: 290 },
+        },
+        void: {
+          path: "M900,40 C955,20 990,55 995,120 C998,175 970,220 930,235 C895,248 860,210 855,150 C850,95 870,55 900,40 Z",
+          fill: "#1a1228",
+          stroke: "#4a3870",
+          label: { x: 930, y: 120 },
+        },
+      },
+      decorations: [
+        { emoji: "🌿", x: 100, y: 420 },
+        { emoji: "🪨", x: 420, y: 460 },
+        { emoji: "💀", x: 640, y: 400 },
+        { emoji: "🔥", x: 880, y: 380 },
+      ],
+    },
     regions: {
       forest: {
         id: "forest",
@@ -1325,6 +1370,8 @@ export const CONFIG = deepFreeze({
             flavor: "「只要炉火不灭，我们还能守住这片土地。」",
             x: 22,
             y: 48,
+            mapX: 200,
+            mapY: 300,
           },
           {
             id: "forest_wild_path",
@@ -1334,6 +1381,8 @@ export const CONFIG = deepFreeze({
             description: "狼嚎回荡的林间小道，适合补给与刷取装备。",
             x: 48,
             y: 32,
+            mapX: 360,
+            mapY: 150,
           },
           {
             id: "forest_wild_vale",
@@ -1343,6 +1392,8 @@ export const CONFIG = deepFreeze({
             description: "蛛丝缠绕的谷地，魔物更为密集。",
             x: 52,
             y: 68,
+            mapX: 340,
+            mapY: 420,
           },
           {
             id: "forest_dungeon",
@@ -1352,10 +1403,12 @@ export const CONFIG = deepFreeze({
             description: "深入地下的遗迹入口。逐层推进，挑战更强的守护者。",
             x: 78,
             y: 50,
+            mapX: 490,
+            mapY: 280,
           },
         ],
       },
-      // 以下区域第一批仅作地图占位，灰显不可进入；第二批补主题与 Boss 解锁。
+      // 以下区域仅作地图占位，迷雾遮罩；解锁逻辑留给后续批次。
       desert: {
         id: "desert",
         name: "枯骨荒漠",

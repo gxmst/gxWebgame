@@ -1,6 +1,11 @@
 import { getReforgeCost, getSellValue, getShopPrice } from "./economy.js";
 import { getAffixRollQuality } from "./loot.js";
 import { GameAudio } from "./audio.js";
+import {
+  buildWorldMapModel,
+  mountWorldMapSvg,
+  sanitizeWorldMapViewMode,
+} from "./world-map-view.js";
 
 const SLOT_META = {
   weapon: { label: "武器", icon: "🗡️" },
@@ -59,6 +64,9 @@ export class DungeonUI {
     this.reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
     this.audio = new GameAudio();
     this.dom = collectDom();
+    this.worldMapViewMode = "map";
+    this.worldMapMount = null;
+    this.selectedMapNodeId = null;
     this.bindEvents();
   }
 
@@ -161,6 +169,18 @@ export class DungeonUI {
 
       if (event.target.closest("[data-world-back]")) {
         this.handlers.returnToWorldMap?.();
+        return;
+      }
+
+      const mapModeButton = event.target.closest("[data-world-map-mode]");
+      if (mapModeButton) {
+        this.handlers.setWorldMapViewMode?.(mapModeButton.dataset.worldMapMode);
+        return;
+      }
+
+      if (event.target.closest("[data-world-map-card-enter]")) {
+        const nodeId = this.selectedMapNodeId || this.dom.worldMapCardEnter?.dataset.nodeId;
+        if (nodeId) this.handlers.enterWorldNode?.(nodeId);
         return;
       }
 
@@ -680,6 +700,9 @@ export class DungeonUI {
     const regions = Array.isArray(world.regions) ? world.regions : [];
     const scene = model.worldScene || "map";
     const currentNode = world.currentNode || null;
+    this.worldMapViewMode = sanitizeWorldMapViewMode(
+      model.settings?.worldMapViewMode ?? this.worldMapViewMode,
+    );
 
     setText(this.dom.worldMapLevel, world.worldLevel ?? model.worldLevel ?? 1);
     setText(
@@ -689,12 +712,20 @@ export class DungeonUI {
     setText(
       this.dom.worldMapBlurb,
       scene === "map"
-        ? "点击节点进入城镇补给、野外刷怪或地牢挑战。"
+        ? (this.worldMapViewMode === "list"
+          ? "列表视图：点击节点进入地点。可随时切回地图视图。"
+          : "在羊皮纸地图上点击节点，进入城镇、野外或副本。")
         : (currentNode?.description || "探索灰烬世界。"),
     );
 
+    this.renderWorldMapModeToggle(this.worldMapViewMode);
+
     if (this.dom.worldMapBoard) {
       this.dom.worldMapBoard.innerHTML = regions.map((region) => renderWorldRegionCard(region)).join("");
+    }
+
+    if (scene === "map") {
+      this.renderImmersiveWorldMap(world);
     }
 
     if (currentNode?.type === "town" || scene === "town") {
@@ -718,6 +749,107 @@ export class DungeonUI {
     }
 
     this.applyWorldScene(scene, { battleActive: this.dom.battleView && !this.dom.battleView.hidden });
+    // 场景切换之后再套视图模式，避免被其它 hidden 逻辑冲掉。
+    if (scene === "map") {
+      this.applyWorldMapViewMode(this.worldMapViewMode);
+    }
+  }
+
+  renderWorldMapModeToggle(mode = "map") {
+    const selected = sanitizeWorldMapViewMode(mode);
+    for (const button of document.querySelectorAll("[data-world-map-mode]")) {
+      const active = button.dataset.worldMapMode === selected;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    }
+  }
+
+  applyWorldMapViewMode(mode = "map") {
+    const selected = sanitizeWorldMapViewMode(mode);
+    this.worldMapViewMode = selected;
+    const stage = this.dom.worldMapStage
+      || document.querySelector("[data-world-map-stage]");
+    if (stage) {
+      stage.dataset.viewMode = selected;
+      stage.classList.toggle("is-map-mode", selected === "map");
+      stage.classList.toggle("is-list-mode", selected === "list");
+    }
+    // 兼容：仍同步 hidden，但主要靠 stage 的 CSS 规则切换
+    if (this.dom.worldMapSvgHost) {
+      this.dom.worldMapSvgHost.hidden = selected !== "map";
+    }
+    if (this.dom.worldMapBoard) {
+      this.dom.worldMapBoard.hidden = selected !== "list";
+    }
+    if (selected !== "map") this.hideWorldMapCard();
+    this.renderWorldMapModeToggle(selected);
+  }
+
+  renderImmersiveWorldMap(world = {}) {
+    if (!this.dom.worldMapSvg) return;
+    if (this.worldMapMount?.destroy) this.worldMapMount.destroy();
+    const mapModel = buildWorldMapModel(world.regions || [], world);
+    this.worldMapMount = mountWorldMapSvg(this.dom.worldMapSvg, mapModel, {
+      reducedMotion: this.reducedMotion,
+    });
+    this.bindWorldMapHover(this.worldMapMount?.root);
+  }
+
+  bindWorldMapHover(root) {
+    if (!root || root.dataset.wmHoverBound === "1") return;
+    root.dataset.wmHoverBound = "1";
+    const showFromTarget = (target) => {
+      const node = target?.closest?.("[data-world-node]");
+      if (!node || !root.contains(node)) return;
+      this.showWorldMapCard({
+        id: node.dataset.worldNode,
+        name: node.dataset.nodeName,
+        type: node.dataset.nodeType,
+        description: node.dataset.nodeDesc,
+        unlocked: node.dataset.nodeUnlocked === "1",
+        region: node.dataset.nodeRegion,
+        range: node.dataset.nodeRange,
+      });
+    };
+    root.addEventListener("pointerover", (event) => showFromTarget(event.target));
+    root.addEventListener("focusin", (event) => showFromTarget(event.target));
+    root.addEventListener("pointerout", (event) => {
+      const next = event.relatedTarget;
+      if (next && root.contains(next)) return;
+      // 保留卡片，直到点别处或切换视图；避免一移开就丢信息。
+    });
+  }
+
+  showWorldMapCard(node = {}) {
+    if (!this.dom.worldMapCard) return;
+    this.selectedMapNodeId = node.id || null;
+    const typeLabel = node.type === "town"
+      ? "城镇 · 安全区"
+      : node.type === "outdoor"
+        ? "野外 · 刷怪"
+        : node.type === "dungeon"
+          ? "副本 · 深入"
+          : "地点";
+    setText(this.dom.worldMapCardKicker, typeLabel);
+    setText(this.dom.worldMapCardTitle, node.name || "—");
+    setText(this.dom.worldMapCardDesc, node.description || "");
+    const metaParts = [
+      node.region,
+      node.range,
+      node.unlocked ? "可进入" : "未解锁",
+    ].filter(Boolean);
+    setText(this.dom.worldMapCardMeta, metaParts.join(" · "));
+    if (this.dom.worldMapCardEnter) {
+      this.dom.worldMapCardEnter.hidden = !node.unlocked;
+      this.dom.worldMapCardEnter.dataset.nodeId = node.id || "";
+    }
+    this.dom.worldMapCard.hidden = false;
+  }
+
+  hideWorldMapCard() {
+    if (!this.dom.worldMapCard) return;
+    this.dom.worldMapCard.hidden = true;
+    this.selectedMapNodeId = null;
   }
 
   applyWorldScene(scene = "map", options = {}) {
@@ -1072,7 +1204,7 @@ export class DungeonUI {
   setCharacterControlsDisabled(disabled) {
     if (this.dom.autoAllocate) this.dom.autoAllocate.disabled = disabled;
     for (const button of document.querySelectorAll(
-      "[data-allocate-stat], [data-unequip-slot], [data-equip-id], [data-sell-id], [data-reforge-id], [data-upgrade-skill], [data-reset-skills], [data-prestige], [data-character-manage], [data-class-change], [data-shop-refresh], [data-buy-listing], [data-world-node], [data-world-back], [data-town-shop], [data-town-inventory], [data-town-characters], [data-start-outdoor]",
+      "[data-allocate-stat], [data-unequip-slot], [data-equip-id], [data-sell-id], [data-reforge-id], [data-upgrade-skill], [data-reset-skills], [data-prestige], [data-character-manage], [data-class-change], [data-shop-refresh], [data-buy-listing], [data-world-node], [data-world-back], [data-world-map-mode], [data-world-map-card-enter], [data-town-shop], [data-town-inventory], [data-town-characters], [data-start-outdoor]",
     )) {
       button.disabled = disabled;
     }
@@ -1234,7 +1366,16 @@ function collectDom() {
     sceneKicker: hook("scene-kicker"),
     sceneTitle: hook("scene-title"),
     worldMapView: hook("world-map-view"),
+    worldMapStage: hook("world-map-stage"),
     worldMapBoard: hook("world-map-board"),
+    worldMapSvg: hook("world-map-svg"),
+    worldMapSvgHost: hook("world-map-svg-host"),
+    worldMapCard: hook("world-map-card"),
+    worldMapCardKicker: hook("world-map-card-kicker"),
+    worldMapCardTitle: hook("world-map-card-title"),
+    worldMapCardDesc: hook("world-map-card-desc"),
+    worldMapCardMeta: hook("world-map-card-meta"),
+    worldMapCardEnter: hook("world-map-card-enter"),
     worldMapLevel: hook("world-map-level"),
     worldMapRegion: hook("world-map-region"),
     worldMapBlurb: hook("world-map-blurb"),

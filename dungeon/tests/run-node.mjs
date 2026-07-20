@@ -10,8 +10,9 @@ import { tests as effects } from "./effects.test.js";
 import { tests as classes } from "./classes.test.js";
 import { tests as qol } from "./qol.test.js";
 import { tests as world } from "./world.test.js";
+import { tests as worldMapView } from "./world-map-view.test.js";
 
-const tests = [...combat, ...save, ...skills, ...hero, ...dungeon, ...economy, ...outdoor, ...loot, ...effects, ...classes, ...qol, ...world];
+const tests = [...combat, ...save, ...skills, ...hero, ...dungeon, ...economy, ...outdoor, ...loot, ...effects, ...classes, ...qol, ...world, ...worldMapView];
 let passed = 0;
 
 for (const test of tests) {
