@@ -1,4 +1,4 @@
-import { CONFIG, RARITY_IDS, createSeededRng } from "./config.js";
+import { CONFIG, EQUIPMENT_SLOT_IDS, RARITY_IDS, createSeededRng } from "./config.js";
 import { simulateCombat } from "./combat.js";
 import {
   createEnemyWave,
@@ -14,6 +14,7 @@ import {
   getHeroStats,
   getLevelProgress,
   getPower,
+  getEquipUpgradeDelta,
   unequipItem,
 } from "./hero.js";
 import { generateLoot } from "./loot.js";
@@ -58,6 +59,13 @@ import {
   updateActiveCharacter,
   setPendingBattle,
 } from "./save.js";
+import {
+  enterNode,
+  getNode,
+  getWorldLevel,
+  leaveToMap,
+  listRegions,
+} from "./world.js";
 import { DungeonUI } from "./ui.js";
 
 const BASE_LOG_DELAY = 175;
@@ -72,8 +80,16 @@ class DungeonGame {
       this.save.progress.highestUnlockedFloor,
     );
     this.battle = null;
-    this.adventureMode = "dungeon";
     this.outdoorRun = null;
+    // 刷新后按存档 currentNodeId 恢复场景；无节点时回到世界地图。
+    const restoredNode = this.save.world?.currentNodeId
+      ? getNode(this.save.world.currentNodeId, CONFIG)
+      : null;
+    this.worldScene = restoredNode
+      ? this.sceneFromNodeType(restoredNode.type)
+      : "map";
+    this.adventureMode = this.worldScene === "outdoor" ? "outdoor" : "dungeon";
+    if (this.worldScene === "map") this.adventureMode = "map";
     this.interruptedBattle = this.save.pendingBattle;
     this.ui = new DungeonUI({
       selectFloor: (floorId) => this.selectFloor(floorId),
@@ -105,9 +121,13 @@ class DungeonGame {
       exportSave: () => this.exportSave(),
       importSave: (text) => this.importSave(text),
       bulkSell: (rarity) => this.bulkSell(rarity),
+      equipBest: () => this.equipBestGear(),
       toggleLock: (itemId) => this.toggleLock(itemId),
       toggleSound: () => this.toggleSound(),
-      setAdventureMode: (mode) => this.setAdventureMode(mode),
+      enterWorldNode: (nodeId) => this.enterWorldNode(nodeId),
+      returnToWorldMap: () => this.returnToWorldMap(),
+      openTownShop: () => this.openTownShop(),
+      openTownInventory: () => this.openTownInventory(),
       startOutdoor: () => this.startOutdoor(),
       stopOutdoor: () => this.stopOutdoor(),
     });
@@ -195,7 +215,12 @@ class DungeonGame {
         power: getPower(hero),
         levelProgress: getLevelProgress(hero),
         equipment: hero.equipment,
-        inventory: hero.inventory,
+        // 给每件背包装备标注"穿上后战力变化",供 UI 显示升级推荐徽章。
+        // 用纯函数影子模拟,自动考虑职业(如力量装对法师收益低)。
+        inventory: hero.inventory.map((item) => ({
+          ...item,
+          upgradeDelta: getEquipUpgradeDelta(hero, item),
+        })),
         gold: hero.gold,
         autoAllocate: this.save.settings.autoAllocate,
         classMeta,
@@ -219,6 +244,9 @@ class DungeonGame {
       activeCharacterId: this.save.activeCharacterId,
       characterLimit: getCharacterLimit(),
       adventureMode: this.adventureMode,
+      worldScene: this.worldScene,
+      worldLevel: getWorldLevel(this.save),
+      world: this.buildWorldViewModel(),
       outdoor: {
         ...outdoorSaved,
         targetFloor: outdoorFloor,
@@ -236,23 +264,104 @@ class DungeonGame {
     };
   }
 
+  buildWorldViewModel() {
+    const world = this.save.world ?? {};
+    const regions = listRegions(this.save, CONFIG);
+    const currentNode = world.currentNodeId
+      ? getNode(world.currentNodeId, CONFIG)
+      : null;
+    const currentRegion = regions.find((region) => region.id === world.currentRegionId)
+      ?? regions.find((region) => region.unlocked)
+      ?? null;
+    return {
+      ...world,
+      worldLevel: getWorldLevel(this.save),
+      regions,
+      currentNode,
+      currentRegionName: currentRegion?.name ?? "—",
+      currentRegionEmoji: currentRegion?.emoji ?? "◆",
+    };
+  }
+
+  sceneFromNodeType(type) {
+    if (type === "town") return "town";
+    if (type === "outdoor") return "outdoor";
+    if (type === "dungeon") return "dungeon";
+    return "map";
+  }
+
+  enterWorldNode(nodeId) {
+    if (this.battle || this.outdoorRun) {
+      this.ui.showToast("请先结束当前战斗。", "error");
+      return;
+    }
+    if (!this.save.hero.classChosen) {
+      this.ui.showCharacterManager?.(this.buildViewModel());
+      this.ui.showToast("先创建一个角色，再探索世界。", "error");
+      return;
+    }
+    const result = enterNode(this.save, nodeId, CONFIG);
+    if (!result.ok) {
+      this.ui.showToast(
+        result.reason === "region-locked" ? "该区域尚未解锁。" : "无法进入该地点。",
+        "error",
+      );
+      return;
+    }
+    this.save = updateActiveCharacter(this.save, (active) => ({
+      ...active,
+      world: result.world,
+    }));
+    this.worldScene = this.sceneFromNodeType(result.node.type);
+    this.adventureMode = this.worldScene === "outdoor" ? "outdoor" : "dungeon";
+    this.persist();
+    this.ui.activatePanel?.("dungeon");
+    this.render();
+  }
+
+  returnToWorldMap() {
+    if (this.battle && !this.battle.settled) {
+      this.ui.showToast("战斗中无法返回地图。", "error");
+      return;
+    }
+    if (this.outdoorRun) {
+      this.ui.showToast("请先停止并结算野外漫步。", "error");
+      return;
+    }
+    this.save = updateActiveCharacter(this.save, (active) => ({
+      ...active,
+      world: leaveToMap(active.world ?? this.save.world, CONFIG),
+    }));
+    this.worldScene = "map";
+    this.adventureMode = "map";
+    this.persist();
+    this.ui.returnToDungeon("map");
+    this.render();
+  }
+
+  openTownShop() {
+    if (this.battle || this.outdoorRun) return;
+    this.ui.activatePanel?.("inventory");
+    this.ui.activateInventoryTab?.("shop");
+    this.ui.showToast("已打开商店。补给后可返回城镇或地图。");
+  }
+
+  openTownInventory() {
+    if (this.battle || this.outdoorRun) return;
+    this.ui.activatePanel?.("inventory");
+    this.ui.activateInventoryTab?.("inventory");
+    this.ui.showToast("已打开背包。可在此装备、出售或重铸。");
+  }
+
   render() {
     this.ui.render(this.buildViewModel());
   }
 
   selectFloor(floorId) {
-    if (this.battle || this.adventureMode === "outdoor") return;
+    if (this.battle || this.worldScene === "outdoor" || this.adventureMode === "outdoor") return;
     const floor = getFloor(floorId);
     if (!floor || !isFloorUnlocked(this.save, floor.id)) return;
     this.selectedFloorId = floor.id;
-    this.render();
-  }
-
-  setAdventureMode(mode) {
-    if (this.battle || this.outdoorRun) return;
-    const next = mode === "outdoor" ? "outdoor" : "dungeon";
-    this.adventureMode = next;
-    this.ui.returnToDungeon(next);
     this.render();
   }
 
@@ -279,9 +388,11 @@ class DungeonGame {
     }
     this.save = ensureShop(projectActiveCharacter(result.save)).save;
     this.selectedFloorId = CONFIG.dungeon.minFloor;
-    this.adventureMode = "dungeon";
+    this.adventureMode = "map";
+    this.worldScene = "map";
     const saved = this.persist();
     this.ui.closeCharacterManager?.();
+    this.ui.returnToDungeon("map");
     this.render();
     if (saved) this.ui.showToast(`已创建${CONFIG.classes[classId]?.name ?? "新角色"}角色。`, "reward");
   }
@@ -305,9 +416,11 @@ class DungeonGame {
       getFloorCap(this.save),
       this.save.progress.highestUnlockedFloor,
     );
-    this.adventureMode = "dungeon";
+    this.adventureMode = "map";
+    this.worldScene = "map";
     const saved = this.persist();
     this.ui.closeCharacterManager?.();
+    this.ui.returnToDungeon("map");
     this.render();
     if (saved) this.ui.showToast(`已切换至「${this.save.hero.name}」。`, "reward");
     const pendingReforge = getPendingReforge(this.save);
@@ -346,6 +459,8 @@ class DungeonGame {
       this.ui.showToast("先选择职业，再开始远征。", "error");
       return;
     }
+    this.worldScene = "dungeon";
+    this.adventureMode = "dungeon";
     const floor = this.selectedFloor;
     if (!isFloorUnlocked(this.save, floor.id)) {
       this.ui.showToast(
@@ -418,6 +533,7 @@ class DungeonGame {
       return;
     }
     this.adventureMode = "outdoor";
+    this.worldScene = "outdoor";
     const seed = `${Date.now()}|${this.save.activeCharacterId}|outdoor`;
     this.outdoorRun = {
       state: startOutdoorRun(this.save.outdoor, seed),
@@ -572,6 +688,7 @@ class DungeonGame {
     this.outdoorRun = null;
     this.battle = null;
     this.adventureMode = "outdoor";
+    this.worldScene = "outdoor";
     this.ui.returnToDungeon("outdoor");
     this.render();
     const saved = this.persist({ silent: true });
@@ -1096,7 +1213,10 @@ class DungeonGame {
     if (this.battle && !this.battle.settled) return;
     const outdoor = this.ui.lastResult?.outdoor === true;
     this.battle = null;
-    this.ui.returnToDungeon(outdoor ? "outdoor" : "dungeon");
+    const scene = outdoor ? "outdoor" : (this.worldScene === "dungeon" ? "dungeon" : "dungeon");
+    this.worldScene = scene;
+    this.adventureMode = outdoor ? "outdoor" : "dungeon";
+    this.ui.returnToDungeon(scene);
     this.render();
     if (!outdoor) this.ui.focusDungeonEntry();
   }
@@ -1157,12 +1277,13 @@ class DungeonGame {
       getFloorCap(this.save),
       this.save.progress.highestUnlockedFloor,
     );
-    this.adventureMode = "dungeon";
+    this.adventureMode = "map";
+    this.worldScene = "map";
     this.battle = null;
     this.outdoorRun = null;
     const saved = this.persist();
     this.ui.closeResult();
-    this.ui.returnToDungeon("dungeon");
+    this.ui.returnToDungeon("map");
     this.render();
     if (saved) {
       const message = interrupted
@@ -1204,6 +1325,52 @@ class DungeonGame {
     const saved = this.persist();
     this.render();
     if (saved) this.ui.showToast(`已出售 ${targets.length} 件装备，获得 ${total} 枚金币。`, "reward");
+  }
+
+  /** 一键装备最强:逐部位挑选"装上后战力提升最大"的背包装备并穿上。 */
+  equipBestGear() {
+    if (this.battle && !this.battle.settled) {
+      this.ui.showToast("战斗中无法更换装备。", "error");
+      return;
+    }
+    if (getPendingReforge(this.save)) {
+      this.ui.showToast("请先决定是否采用本次重铸词条。", "error");
+      return;
+    }
+    let changed = 0;
+    // 反复扫描:每轮为每个部位找收益最高的升级件穿上,直到没有可提升的为止。
+    // 逐件调用纯函数 equipItem,天然按职业加权,也自动处理背包容量。
+    let keepGoing = true;
+    while (keepGoing) {
+      keepGoing = false;
+      for (const slot of EQUIPMENT_SLOT_IDS) {
+        let bestItem = null;
+        let bestDelta = 0;
+        for (const item of this.save.hero.inventory) {
+          if (item.slot !== slot) continue;
+          const delta = getEquipUpgradeDelta(this.save.hero, item);
+          if (delta > bestDelta) {
+            bestDelta = delta;
+            bestItem = item;
+          }
+        }
+        if (bestItem) {
+          const next = equipItem(this.save.hero, bestItem);
+          if (next.equipment[slot]?.id === bestItem.id) {
+            this.save.hero = next;
+            changed += 1;
+            keepGoing = true;
+          }
+        }
+      }
+    }
+    if (changed === 0) {
+      this.ui.showToast("当前装备已是背包里的最优组合。");
+      return;
+    }
+    const saved = this.persist();
+    this.render();
+    if (saved) this.ui.showToast(`已自动装备 ${changed} 件更强的装备。`, "reward");
   }
 
   /** 锁定/解锁装备(背包或已装备),锁定后不可被出售。 */
@@ -1257,10 +1424,11 @@ class DungeonGame {
     this.selectedFloorId = CONFIG.dungeon.minFloor;
     this.battle = null;
     this.outdoorRun = null;
-    this.adventureMode = "dungeon";
+    this.adventureMode = "map";
+    this.worldScene = "map";
     const saved = this.persist();
     this.ui.closeResult();
-    this.ui.returnToDungeon();
+    this.ui.returnToDungeon("map");
     this.render();
     this.ui.showCharacterManager?.(this.buildViewModel());
     if (saved) this.ui.showToast("地牢存档已重置。");

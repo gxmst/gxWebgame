@@ -902,7 +902,7 @@ const PENALTIES = {
 export const CONFIG = deepFreeze({
   game: {
     title: "文字地牢",
-    version: "0.5.0",
+    version: "0.6.0",
   },
 
   save: {
@@ -1296,6 +1296,97 @@ export const CONFIG = deepFreeze({
     materialsEnabled: false,
     materialDropChancePerEnemy: 0,
     materialId: "wild_essence",
+  },
+
+  /**
+   * 世界地图（第一批：骨架 + 腐化林地）。
+   * 世界等级与 highestUnlockedFloor 对齐；新区解锁留给第二批区域 Boss。
+   * x/y 为 0–100 的相对坐标，供节点图布局。
+   */
+  world: {
+    starterRegionId: "forest",
+    regionOrder: ["forest", "desert", "abyss", "void"],
+    regions: {
+      forest: {
+        id: "forest",
+        name: "腐化林地",
+        emoji: "🌲",
+        theme: "森林 / 野兽",
+        description: "被暗影浸透的古老森林，狼群与蛛类盘踞其间。",
+        worldLevelRange: [1, 20],
+        unlockHint: "起始区域",
+        nodes: [
+          {
+            id: "forest_town",
+            type: "town",
+            name: "灰烬村",
+            emoji: "🏰",
+            description: "林地边缘的避难所。铁匠铺的炉火仍在燃烧，村长在任务板前焦躁踱步。",
+            flavor: "「只要炉火不灭，我们还能守住这片土地。」",
+            x: 22,
+            y: 48,
+          },
+          {
+            id: "forest_wild_path",
+            type: "outdoor",
+            name: "暮色林径",
+            emoji: "🌲",
+            description: "狼嚎回荡的林间小道，适合补给与刷取装备。",
+            x: 48,
+            y: 32,
+          },
+          {
+            id: "forest_wild_vale",
+            type: "outdoor",
+            name: "蛛网幽谷",
+            emoji: "🕸️",
+            description: "蛛丝缠绕的谷地，魔物更为密集。",
+            x: 52,
+            y: 68,
+          },
+          {
+            id: "forest_dungeon",
+            type: "dungeon",
+            name: "腐化地穴",
+            emoji: "🏛️",
+            description: "深入地下的遗迹入口。逐层推进，挑战更强的守护者。",
+            x: 78,
+            y: 50,
+          },
+        ],
+      },
+      // 以下区域第一批仅作地图占位，灰显不可进入；第二批补主题与 Boss 解锁。
+      desert: {
+        id: "desert",
+        name: "枯骨荒漠",
+        emoji: "🏜️",
+        theme: "沙漠 / 亡灵",
+        description: "黄沙掩埋的旧日王国，亡灵在热风中游荡。",
+        worldLevelRange: [20, 45],
+        unlockHint: "通关腐化林地副本后解锁",
+        nodes: [],
+      },
+      abyss: {
+        id: "abyss",
+        name: "炼狱深渊",
+        emoji: "🔥",
+        theme: "地狱 / 恶魔",
+        description: "裂隙深处涌出的硫磺与烈焰，恶魔军团的前哨。",
+        worldLevelRange: [45, 75],
+        unlockHint: "通关枯骨荒漠副本后解锁",
+        nodes: [],
+      },
+      void: {
+        id: "void",
+        name: "虚空秘境",
+        emoji: "⚰️",
+        theme: "终局 / 混合",
+        description: "世界缝隙之外的混沌，仅强者得以踏入。",
+        worldLevelRange: [75, 100],
+        unlockHint: "通关炼狱深渊副本后解锁",
+        nodes: [],
+      },
+    },
   },
 
   dungeon: {

@@ -16,22 +16,34 @@ import {
   createDefaultOutdoorState,
   sanitizeOutdoorState,
 } from "./outdoor.js";
+import {
+  createDefaultWorldState,
+  sanitizeWorldState,
+  syncWorldProgress,
+} from "./world.js";
 import { canPrestige, prestigeHero } from "./skills.js";
 
 export const DEFAULT_SAVE_KEY = CONFIG.save.key;
 
 const DEFAULT_MAX_CHARACTERS = 8;
 const MAX_CHARACTER_ID_LENGTH = 80;
-const ACTIVE_PROJECTION_KEYS = ["hero", "progress", "economy", "outdoor", "pendingBattle"];
+const ACTIVE_PROJECTION_KEYS = [
+  "hero",
+  "progress",
+  "economy",
+  "outdoor",
+  "world",
+  "pendingBattle",
+];
 const NORMALIZED_SAVE = Symbol("normalized-save");
 
 /**
  * Canonical v3 save shape:
- * { version, characters:[{id,name,hero,progress,economy,outdoor,pendingBattle}],
+ * { version, characters:[{id,name,hero,progress,economy,outdoor,world,pendingBattle}],
  *   activeCharacterId, settings }
  *
- * Enumerable hero/progress/economy/outdoor/pendingBattle accessors project the
- * active character for compatibility with the v2 game/economy APIs. saveSave()
+ * Enumerable hero/progress/economy/outdoor/world/pendingBattle accessors project
+ * the active character for compatibility with the v2 game/economy APIs. saveSave()
  * writes only the canonical fields; ordinary JSON snapshots retain aliases so
  * legacy helper code that parses them directly still has the expected shape.
  */
@@ -64,6 +76,9 @@ export function createDefaultCharacter(options = {}) {
     progress,
     economy: createDefaultEconomy(),
     outdoor: createDefaultOutdoorState(),
+    world: createDefaultWorldState({
+      highestUnlockedFloor: progress.highestUnlockedFloor,
+    }),
     // Refreshing during combat settles only this character as a retreat.
     pendingBattle: null,
   };
@@ -342,6 +357,7 @@ export function applyVictory(save, result = {}) {
     );
   }
   next.progress.totalVictories = safeAdd(next.progress.totalVictories, 1);
+  next.world = syncWorldProgress(next.world, next.progress);
   return projectActiveCharacter(ensureShop(next).save);
 }
 
@@ -352,13 +368,17 @@ export function selectStartingClass(save, classId) {
   const active = getActiveCharacter(current, { clone: false });
   if (!active) return current;
   const hero = createHeroForClass(classId, { classChosen: true });
+  const progress = createDefaultProgress();
   const replacement = {
     ...active,
     name: hero.name,
     hero,
-    progress: createDefaultProgress(),
+    progress,
     economy: createDefaultEconomy(),
     outdoor: createDefaultOutdoorState(),
+    world: createDefaultWorldState({
+      highestUnlockedFloor: progress.highestUnlockedFloor,
+    }),
     pendingBattle: null,
   };
   return rebuildSave(current, current.characters.map((entry) => (
@@ -468,6 +488,10 @@ function sanitizeLegacyCharacter(source, usedIds) {
     progress,
     economy: sanitizeEconomy(source.economy, { hero, progress }),
     outdoor: sanitizeOutdoorState(source.outdoor),
+    world: sanitizeWorldState(
+      firstRecord(source.world),
+      progress,
+    ),
     pendingBattle: sanitizePendingBattle(source.pendingBattle, id),
   };
 }
@@ -496,6 +520,10 @@ function sanitizeCharacterRecord(candidate, index, usedIds = new Set()) {
     progress,
     economy: sanitizeEconomy(source.economy, { hero: namedHero, progress }),
     outdoor: sanitizeOutdoorState(source.outdoor),
+    world: sanitizeWorldState(
+      firstRecord(source.world),
+      progress,
+    ),
     pendingBattle: sanitizePendingBattle(source.pendingBattle, id),
   };
 }
@@ -572,6 +600,9 @@ function synchronizeProjectedCharacter(character, source) {
     outdoor: Object.hasOwn(source, "outdoor")
       ? sanitizeOutdoorState(source.outdoor)
       : sanitizeOutdoorState(character.outdoor),
+    world: Object.hasOwn(source, "world")
+      ? sanitizeWorldState(source.world, progress)
+      : sanitizeWorldState(character.world, progress),
     pendingBattle: Object.hasOwn(source, "pendingBattle")
       ? sanitizePendingBattle(source.pendingBattle, character.id)
       : sanitizePendingBattle(character.pendingBattle, character.id),
@@ -644,6 +675,7 @@ function attachActiveProjection(save) {
         progress: save.progress,
         economy: save.economy,
         outdoor: save.outdoor,
+        world: save.world,
         pendingBattle: save.pendingBattle,
       };
     },

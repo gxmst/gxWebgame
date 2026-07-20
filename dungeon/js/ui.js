@@ -82,6 +82,10 @@ export class DungeonUI {
         return;
       }
 
+      if (event.target.closest("[data-equip-best]")) {
+        this.handlers.equipBest?.();
+        return;
+      }
       if (event.target.closest("[data-bulk-sell]")) {
         this.handlers.bulkSell?.(this.dom.bulkRarity?.value || "common");
         return;
@@ -149,9 +153,29 @@ export class DungeonUI {
         return;
       }
 
-      const adventureMode = event.target.closest("[data-adventure-mode]");
-      if (adventureMode) {
-        this.handlers.setAdventureMode?.(adventureMode.dataset.adventureMode);
+      const worldNode = event.target.closest("[data-world-node]");
+      if (worldNode) {
+        this.handlers.enterWorldNode?.(worldNode.dataset.worldNode);
+        return;
+      }
+
+      if (event.target.closest("[data-world-back]")) {
+        this.handlers.returnToWorldMap?.();
+        return;
+      }
+
+      if (event.target.closest("[data-town-shop]")) {
+        this.handlers.openTownShop?.();
+        return;
+      }
+
+      if (event.target.closest("[data-town-inventory]")) {
+        this.handlers.openTownInventory?.();
+        return;
+      }
+
+      if (event.target.closest("[data-town-characters]")) {
+        this.handlers.manageCharacters?.();
         return;
       }
 
@@ -314,7 +338,8 @@ export class DungeonUI {
     this.renderEquipment(model.character.equipment);
     this.renderFloors(model.floors, model.selectedFloorId);
     this.renderFloorPreview(model.selectedFloor, model.character.power);
-    this.renderAdventureMode(model.adventureMode, model.outdoor);
+    this.renderWorld(model);
+    this.renderAdventureMode(model.adventureMode, model.outdoor, model.worldScene);
     this.renderInventory(
       model.character.inventory,
       model.character.equipment,
@@ -330,6 +355,7 @@ export class DungeonUI {
   renderHeader(model) {
     setText(this.dom.coins, formatNumber(model.character.gold));
     setText(this.dom.maxFloor, model.highestUnlockedFloor);
+    setText(this.dom.worldLevel, model.worldLevel ?? model.highestUnlockedFloor ?? 1);
   }
 
   syncSound(enabled) {
@@ -649,16 +675,97 @@ export class DungeonUI {
       : `<div class="character-empty">尚未创建角色</div>`;
   }
 
-  renderAdventureMode(mode = "dungeon", outdoor = {}) {
-    const selected = mode === "outdoor" ? "outdoor" : "dungeon";
-    this.currentAdventureMode = selected;
-    for (const button of document.querySelectorAll("[data-adventure-mode]")) {
-      const active = button.dataset.adventureMode === selected;
-      button.classList.toggle("is-active", active);
-      button.setAttribute("aria-selected", String(active));
+  renderWorld(model = {}) {
+    const world = model.world ?? {};
+    const regions = Array.isArray(world.regions) ? world.regions : [];
+    const scene = model.worldScene || "map";
+    const currentNode = world.currentNode || null;
+
+    setText(this.dom.worldMapLevel, world.worldLevel ?? model.worldLevel ?? 1);
+    setText(
+      this.dom.worldMapRegion,
+      world.currentRegionName || regions.find((region) => region.unlocked)?.name || "—",
+    );
+    setText(
+      this.dom.worldMapBlurb,
+      scene === "map"
+        ? "点击节点进入城镇补给、野外刷怪或地牢挑战。"
+        : (currentNode?.description || "探索灰烬世界。"),
+    );
+
+    if (this.dom.worldMapBoard) {
+      this.dom.worldMapBoard.innerHTML = regions.map((region) => renderWorldRegionCard(region)).join("");
     }
+
+    if (currentNode?.type === "town" || scene === "town") {
+      setText(this.dom.townTitle, currentNode?.name || "城镇");
+      setText(this.dom.townDescription, currentNode?.description || "");
+      setText(this.dom.townFlavor, currentNode?.flavor || "");
+      if (this.dom.townEmblem) {
+        this.dom.townEmblem.textContent = currentNode?.emoji || "🏰";
+      }
+    }
+
+    if (currentNode?.type === "outdoor" || scene === "outdoor") {
+      setText(this.dom.outdoorTitle, currentNode?.name || "野外");
+      setText(
+        this.dom.outdoorDescription,
+        currentNode?.description || "强度随当前角色的远征进度变化。",
+      );
+      if (this.dom.outdoorEmblem) {
+        this.dom.outdoorEmblem.textContent = currentNode?.emoji || "🌲";
+      }
+    }
+
+    this.applyWorldScene(scene, { battleActive: this.dom.battleView && !this.dom.battleView.hidden });
+  }
+
+  applyWorldScene(scene = "map", options = {}) {
+    const battleActive = options.battleActive === true;
+    const resolved = ["map", "town", "dungeon", "outdoor"].includes(scene) ? scene : "map";
+    this.currentWorldScene = resolved;
+    this.currentAdventureMode = resolved === "outdoor" ? "outdoor" : "dungeon";
+
+    if (!battleActive) {
+      if (this.dom.worldMapView) this.dom.worldMapView.hidden = resolved !== "map";
+      if (this.dom.townView) this.dom.townView.hidden = resolved !== "town";
+      if (this.dom.idleView) this.dom.idleView.hidden = resolved !== "dungeon";
+      if (this.dom.outdoorView) this.dom.outdoorView.hidden = resolved !== "outdoor";
+    }
+
+    const titles = {
+      map: { kicker: "灰烬编年史", title: "世界地图", status: "探索中" },
+      town: { kicker: "安全区", title: "城镇", status: "补给中" },
+      dungeon: { kicker: "地下遗迹", title: "地牢远征", status: "等待出发" },
+      outdoor: { kicker: "自由探索", title: "野外漫步", status: "等待漫步" },
+    };
+    const meta = titles[resolved] || titles.map;
+    setText(this.dom.sceneKicker, meta.kicker);
+    setText(this.dom.sceneTitle, meta.title);
+
+    const showBack = !battleActive && resolved !== "map";
+    for (const button of document.querySelectorAll("[data-world-back]")) {
+      // 城镇内操作区自带返回按钮；标题栏按钮在非地图场景显示
+      if (button.closest(".town-actions") || button.closest(".outdoor-actions")) continue;
+      button.hidden = !showBack;
+    }
+
+    if (!battleActive) {
+      this.setStatus(meta.status, false);
+    }
+  }
+
+  renderAdventureMode(mode = "dungeon", outdoor = {}, worldScene = null) {
+    const selected = worldScene
+      || (mode === "outdoor" ? "outdoor" : mode === "map" || mode === "town" ? mode : "dungeon");
+    this.currentAdventureMode = selected === "outdoor" ? "outdoor" : "dungeon";
     const battleVisible = this.dom.battleView && !this.dom.battleView.hidden;
-    if (!battleVisible) {
+    if (!battleVisible && worldScene) {
+      this.applyWorldScene(worldScene, { battleActive: false });
+    } else if (!battleVisible && !worldScene) {
+      // 兼容旧调用：无 worldScene 时退回地牢/野外二分
+      if (this.dom.worldMapView) this.dom.worldMapView.hidden = true;
+      if (this.dom.townView) this.dom.townView.hidden = true;
       if (this.dom.idleView) this.dom.idleView.hidden = selected !== "dungeon";
       if (this.dom.outdoorView) this.dom.outdoorView.hidden = selected !== "outdoor";
     }
@@ -749,6 +856,11 @@ export class DungeonUI {
   showBattle({ hero, classMeta, stats, enemies, floor, speed, mode = "dungeon", waveNumber = 1 }) {
     this.dom.idleView.hidden = true;
     if (this.dom.outdoorView) this.dom.outdoorView.hidden = true;
+    if (this.dom.worldMapView) this.dom.worldMapView.hidden = true;
+    if (this.dom.townView) this.dom.townView.hidden = true;
+    for (const button of document.querySelectorAll(".dungeon-heading-actions [data-world-back]")) {
+      button.hidden = true;
+    }
     this.dom.battleView.hidden = false;
     setText(this.dom.heroBattleName, hero.name || "无名战士");
     const portrait = document.querySelector(".hero-combatant .combatant-portrait");
@@ -922,16 +1034,22 @@ export class DungeonUI {
     this.setStatus(retreat ? "已撤退" : victory ? "远征胜利" : "远征失败", false);
   }
 
-  returnToDungeon(mode = this.currentAdventureMode) {
+  returnToDungeon(mode = this.currentWorldScene || this.currentAdventureMode) {
     this.dom.battleView.hidden = true;
-    const outdoor = mode === "outdoor";
-    this.dom.idleView.hidden = outdoor;
-    if (this.dom.outdoorView) this.dom.outdoorView.hidden = !outdoor;
     if (this.dom.retreat) this.dom.retreat.hidden = false;
     if (this.dom.outdoorStop) this.dom.outdoorStop.hidden = true;
     this.setCharacterControlsDisabled(false);
     this.activatePanel("dungeon");
-    this.setStatus(outdoor ? "等待漫步" : "等待出发", false);
+    const scene = mode === "outdoor"
+      ? "outdoor"
+      : mode === "town"
+        ? "town"
+        : mode === "map"
+          ? "map"
+          : mode === "dungeon"
+            ? "dungeon"
+            : (this.currentWorldScene || "map");
+    this.applyWorldScene(scene, { battleActive: false });
   }
 
   updateSpeed(speed) {
@@ -954,7 +1072,7 @@ export class DungeonUI {
   setCharacterControlsDisabled(disabled) {
     if (this.dom.autoAllocate) this.dom.autoAllocate.disabled = disabled;
     for (const button of document.querySelectorAll(
-      "[data-allocate-stat], [data-unequip-slot], [data-equip-id], [data-sell-id], [data-reforge-id], [data-upgrade-skill], [data-reset-skills], [data-prestige], [data-character-manage], [data-class-change], [data-shop-refresh], [data-buy-listing], [data-adventure-mode], [data-start-outdoor]",
+      "[data-allocate-stat], [data-unequip-slot], [data-equip-id], [data-sell-id], [data-reforge-id], [data-upgrade-skill], [data-reset-skills], [data-prestige], [data-character-manage], [data-class-change], [data-shop-refresh], [data-buy-listing], [data-world-node], [data-world-back], [data-town-shop], [data-town-inventory], [data-town-characters], [data-start-outdoor]",
     )) {
       button.disabled = disabled;
     }
@@ -965,7 +1083,7 @@ export class DungeonUI {
     if (!this.dom.resultContent || !this.dom.resultDialog) return;
     setText(this.dom.resultKicker, "远征结算");
     setText(this.dom.resultTitle, "战斗结果");
-    setText(this.dom.resultReturn, "返回地牢");
+    setText(this.dom.resultReturn, result.outdoor === true ? "返回野外" : "返回地牢");
     if (this.dom.resultAgain) {
       const canRepeat = result.canRepeat === true;
       this.dom.resultAgain.hidden = !canRepeat;
@@ -1112,6 +1230,19 @@ function collectDom() {
   return {
     coins: hook("coins"),
     maxFloor: hook("max-floor"),
+    worldLevel: hook("world-level"),
+    sceneKicker: hook("scene-kicker"),
+    sceneTitle: hook("scene-title"),
+    worldMapView: hook("world-map-view"),
+    worldMapBoard: hook("world-map-board"),
+    worldMapLevel: hook("world-map-level"),
+    worldMapRegion: hook("world-map-region"),
+    worldMapBlurb: hook("world-map-blurb"),
+    townView: hook("town-view"),
+    townTitle: hook("town-title"),
+    townDescription: hook("town-description"),
+    townFlavor: hook("town-flavor"),
+    townEmblem: hook("town-emblem"),
     level: hook("level"),
     expText: hook("exp-text"),
     expFill: hook("exp-fill"),
@@ -1163,6 +1294,9 @@ function collectDom() {
     outdoorFloor: hook("outdoor-floor"),
     outdoorTotalWaves: hook("outdoor-total-waves"),
     outdoorStop: hook("stop-outdoor"),
+    outdoorTitle: hook("outdoor-title"),
+    outdoorDescription: hook("outdoor-description"),
+    outdoorEmblem: hook("outdoor-emblem"),
     battleCaption: hook("battle-caption"),
     reforgeDialog: hook("reforge-dialog"),
     reforgeContent: hook("reforge-content"),
@@ -1199,11 +1333,11 @@ function renderInventoryItem(item, equippedItem) {
   const effectMarkup = renderEffect(item.effect);
   const locked = item.locked === true;
   return `
-    <article class="inventory-item rarity-${rarityKey(item.rarity)} ${locked ? "is-locked" : ""}">
+    <article class="inventory-item rarity-${rarityKey(item.rarity)} ${locked ? "is-locked" : ""} ${item.upgradeDelta > 0 ? "is-upgrade" : ""}">
       <div class="inventory-item-header">
         <span class="slot-icon" aria-hidden="true">${escapeHtml(item.icon || meta.icon)}</span>
         <span class="inventory-item-name">
-          <strong>${escapeHtml(item.name)}</strong>
+          <strong>${escapeHtml(item.name)}${item.upgradeDelta > 0 ? ` <span class="upgrade-badge" title="装备后战力提升">⬆ 升级 +${formatNumber(item.upgradeDelta)}</span>` : ""}</strong>
           <small>${RARITY_LABELS[rarityKey(item.rarity)] || "普通"} · ${meta.label} · Lv.${numberOr(item.level, 1)}</small>
         </span>
         <button class="icon-button lock-button ${locked ? "is-locked" : ""}" type="button" data-lock-id="${escapeHtml(item.id)}" aria-label="${locked ? "解锁" : "锁定"}${escapeHtml(item.name)}" title="${locked ? "解锁(允许出售)" : "锁定(防止出售)"}">${locked ? "🔒" : "🔓"}</button>
@@ -1266,6 +1400,60 @@ function renderShopItem(listing, gold, equipment = {}) {
       <button class="secondary-button shop-buy-button" type="button" data-buy-listing="${escapeHtml(listing.listingId)}" ${numberOr(gold, 0) < price ? "disabled" : ""}>
         ◈ ${formatNumber(price)}
       </button>
+    </article>`;
+}
+
+function renderWorldRegionCard(region) {
+  const unlocked = region.unlocked === true;
+  const nodes = Array.isArray(region.nodes) ? region.nodes : [];
+  const range = Array.isArray(region.worldLevelRange)
+    ? region.worldLevelRange
+    : null;
+  const rangeText = range
+    ? `世界 ${range[0]}–${range[1] ?? range[0]}`
+    : (region.theme || "");
+  const nodeMarkup = unlocked && nodes.length > 0
+    ? `<div class="world-node-grid">${nodes.map((node) => {
+      const typeLabel = node.type === "town"
+        ? "城镇"
+        : node.type === "outdoor"
+          ? "野外"
+          : node.type === "dungeon"
+            ? "副本"
+            : "节点";
+      return `
+        <button
+          class="world-node-button"
+          type="button"
+          data-world-node="${escapeHtml(node.id)}"
+          data-node-type="${escapeHtml(node.type || "node")}"
+          ${node.locked ? "disabled" : ""}
+          title="${escapeHtml(node.description || node.name || "")}"
+        >
+          <span class="node-emoji" aria-hidden="true">${escapeHtml(node.emoji || "◆")}</span>
+          <span class="node-copy">
+            <strong>${escapeHtml(node.name || node.id)}</strong>
+            <small>${typeLabel}</small>
+          </span>
+        </button>`;
+    }).join("")}</div>`
+    : `<p class="world-region-lock-hint">${escapeHtml(
+      unlocked
+        ? "此区域暂无节点"
+        : (region.unlockHint || "尚未解锁"),
+    )}</p>`;
+
+  return `
+    <article class="world-region-card ${unlocked ? "is-active" : "is-locked"}" data-region-id="${escapeHtml(region.id)}">
+      <header class="world-region-header">
+        <div>
+          <strong>${escapeHtml(region.name || region.id)}</strong>
+          <small>${escapeHtml(rangeText)}</small>
+        </div>
+        <span class="world-region-emoji" aria-hidden="true">${escapeHtml(region.emoji || "◆")}</span>
+      </header>
+      <p class="world-region-desc">${escapeHtml(region.description || "")}</p>
+      ${nodeMarkup}
     </article>`;
 }
 

@@ -8,6 +8,8 @@ import {
   getExperienceRequirement,
   getHeroStats,
   sanitizeHero,
+  getEquipUpgradeDelta,
+  getPower,
 } from "../js/hero.js";
 import {
   getSkillPointsEarnedAtLevel,
@@ -270,6 +272,35 @@ export const tests = [
       }
       assert(prestigeStats.speed === baseStats.speed, "prestige changed an unaffected stat");
       assert(prestigeStats.power > baseStats.power);
+    },
+  },
+  {
+    name: "equip upgrade delta is positive for a strong weapon, and class-aware",
+    run() {
+      const warrior = createHeroForClass("warrior");
+      const mage = createHeroForClass("mage");
+      // 一件纯力量武器:对战士应是明显升级,对法师增益远小。
+      const strengthWeapon = {
+        id: "test-str-weapon",
+        slot: "weapon",
+        rarity: "rare",
+        level: 5,
+        affixes: [
+          { id: "strength", name: "蛮力", stat: "strength", value: 30 },
+          { id: "attack", name: "锋锐", stat: "attack", value: 20 },
+        ],
+      };
+      const before = JSON.stringify(warrior);
+      const warriorDelta = getEquipUpgradeDelta(warrior, strengthWeapon);
+      const mageDelta = getEquipUpgradeDelta(mage, strengthWeapon);
+
+      assert(JSON.stringify(warrior) === before, "upgrade delta mutated the hero");
+      assert(warriorDelta > 0, "strength weapon should be an upgrade for a bare warrior");
+      assert(
+        warriorDelta > mageDelta,
+        "class weighting: strength weapon should help the warrior more than the mage",
+      );
+      assert(getEquipUpgradeDelta(warrior, null) === 0, "null item yields zero delta");
     },
   },
 ];

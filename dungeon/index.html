@@ -32,8 +32,13 @@
             <span class="resource-label">金币</span>
             <strong data-coins>0</strong>
           </span>
-          <span class="resource" aria-label="已解锁层数" title="已解锁层数">
+          <span class="resource" aria-label="世界等级" title="世界等级（与地牢推进进度对齐）">
             <span aria-hidden="true">◆</span>
+            <span class="resource-label">世界</span>
+            <strong>Lv.<span data-world-level>1</span></strong>
+          </span>
+          <span class="resource" aria-label="已解锁层数" title="已解锁层数">
+            <span aria-hidden="true">▣</span>
             <span class="resource-label">已解锁</span>
             <strong>第 <span data-max-floor>1</span> 层</strong>
           </span>
@@ -230,19 +235,66 @@
         <section class="game-panel dungeon-panel is-active" id="dungeon-panel" data-game-panel="dungeon" aria-labelledby="dungeon-title">
           <header class="panel-heading dungeon-heading">
             <div>
-              <p class="panel-kicker">地下遗迹</p>
-              <h2 id="dungeon-title">地牢远征</h2>
+              <p class="panel-kicker" data-scene-kicker>灰烬编年史</p>
+              <h2 id="dungeon-title" data-scene-title>世界地图</h2>
             </div>
             <div class="dungeon-heading-actions">
-              <div class="mode-switch" role="tablist" aria-label="冒险模式">
-                <button class="is-active" type="button" role="tab" data-adventure-mode="dungeon" aria-selected="true">层数挑战</button>
-                <button type="button" role="tab" data-adventure-mode="outdoor" aria-selected="false">野外漫步</button>
-              </div>
+              <button class="compact-button world-back-button" type="button" data-world-back hidden>
+                <span aria-hidden="true">←</span> 返回地图
+              </button>
               <span class="status-indicator" role="status" aria-live="polite"><i aria-hidden="true"></i>等待出发</span>
             </div>
           </header>
 
-          <div class="idle-view" data-idle-view>
+          <!-- 世界地图：导航枢纽 -->
+          <section class="world-map-view" data-world-map-view aria-labelledby="world-map-title">
+            <div class="world-map-summary">
+              <div>
+                <p class="panel-kicker">探索进度</p>
+                <h3 id="world-map-title">世界地图</h3>
+                <p data-world-map-blurb>点击节点进入城镇补给、野外刷怪或地牢挑战。</p>
+              </div>
+              <dl class="world-map-meta">
+                <div><dt>世界等级</dt><dd data-world-map-level>1</dd></div>
+                <div><dt>当前区域</dt><dd data-world-map-region>腐化林地</dd></div>
+              </dl>
+            </div>
+            <div class="world-map-board" data-world-map-board aria-label="世界区域与节点"></div>
+            <p class="world-map-legend">
+              <span><i aria-hidden="true">🏰</i> 城镇</span>
+              <span><i aria-hidden="true">🌲</i> 野外</span>
+              <span><i aria-hidden="true">🏛️</i> 副本</span>
+              <span class="is-muted"><i aria-hidden="true">🔒</i> 未解锁</span>
+            </p>
+          </section>
+
+          <!-- 城镇：现有商店 / 角色管理入口 -->
+          <section class="town-view" data-town-view hidden aria-labelledby="town-title">
+            <div class="town-emblem" aria-hidden="true" data-town-emblem>🏰</div>
+            <div class="town-copy">
+              <p class="panel-kicker">安全区</p>
+              <h3 id="town-title" data-town-title>灰烬村</h3>
+              <p data-town-description>林地边缘的避难所。</p>
+              <p class="town-flavor" data-town-flavor></p>
+            </div>
+            <div class="town-actions" role="group" aria-label="城镇设施">
+              <button class="primary-button" type="button" data-town-shop>
+                <span aria-hidden="true">◈</span> 进入商店
+              </button>
+              <button class="secondary-button" type="button" data-town-inventory>
+                <span aria-hidden="true">▣</span> 整理背包
+              </button>
+              <button class="secondary-button" type="button" data-town-characters>
+                <span aria-hidden="true">⚔</span> 角色管理
+              </button>
+              <button class="secondary-button" type="button" data-world-back>
+                <span aria-hidden="true">←</span> 返回地图
+              </button>
+            </div>
+            <p class="town-tip">商店内可购买装备；背包中可对装备重铸。角色管理可创建或切换冒险者。</p>
+          </section>
+
+          <div class="idle-view" data-idle-view hidden>
             <div class="floor-select">
               <div class="section-title-row floor-list-heading">
                 <h3>选择层数</h3>
@@ -275,21 +327,26 @@
           </div>
 
           <section class="outdoor-view" data-outdoor-view hidden aria-labelledby="outdoor-title">
-            <div class="outdoor-emblem" aria-hidden="true">🌲</div>
+            <div class="outdoor-emblem" aria-hidden="true" data-outdoor-emblem>🌲</div>
             <div class="outdoor-copy">
               <p class="panel-kicker">自由探索</p>
-              <h3 id="outdoor-title">灰烬荒野</h3>
-              <p>强度随当前角色的远征进度变化。</p>
+              <h3 id="outdoor-title" data-outdoor-title>暮色林径</h3>
+              <p data-outdoor-description>强度随当前角色的远征进度变化。</p>
             </div>
             <dl class="outdoor-stats">
               <div><dt>探索区域</dt><dd data-outdoor-floor>第 1 层附近</dd></div>
               <div><dt>累计波次</dt><dd data-outdoor-total-waves>0</dd></div>
               <div><dt>战利品</dt><dd>金币 / 装备</dd></div>
             </dl>
-            <button class="primary-button outdoor-start-button" type="button" data-start-outdoor>
-              <span aria-hidden="true">▶</span>
-              开始漫步
-            </button>
+            <div class="outdoor-actions">
+              <button class="primary-button outdoor-start-button" type="button" data-start-outdoor>
+                <span aria-hidden="true">▶</span>
+                开始漫步
+              </button>
+              <button class="secondary-button" type="button" data-world-back>
+                <span aria-hidden="true">←</span> 返回地图
+              </button>
+            </div>
           </section>
 
           <div class="battle-view" data-battle-view hidden>
@@ -394,6 +451,9 @@
                 <button class="chip-button" type="button" data-inventory-sort="power">战力</button>
                 <button class="chip-button" type="button" data-inventory-sort="rarity">稀有度</button>
                 <button class="chip-button" type="button" data-inventory-sort="level">等级</button>
+              </div>
+              <div class="chip-row" role="group" aria-label="快捷整理">
+                <button class="chip-button equip-best-button" type="button" data-equip-best>⬆ 一键装备最强</button>
               </div>
               <div class="chip-row bulk-sell-row" role="group" aria-label="批量出售">
                 <select class="bulk-rarity-select" data-bulk-rarity aria-label="批量出售的稀有度上限">

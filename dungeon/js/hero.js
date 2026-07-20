@@ -416,6 +416,22 @@ export function getPower(hero) {
   return getHeroStats(hero).power;
 }
 
+/**
+ * 影子模拟:虚拟把 item 装备到 hero 的对应部位,返回战力变化量(新战力 - 当前战力)。
+ * 复用 equipItem/getPower 两个纯函数,不改动传入的 hero,因此天然按职业加权
+ * (力量武器对法师的战力增益自然偏低)。> 0 表示这件是升级件。
+ */
+export function getEquipUpgradeDelta(hero, item) {
+  const clean = sanitizeHero(hero);
+  const cleanItem = sanitizeItem(item);
+  if (!cleanItem) return 0;
+  const currentPower = getPower(clean);
+  const simulated = equipItem(clean, cleanItem);
+  // equipItem 在背包满且需要换下旧装时会原样返回;此时用未换算的模拟兜底。
+  const simulatedPower = getPower(simulated);
+  return simulatedPower - currentPower;
+}
+
 /** Returns progress within the current level; experience never de-levels a hero. */
 export function getLevelProgress(hero) {
   const clean = sanitizeHero(hero);
