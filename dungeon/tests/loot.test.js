@@ -1,4 +1,5 @@
-import { CONFIG } from "../js/config.js";
+import { CONFIG, EQUIPMENT_SLOT_IDS } from "../js/config.js";
+import { createHeroForClass, equipItem, sanitizeHero } from "../js/hero.js";
 import {
   extractEquipmentBaseName,
   generateEquipmentName,
@@ -29,6 +30,21 @@ const NAMING_CONFIG = {
 };
 
 export const tests = [
+  {
+    name: "footwear is a complete equipment slot that can roll equip and survive sanitization",
+    run() {
+      assert(EQUIPMENT_SLOT_IDS.includes("footwear"));
+      assert(CONFIG.equipmentSlots.footwear?.name === "鞋子");
+      const boots = generateLoot(12, "forced-footwear", null, { forcedSlot: "footwear" });
+      assert(boots.slot === "footwear" && boots.emoji === "🥾");
+      assert(Number(boots.baseStats.speed) > 0 && Number(boots.baseStats.defense) > 0);
+
+      const equipped = equipItem(createHeroForClass("warrior"), boots);
+      assert(equipped.equipment.footwear?.id === boots.id);
+      const cleaned = sanitizeHero({ ...equipped, equipment: { ...equipped.equipment } });
+      assert(cleaned.equipment.footwear?.id === boots.id);
+    },
+  },
   {
     name: "equipment naming picks a deterministic significant affix and prioritizes effects",
     run() {

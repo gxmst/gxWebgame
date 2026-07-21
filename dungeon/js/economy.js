@@ -10,6 +10,10 @@ import {
   generateLoot,
   rerollItemAffixes,
 } from "./loot.js";
+import {
+  getReforgeMaterialCost,
+  spendMaterial,
+} from "./materials.js";
 
 const MAX_COUNTER = Number.MAX_SAFE_INTEGER;
 const VALID_TARGET_LOCATIONS = new Set(["inventory", "equipment", "any"]);
@@ -138,6 +142,11 @@ export function getReforgeCost(item) {
   return clampPrice(calculated, 1);
 }
 
+/** 重铸材料消耗说明（供 UI）；不改存档。 */
+export function getReforgeMaterialRequirement(inputConfig = CONFIG) {
+  return getReforgeMaterialCost(null, inputConfig);
+}
+
 /** Refreshes only when the configured victory interval has elapsed. */
 export function ensureShop(save) {
   if (!hasUsableHero(save)) return failure(save, "invalid-save");
@@ -229,6 +238,15 @@ export function beginReforge(save, target, seed = null) {
   const gold = nonNegativeInteger(save.hero.gold);
   if (gold < cost) return failure(save, "insufficient-gold");
 
+  // 可选材料消耗：开启时不足则拒绝，避免只扣金币。
+  const materialReq = getReforgeMaterialCost(found.item, CONFIG);
+  let nextMaterials = isRecord(save.materials) ? { ...save.materials } : {};
+  if (materialReq.required) {
+    const spent = spendMaterial(nextMaterials, materialReq.materialId, materialReq.amount);
+    if (!spent.ok) return failure(save, "insufficient-material");
+    nextMaterials = spent.materials;
+  }
+
   const nextCounter = Math.min(MAX_COUNTER, economy.reforgeCounter + 1);
   const stableSeed = normalizeSeed(
     seed,
@@ -245,12 +263,16 @@ export function beginReforge(save, target, seed = null) {
     target: createResolvedTarget(found),
     candidate,
     cost,
+    materialCost: materialReq.required
+      ? { materialId: materialReq.materialId, amount: materialReq.amount, name: materialReq.name }
+      : null,
     seed: stableSeed,
     originalFingerprint: fingerprintItem(found.item),
   };
   const nextSave = {
     ...save,
     hero: { ...save.hero, gold: gold - cost },
+    materials: nextMaterials,
     economy: {
       ...economy,
       reforgeCounter: nextCounter,
@@ -265,6 +287,7 @@ export function beginReforge(save, target, seed = null) {
     original: found.item,
     candidate,
     cost,
+    materialCost: pendingReforge.materialCost,
   };
 }
 

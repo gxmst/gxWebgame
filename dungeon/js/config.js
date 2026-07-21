@@ -14,6 +14,7 @@ export const EQUIPMENT_SLOT_IDS = Object.freeze([
   "weapon",
   "helmet",
   "armor",
+  "footwear",
   "accessory",
 ]);
 
@@ -28,6 +29,7 @@ const EQUIPMENT_SLOTS = {
   weapon: { id: "weapon", name: "武器", emoji: "⚔️" },
   helmet: { id: "helmet", name: "头盔", emoji: "⛑️" },
   armor: { id: "armor", name: "护甲", emoji: "🛡️" },
+  footwear: { id: "footwear", name: "鞋子", emoji: "🥾" },
   accessory: { id: "accessory", name: "饰品", emoji: "💎" },
 };
 
@@ -567,7 +569,7 @@ const AFFIXES = {
     max: 5,
     perFloor: 0.8,
     minimumRarity: "common",
-    slots: ["helmet", "armor", "accessory"],
+    slots: ["helmet", "armor", "footwear", "accessory"],
   },
   critChance: {
     id: "critChance",
@@ -647,7 +649,7 @@ const AFFIXES = {
     decimals: 3,
     format: "percent",
     minimumRarity: "rare",
-    slots: ["helmet", "armor", "accessory"],
+    slots: ["helmet", "armor", "footwear", "accessory"],
   },
 };
 
@@ -721,6 +723,27 @@ const ENEMY_TEMPLATES = {
     name: "腐狼",
     emoji: "🐺",
     stats: { maxHp: 58, attack: 12, defense: 4, speed: 72, critChance: 0.07 },
+  },
+  // 荒漠特产
+  sand_scorpion: {
+    id: "sand_scorpion",
+    name: "沙蝎",
+    emoji: "🦂",
+    stats: { maxHp: 64, attack: 14, defense: 6, speed: 68, critChance: 0.09 },
+    skills: ["enemy_attack", "venom_fangs"],
+  },
+  dune_wraith: {
+    id: "dune_wraith",
+    name: "沙丘怨灵",
+    emoji: "👻",
+    stats: { maxHp: 54, attack: 13, defense: 3, speed: 76, critChance: 0.1, dodgeChance: 0.12 },
+    skills: ["enemy_attack", "shadow_bolt"],
+  },
+  bone_nomad: {
+    id: "bone_nomad",
+    name: "枯骨游民",
+    emoji: "💀",
+    stats: { maxHp: 72, attack: 15, defense: 8, speed: 52, critChance: 0.08 },
   },
   crypt_guard: {
     id: "crypt_guard",
@@ -812,9 +835,9 @@ const FLOOR_MAX = 100;
 // 主题按深度分带(upTo 为该带的最深层),越深的带出现越危险的新怪。
 const FLOOR_THEMES = [
   { upTo: 9, name: "地穴回廊", emoji: "🕯️", description: "潮湿石阶向黑暗深处延伸，碎骨在脚边轻轻作响。", pool: ["bone_rat", "skeleton", "cultist", "corrupt_wolf"] },
-  { upTo: 19, name: "白骨回廊", emoji: "💀", description: "骨墙之间回荡着甲片摩擦声，冷箭不知从何处袭来。", pool: ["skeleton", "skeleton_archer", "cultist", "corrupt_wolf"] },
-  { upTo: 29, name: "腐朽墓室", emoji: "⚰️", description: "棺椁半开，腐气与蛛丝在墓室深处交织。", pool: ["ghoul", "cultist", "crypt_spider"] },
-  { upTo: 39, name: "守卫大厅", emoji: "🛡️", description: "破损军旗悬在穹顶，重甲守卫封死了前路。", pool: ["crypt_guard", "ghoul", "skeleton_archer"] },
+  { upTo: 19, name: "白骨回廊", emoji: "💀", description: "骨墙之间回荡着甲片摩擦声，冷箭不知从何处袭来。", pool: ["skeleton", "skeleton_archer", "cultist", "corrupt_wolf", "sand_scorpion"] },
+  { upTo: 29, name: "腐朽墓室", emoji: "⚰️", description: "棺椁半开，腐气与蛛丝在墓室深处交织。", pool: ["ghoul", "cultist", "crypt_spider", "dune_wraith"] },
+  { upTo: 39, name: "守卫大厅", emoji: "🛡️", description: "破损军旗悬在穹顶，重甲守卫封死了前路。", pool: ["crypt_guard", "ghoul", "skeleton_archer", "bone_nomad"] },
   { upTo: 49, name: "怨语深廊", emoji: "👻", description: "低语在石壁间游走，怨灵掠过烛火而不留身影。", pool: ["wraith", "cultist", "crypt_spider"] },
   { upTo: 59, name: "余烬深井", emoji: "🔥", description: "岩缝吐出灼热气息，余烬中的亡骸再度睁开双眼。", pool: ["ember_fiend", "ghoul", "crypt_guard"] },
   { upTo: 69, name: "石像长厅", emoji: "🗿", description: "长厅两侧的石像布满裂纹，目光似乎随你移动。", pool: ["gargoyle", "wraith", "ember_fiend"] },
@@ -1261,12 +1284,14 @@ export const CONFIG = deepFreeze({
       weapon: { attack: [5, 8] },
       helmet: { defense: [3, 5], maxHp: [5, 11] },
       armor: { defense: [5, 8], maxHp: [10, 18] },
+      footwear: { defense: [2, 4], speed: [3, 6], maxHp: [3, 7] },
       accessory: { attack: [1, 3], defense: [1, 3], maxHp: [4, 9] },
     },
     namesBySlot: {
       weapon: ["缺口长剑", "黑铁战斧", "守墓战锤"],
       helmet: ["旧铁盔", "白骨面甲", "守卫兜帽"],
       armor: ["锁链甲", "墓穴胸甲", "符文护甲"],
+      footwear: ["磨损皮靴", "守夜长靴", "逐风战靴"],
       accessory: ["黯淡护符", "骸骨指环", "余烬徽记"],
     },
   },
@@ -1279,6 +1304,12 @@ export const CONFIG = deepFreeze({
       powerMultiplier: 0.75,
       levelMultiplier: 6,
       rarityMultipliers: { common: 1, uncommon: 1.25, rare: 1.7, legendary: 2.4 },
+      // 可选：重铸额外消耗材料（2B）；关闭则只扣金币
+      material: {
+        enabled: true,
+        materialId: "wild_essence",
+        amount: 1,
+      },
     },
     shop: {
       stockSize: 4,
@@ -1287,6 +1318,55 @@ export const CONFIG = deepFreeze({
       powerMultiplier: 1.35,
       levelMultiplier: 8,
       minimumSellMultiplier: 3,
+    },
+  },
+
+  /**
+   * 材料目录（2B）。UI 一律走 materials.js 取中文名，禁止裸 id。
+   * 用途：野外/事件掉落展示；重铸可选消耗（见 economy.reforge.material）。
+   */
+  materials: {
+    defaultId: "wild_essence",
+    outdoorByRegion: {
+      forest: "wild_essence",
+      desert: "desert_glass",
+    },
+    reforge: {
+      enabled: true,
+      materialId: "wild_essence",
+      amount: 1,
+    },
+    catalog: {
+      wild_essence: {
+        id: "wild_essence",
+        name: "荒野精华",
+        emoji: "✨",
+        description: "从野外魔物身上凝聚的灵质，可用于重铸词条。",
+      },
+      bone_dust: {
+        id: "bone_dust",
+        name: "骨粉",
+        emoji: "🦴",
+        description: "晒干的碎骨粉末，祭坛与亡灵相关事件常见。",
+      },
+      desert_glass: {
+        id: "desert_glass",
+        name: "沙晶",
+        emoji: "🔶",
+        description: "黄沙中凝结的玻璃质晶体，荒漠特产。",
+      },
+      forest_resin: {
+        id: "forest_resin",
+        name: "腐化树脂",
+        emoji: "🪵",
+        description: "腐化林地渗出的粘稠树脂。",
+      },
+      shadow_shard: {
+        id: "shadow_shard",
+        name: "暗影碎片",
+        emoji: "🌑",
+        description: "稀有的暗影结晶。",
+      },
     },
   },
 
@@ -1300,9 +1380,13 @@ export const CONFIG = deepFreeze({
     lootChancePerEnemy: 0.16,
     lootFloorOffset: -1,
     waveDelayMs: 720,
-    materialsEnabled: false,
-    materialDropChancePerEnemy: 0,
+    materialsEnabled: true,
+    materialDropChancePerEnemy: 0.12,
     materialId: "wild_essence",
+    materialByRegion: {
+      forest: "wild_essence",
+      desert: "desert_glass",
+    },
   },
 
   /**
@@ -1311,7 +1395,7 @@ export const CONFIG = deepFreeze({
    */
   events: {
     enabled: true,
-    eventChance: 0.22,
+    eventChance: 0.28,
     wavesBetweenEvents: 1,
     eliteBattle: {
       enemyStatMultiplier: 1.4,
@@ -1484,12 +1568,259 @@ export const CONFIG = deepFreeze({
           },
         ],
       },
+      {
+        id: "moonlit_spring",
+        title: "月光泉",
+        emoji: "🌙",
+        text: "银色月光穿过枝叶，落在一眼仍未被腐化的泉水上。泉底有古老符文缓缓明灭。",
+        regions: ["forest"],
+        weight: 9,
+        once: true,
+        options: [
+          {
+            label: "饮下泉水",
+            outcomes: [
+              { type: "heal", min: 35, max: 70 },
+              { type: "buff", stat: "speed", amount: 1 },
+            ],
+            resultText: "清凉的泉水驱散疲惫，你的脚步也变得轻盈。",
+          },
+          {
+            label: "装取一瓶",
+            outcomes: [{ type: "material", id: "wild_essence", min: 2, max: 3 }],
+            resultText: "泉水离开月光后凝成数缕荒野精华。",
+          },
+        ],
+      },
+      {
+        id: "trapped_hunter",
+        title: "被困的猎人",
+        emoji: "🏹",
+        text: "倒伏的枯木下压着一名猎人，远处的腐狼嚎声正在迅速靠近。",
+        regions: ["forest"],
+        weight: 10,
+        options: [
+          {
+            label: "合力救人",
+            outcomes: [
+              { type: "experience", min: 45, max: 90 },
+              { type: "gold", min: 20, max: 45 },
+              { type: "questFlag", flag: "rescued_hunter" },
+            ],
+            ambush: { chance: 0.16, enemyCount: 2 },
+            resultText: "猎人脱困后把酬金塞给你，并标出了附近兽径。",
+          },
+          {
+            label: "先击退狼群",
+            outcomes: [{ type: "battle", enemyCount: 2, minimumRarity: "uncommon" }],
+            resultText: "你挡在猎人与狼群之间，拔出了武器。",
+          },
+        ],
+      },
+      {
+        id: "whispering_roots",
+        title: "低语树根",
+        emoji: "🌳",
+        text: "巨树裸露的根系像手指般扣住一块发光矿石，树皮下传出含混的低语。",
+        regions: ["forest"],
+        weight: 9,
+        options: [
+          {
+            label: "砍开根系",
+            outcomes: [{ type: "material", id: "wild_essence", min: 2, max: 4 }],
+            ambush: { chance: 0.28, enemyCount: 2 },
+            resultText: "矿石化为浓郁精华，而林地深处也响起愤怒的枝叶摩擦声。",
+          },
+          {
+            label: "聆听低语",
+            outcomes: [
+              { type: "experience", min: 55, max: 115 },
+              { type: "damage", min: 8, max: 22 },
+            ],
+            resultText: "古老记忆涌入脑海，也留下了一阵撕裂般的头痛。",
+          },
+        ],
+      },
+      {
+        id: "abandoned_campfire",
+        title: "废弃营火",
+        emoji: "🏕️",
+        text: "营火尚有余温，半张地图被匕首钉在树桩上，营地主人却不见踪影。",
+        regions: ["forest"],
+        weight: 11,
+        options: [
+          {
+            label: "休息片刻",
+            outcomes: [{ type: "heal", min: 25, max: 55 }],
+            resultText: "你拨旺余烬，短暂的安宁让伤势有所缓解。",
+          },
+          {
+            label: "搜寻补给",
+            outcomes: [
+              { type: "gold", min: 12, max: 38 },
+              { type: "material", id: "wild_essence", min: 1, max: 2 },
+            ],
+            ambush: { chance: 0.14, enemyCount: 1 },
+            resultText: "你在帐篷夹层里找到了一些补给。",
+          },
+        ],
+      },
+      {
+        id: "desert_mirage",
+        title: "沙中蜃景",
+        emoji: "🌫️",
+        text: "热浪里浮现一座宫殿的轮廓，走近却只剩碎玻璃般的沙晶。",
+        regions: ["desert"],
+        weight: 11,
+        options: [
+          {
+            label: "拾取沙晶",
+            outcomes: [
+              { type: "material", id: "desert_glass", min: 1, max: 2 },
+              { type: "gold", min: 10, max: 35 },
+            ],
+            resultText: "你装起几块灼热的沙晶。",
+          },
+          {
+            label: "别被迷惑",
+            outcomes: [],
+            resultText: "你移开目光，蜃景消散。",
+          },
+        ],
+      },
+      {
+        id: "bone_caravan",
+        title: "枯骨商队",
+        emoji: "🐪",
+        text: "一队无声的枯骨骆驼路过，驼峰上挂着落满沙尘的货囊。",
+        regions: ["desert"],
+        weight: 9,
+        options: [
+          {
+            label: "交易（60 金）",
+            outcomes: [
+              { type: "spendGold", amount: 60 },
+              { type: "loot", rarityBias: "uncommon" },
+              { type: "material", id: "desert_glass", amount: 1 },
+            ],
+            failText: "商队没有停步——你的金币不够。",
+            resultText: "枯骨递来一件装备和一块沙晶，随即没入沙暴。",
+          },
+          {
+            label: "目送离开",
+            outcomes: [],
+            resultText: "驼铃远去，只剩风声。",
+          },
+        ],
+      },
+      {
+        id: "desert_storm",
+        title: "沙暴来袭",
+        emoji: "🌪️",
+        text: "地平线骤然消失，遮天蔽日的沙墙卷着碎石向你压来。",
+        regions: ["desert"],
+        weight: 12,
+        options: [
+          {
+            label: "寻找背风岩缝",
+            outcomes: [
+              { type: "damage", min: 5, max: 18 },
+              { type: "experience", min: 30, max: 65 },
+            ],
+            resultText: "你顶着风沙找到掩体，只受了些擦伤。",
+          },
+          {
+            label: "迎着沙暴前进",
+            outcomes: [
+              { type: "material", id: "desert_glass", min: 2, max: 4 },
+              { type: "damage", min: 18, max: 42 },
+            ],
+            resultText: "沙暴几乎将你掀翻，但风眼里散落着珍贵的沙晶。",
+          },
+        ],
+      },
+      {
+        id: "buried_armory",
+        title: "地下军械库",
+        emoji: "🗡️",
+        text: "塌陷的沙坑露出一扇铜门，门后整齐排列着早已蒙尘的兵器架。",
+        regions: ["desert"],
+        minWorldLevel: 5,
+        weight: 8,
+        options: [
+          {
+            label: "取走保存完好的装备",
+            outcomes: [{ type: "loot", rarityBias: "rare" }],
+            ambush: { chance: 0.35, enemyCount: 2, minimumRarity: "uncommon" },
+            resultText: "你取下一件仍有锋芒的装备，身后的甲胄却开始自行移动。",
+          },
+          {
+            label: "拆取金属零件",
+            outcomes: [
+              { type: "gold", min: 45, max: 85 },
+              { type: "material", id: "desert_glass", amount: 1 },
+            ],
+            resultText: "锈蚀零件仍能卖个好价钱，夹层里还藏着一块沙晶。",
+          },
+        ],
+      },
+      {
+        id: "singing_bones",
+        title: "会唱歌的骨堆",
+        emoji: "🎵",
+        text: "风穿过遍地兽骨，竟拼成一段反复回响的古老旋律。",
+        regions: ["desert"],
+        weight: 10,
+        options: [
+          {
+            label: "跟随旋律敲击骨片",
+            outcomes: [
+              { type: "experience", min: 70, max: 140 },
+              { type: "material", id: "desert_glass", min: 1, max: 2 },
+            ],
+            resultText: "最后一个音符落下，骨堆碎成一圈闪光的沙晶。",
+          },
+          {
+            label: "打乱这诡异的节奏",
+            outcomes: [{ type: "damage", min: 12, max: 30 }],
+            ambush: { chance: 0.34, enemyCount: 2 },
+            resultText: "旋律戛然而止，尖锐回声震得你耳膜发痛。",
+          },
+        ],
+      },
+      {
+        id: "dry_well",
+        title: "干涸水井",
+        emoji: "🕳️",
+        text: "石井早已见底，井壁却刻着商旅用来藏匿财物的旧暗号。",
+        regions: ["desert"],
+        weight: 11,
+        options: [
+          {
+            label: "系绳下井",
+            outcomes: [
+              { type: "gold", min: 35, max: 90 },
+              { type: "material", id: "desert_glass", min: 1, max: 3 },
+            ],
+            ambush: { chance: 0.18, enemyCount: 1 },
+            resultText: "暗格里还留着一只钱袋和几块沙晶。",
+          },
+          {
+            label: "投下一枚金币试探",
+            outcomes: [
+              { type: "spendGold", amount: 1 },
+              { type: "experience", min: 25, max: 55 },
+            ],
+            failText: "你摸遍口袋，连一枚试探用的金币都没有。",
+            resultText: "金币落地的回声帮你判断出井下没有活物，至少学到了一点荒漠经验。",
+          },
+        ],
+      },
     ],
   },
 
   /**
-   * 城镇 NPC + 任务（2A：基础接做交 + kill 目标）。
-   * 任务链 / 复杂对话树留给 2B。
+   * 城镇 NPC + 任务（2B：任务链 + 对话树 + 荒漠线）。
    */
   quests: {
     npcs: {
@@ -1499,12 +1830,13 @@ export const CONFIG = deepFreeze({
         emoji: "🧝",
         town: "forest_town",
         blurb: "灰烬村的守护者，为腐化蔓延忧心忡忡。",
-        quests: ["cull_wolves"],
+        quests: ["cull_wolves", "investigate_altar", "seal_corruption"],
         dialogue: {
           root: {
             text: "年轻的冒险者，腐化正在吞噬这片森林……腐狼的嚎叫一夜比一夜近。",
             options: [
               { label: "我能帮上什么？", goto: "offer_quest" },
+              { label: "关于腐化的源头……", goto: "about_corruption" },
               { label: "这村子还安全吗？", goto: "about_village" },
               { label: "告辞", end: true },
             ],
@@ -1516,11 +1848,32 @@ export const CONFIG = deepFreeze({
               { label: "再考虑", end: true },
             ],
           },
+          about_corruption: {
+            text: "腐化从地穴深处渗出。清完腐狼后，我需要你去查一座古老祭坛……那是腐化的裂口之一。",
+            options: [
+              { label: "我先去清狼", goto: "offer_quest" },
+              { label: "告辞", end: true },
+            ],
+          },
           about_village: {
             text: "炉火还在，城墙还在。只要还有人愿意拔剑，灰烬村就不会倒。",
             options: [
               { label: "关于腐狼……", goto: "offer_quest" },
               { label: "告辞", end: true },
+            ],
+          },
+          offer_altar: {
+            text: "你带回的消息让我不安。林中有一座古老祭坛正在渗出黑雾——去野外再击杀 8 只魔物，探清情况，再回来。",
+            options: [
+              { label: "我这就去", acceptQuest: "investigate_altar", end: true },
+              { label: "稍后再说", end: true },
+            ],
+          },
+          offer_seal: {
+            text: "最后一步：深入腐化地穴，至少肃清第 5 层的守护者。封印需要它倒下的回响。",
+            options: [
+              { label: "交给我", acceptQuest: "seal_corruption", end: true },
+              { label: "我再准备一下", end: true },
             ],
           },
         },
@@ -1533,9 +1886,55 @@ export const CONFIG = deepFreeze({
         blurb: "管着商店与补给，说话简短却可靠。",
         dialogue: {
           root: {
-            text: "需要补给就去商店；破损的装备可以在背包里重铸。别在野外硬扛。",
+            text: "需要补给就去商店；破损的装备可以在背包里重铸——现在重铸会消耗一点荒野精华。别在野外硬扛。",
             options: [
+              { label: "荒野精华是什么？", goto: "about_essence" },
               { label: "明白了", end: true },
+            ],
+          },
+          about_essence: {
+            text: "野外魔物身上掉的灵质。攒着，重铸词条时能用上。",
+            options: [
+              { label: "谢谢", end: true },
+            ],
+          },
+        },
+      },
+      desert_guide: {
+        id: "desert_guide",
+        name: "沙海向导莱拉",
+        emoji: "🧕",
+        town: "desert_town",
+        blurb: "绿洲镇的向导，熟悉沙暴与亡骨之路。",
+        quests: ["cull_scorpions", "retrieve_glass"],
+        dialogue: {
+          root: {
+            text: "黄沙底下埋着旧日王国。想在这儿活下去，先学会听风——以及躲开沙蝎。",
+            options: [
+              { label: "有什么活？", goto: "offer_scorpions" },
+              { label: "这绿洲安全吗？", goto: "about_oasis" },
+              { label: "告辞", end: true },
+            ],
+          },
+          offer_scorpions: {
+            text: "商路被沙蝎堵了。替我清掉 8 只，绿洲会记你一功。",
+            options: [
+              { label: "接下", acceptQuest: "cull_scorpions", end: true },
+              { label: "再看看", end: true },
+            ],
+          },
+          about_oasis: {
+            text: "泉水还在，城墙半塌。再往东是枯骨废墟，别一个人夜里走。",
+            options: [
+              { label: "关于沙蝎……", goto: "offer_scorpions" },
+              { label: "告辞", end: true },
+            ],
+          },
+          offer_glass: {
+            text: "沙蝎清了不少。再帮我收集 3 块沙晶——重铸与封印都缺这东西。",
+            options: [
+              { label: "我去找", acceptQuest: "retrieve_glass", end: true },
+              { label: "稍后", end: true },
             ],
           },
         },
@@ -1558,29 +1957,121 @@ export const CONFIG = deepFreeze({
           { type: "experience", amount: 500 },
           { type: "loot", rarityBias: "rare" },
         ],
-        // 2B 任务链入口预留
+        nextQuest: "investigate_altar",
+      },
+      investigate_altar: {
+        id: "investigate_altar",
+        name: "祭坛异象",
+        giver: "forest_elder",
+        description: "在腐化林地野外再击杀 8 只魔物，探查祭坛渗出的黑雾。",
+        chainLocked: true,
+        prerequisite: "cull_wolves",
+        objective: {
+          type: "kill",
+          target: "*",
+          targetName: "魔物",
+          count: 8,
+        },
+        rewards: [
+          { type: "gold", amount: 280 },
+          { type: "experience", amount: 700 },
+          { type: "material", id: "forest_resin", amount: 2 },
+        ],
+        nextQuest: "seal_corruption",
+      },
+      seal_corruption: {
+        id: "seal_corruption",
+        name: "封印裂口",
+        giver: "forest_elder",
+        description: "通关腐化地穴第 5 层（区域守护者），为封印提供回响。",
+        chainLocked: true,
+        prerequisite: "investigate_altar",
+        objective: {
+          type: "clear_dungeon",
+          target: "floor",
+          floorId: 5,
+          targetName: "第 5 层守护者",
+          count: 1,
+        },
+        rewards: [
+          { type: "gold", amount: 500 },
+          { type: "experience", amount: 1200 },
+          { type: "loot", rarityBias: "rare" },
+          { type: "material", id: "shadow_shard", amount: 1 },
+        ],
+        nextQuest: null,
+      },
+      cull_scorpions: {
+        id: "cull_scorpions",
+        name: "清剿沙蝎",
+        giver: "desert_guide",
+        description: "在枯骨荒漠击杀 8 只沙蝎，疏通商路。",
+        objective: {
+          type: "kill",
+          target: "sand_scorpion",
+          targetName: "沙蝎",
+          count: 8,
+        },
+        rewards: [
+          { type: "gold", amount: 350 },
+          { type: "experience", amount: 800 },
+          { type: "loot", rarityBias: "uncommon" },
+        ],
+        nextQuest: "retrieve_glass",
+      },
+      retrieve_glass: {
+        id: "retrieve_glass",
+        name: "收集沙晶",
+        giver: "desert_guide",
+        description: "收集 3 块沙晶（荒漠野外与事件可获得）。",
+        chainLocked: true,
+        prerequisite: "cull_scorpions",
+        objective: {
+          type: "collect",
+          target: "desert_glass",
+          targetName: "沙晶",
+          count: 3,
+        },
+        rewards: [
+          { type: "gold", amount: 400 },
+          { type: "experience", amount: 900 },
+          { type: "loot", rarityBias: "rare" },
+        ],
         nextQuest: null,
       },
     },
   },
 
   /**
-   * 世界地图（骨架 + 腐化林地 + SVG 沉浸布局）。
-   * 世界等级与 highestUnlockedFloor 对齐；新区解锁留给后续区域 Boss。
-   * 节点 x/y 为列表视图相对坐标；mapX/mapY 为 SVG viewBox 坐标（缺省回退 x/y 映射）。
-   * map 段仅为表现层：区域色块路径、连线、装饰——不进入逻辑判断。
+   * 世界地图（骨架 + 腐化林地 + 枯骨荒漠 + SVG 沉浸布局）。
+   * 世界等级与 highestUnlockedFloor 对齐；区域解锁见 unlockRules。
+   * 节点 x/y 为列表视图相对坐标；mapX/mapY 为 SVG viewBox 坐标。
    */
   world: {
     starterRegionId: "forest",
     regionOrder: ["forest", "desert", "abyss", "void"],
+    /**
+     * 区域解锁：clear_boss_floor = 通关指定 Boss 层后解锁。
+     * desert ← 林地第 5 层 Boss；abyss/void 仍为占位。
+     */
+    unlockRules: {
+      desert: { type: "clear_boss_floor", floorId: 5 },
+      abyss: { type: "clear_boss_floor", floorId: 20 },
+      void: { type: "clear_boss_floor", floorId: 45 },
+    },
     map: {
-      // 约 16:9 画布；可玩区（林地）占左侧大半，锁定区缩在右侧，避免「地图太空/比例怪」。
+      // 约 16:9 画布；林地主舞台 + 荒漠可玩区
       viewBox: [0, 0, 1000, 560],
       edges: [
         ["forest_town", "forest_wild_path"],
         ["forest_town", "forest_wild_vale"],
         ["forest_wild_path", "forest_dungeon"],
         ["forest_wild_vale", "forest_dungeon"],
+        ["forest_dungeon", "desert_town"],
+        ["desert_town", "desert_wild_dunes"],
+        ["desert_town", "desert_wild_ruins"],
+        ["desert_wild_dunes", "desert_dungeon"],
+        ["desert_wild_ruins", "desert_dungeon"],
       ],
       regionShapes: {
         // 林地：主舞台，约占画布 55% 宽
@@ -1588,9 +2079,9 @@ export const CONFIG = deepFreeze({
           path: "M30,50 C120,18 260,12 400,40 C520,68 580,140 575,250 C570,360 500,460 360,500 C220,535 90,500 45,380 C15,280 10,140 30,50 Z",
           fill: "#1f3a28",
           stroke: "#3d6b45",
-          label: { x: 260, y: 70 },
+          label: { x: 320, y: 76 },
         },
-        // 右侧未解锁区收成竖条，不抢主视野
+        // 荒漠：解锁后成为第二可玩区
         desert: {
           path: "M590,60 C680,35 760,55 790,130 C815,200 800,300 760,360 C720,415 640,420 600,360 C565,300 555,160 590,60 Z",
           fill: "#4a3a22",
@@ -1611,10 +2102,19 @@ export const CONFIG = deepFreeze({
         },
       },
       decorations: [
-        { emoji: "🌿", x: 100, y: 420 },
-        { emoji: "🪨", x: 420, y: 460 },
-        { emoji: "💀", x: 640, y: 400 },
-        { emoji: "🔥", x: 880, y: 380 },
+        { kind: "tree", x: 92, y: 142, size: 1.15, rotation: -5, opacity: 0.58 },
+        { kind: "tree", x: 132, y: 420, size: 1.35, rotation: 4, opacity: 0.46 },
+        { kind: "tree", x: 288, y: 455, size: 0.92, rotation: -6, opacity: 0.52 },
+        { kind: "tree", x: 470, y: 356, size: 1.1, rotation: 7, opacity: 0.5 },
+        { kind: "mountain", x: 420, y: 88, size: 1.4, rotation: -2, opacity: 0.48 },
+        { kind: "ruin", x: 508, y: 438, size: 0.9, rotation: 3, opacity: 0.48 },
+        { kind: "dune", x: 622, y: 108, size: 1.15, rotation: -4, opacity: 0.58 },
+        { kind: "dune", x: 724, y: 337, size: 1.35, rotation: 6, opacity: 0.54 },
+        { kind: "ruin", x: 746, y: 122, size: 0.82, rotation: -3, opacity: 0.52 },
+        { kind: "skull", x: 640, y: 395, size: 0.72, rotation: 9, opacity: 0.58 },
+        { kind: "mountain", x: 842, y: 402, size: 1.25, rotation: 5, opacity: 0.44 },
+        { kind: "camp", x: 892, y: 362, size: 0.8, rotation: -5, opacity: 0.62 },
+        { kind: "skull", x: 918, y: 186, size: 0.66, rotation: -8, opacity: 0.5 },
       ],
     },
     regions: {
@@ -1674,16 +2174,68 @@ export const CONFIG = deepFreeze({
           },
         ],
       },
-      // 以下区域仅作地图占位，迷雾遮罩；解锁逻辑留给后续批次。
+      // 枯骨荒漠：通关林地 5 层 Boss 后解锁
       desert: {
         id: "desert",
         name: "枯骨荒漠",
         emoji: "🏜️",
         theme: "沙漠 / 亡灵",
         description: "黄沙掩埋的旧日王国，亡灵在热风中游荡。",
-        worldLevelRange: [20, 45],
-        unlockHint: "通关腐化林地副本后解锁",
-        nodes: [],
+        worldLevelRange: [15, 45],
+        unlockHint: "通关腐化地穴第 5 层后解锁",
+        // 掉落倾向：偏爆发/暴击（game/loot 可读取 bias 标签）
+        lootBias: ["critChance", "critDamage", "attack"],
+        outdoorFloorBonus: 4,
+        outdoorEnemyStatMultiplier: 1.08,
+        nodes: [
+          {
+            id: "desert_town",
+            type: "town",
+            name: "绿洲镇",
+            emoji: "🏕️",
+            description: "沙海中的补给站。向导莱拉在井边等待旅人。",
+            flavor: "「风停的时候，连骨头都会唱歌。」",
+            x: 28,
+            y: 42,
+            mapX: 640,
+            mapY: 220,
+          },
+          {
+            id: "desert_wild_dunes",
+            type: "outdoor",
+            name: "流沙丘",
+            emoji: "🏜️",
+            description: "沙蝎潜伏的丘地，掉落偏重爆发词条。",
+            x: 52,
+            y: 28,
+            mapX: 720,
+            mapY: 140,
+          },
+          {
+            id: "desert_wild_ruins",
+            type: "outdoor",
+            name: "枯骨废墟",
+            emoji: "💀",
+            description: "半埋的石柱与亡骨，魔物更强、回报更高。",
+            x: 58,
+            y: 62,
+            mapX: 740,
+            mapY: 320,
+          },
+          {
+            id: "desert_dungeon",
+            type: "dungeon",
+            name: "沙葬王陵",
+            emoji: "🏛️",
+            description: "深入沙下的王陵。通关更高层后将通向更深区域。",
+            x: 82,
+            y: 48,
+            mapX: 800,
+            mapY: 240,
+            // 荒漠副本从较高层起步（数据提示，逻辑仍用全局层数表）
+            suggestedMinFloor: 15,
+          },
+        ],
       },
       abyss: {
         id: "abyss",
@@ -1692,7 +2244,7 @@ export const CONFIG = deepFreeze({
         theme: "地狱 / 恶魔",
         description: "裂隙深处涌出的硫磺与烈焰，恶魔军团的前哨。",
         worldLevelRange: [45, 75],
-        unlockHint: "通关枯骨荒漠副本后解锁",
+        unlockHint: "通关枯骨荒漠更高层后解锁",
         nodes: [],
       },
       void: {

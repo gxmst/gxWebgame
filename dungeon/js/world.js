@@ -18,10 +18,10 @@ const MAX_ID_LENGTH = 64;
  * @param {object} [options]
  * @param {number} [options.highestUnlockedFloor]
  */
-export function createDefaultWorldState(options = {}) {
-  const worldConfig = getWorldConfig();
+export function createDefaultWorldState(options = {}, inputConfig = CONFIG) {
+  const worldConfig = getWorldConfig(inputConfig);
   const starterRegion = worldConfig.starterRegionId || "forest";
-  const worldLevel = deriveWorldLevel(options.highestUnlockedFloor);
+  const worldLevel = deriveWorldLevel(options.highestUnlockedFloor, inputConfig);
   return {
     unlockedRegions: [starterRegion],
     currentRegionId: starterRegion,
@@ -40,7 +40,7 @@ export function sanitizeWorldState(candidate, progress = null, inputConfig = CON
   const worldConfig = getWorldConfig(inputConfig);
   const source = isRecord(candidate) ? candidate : {};
   const highest = readHighestFloor(progress, source);
-  const defaultState = createDefaultWorldState({ highestUnlockedFloor: highest });
+  const defaultState = createDefaultWorldState({ highestUnlockedFloor: highest }, inputConfig);
   const regionIds = listRegionIds(worldConfig);
 
   let unlockedRegions = sanitizeIdList(source.unlockedRegions, regionIds);
@@ -52,15 +52,25 @@ export function sanitizeWorldState(candidate, progress = null, inputConfig = CON
   if (starter && !unlockedRegions.includes(starter)) {
     unlockedRegions = [starter, ...unlockedRegions];
   }
+  // 按进度补解锁（老档通关过 Boss 但尚无 desert 标记时自动点亮）。
+  const cleared = readClearedFloors(progress);
+  for (const [regionId, rule] of Object.entries(getUnlockRules(inputConfig))) {
+    if (!regionIds.includes(regionId) || unlockedRegions.includes(regionId)) continue;
+    if (evaluateUnlockRule(rule, { highest, cleared })) {
+      unlockedRegions = [...unlockedRegions, regionId];
+    }
+  }
 
-  const currentRegionId = regionIds.includes(source.currentRegionId)
-    ? source.currentRegionId
-    : (unlockedRegions[0] ?? starter ?? null);
-
-  const nodeIds = listNodeIds(worldConfig);
-  const currentNodeId = nodeIds.includes(source.currentNodeId)
-    ? source.currentNodeId
+  const requestedNode = getNode(source.currentNodeId, inputConfig);
+  const currentNode = requestedNode && unlockedRegions.includes(requestedNode.regionId)
+    ? requestedNode
     : null;
+  const requestedRegionId = safeId(source.currentRegionId);
+  const currentRegionId = currentNode?.regionId
+    ?? (unlockedRegions.includes(requestedRegionId)
+      ? requestedRegionId
+      : (unlockedRegions[0] ?? starter ?? null));
+  const currentNodeId = currentNode?.id ?? null;
 
   return {
     unlockedRegions,
@@ -184,16 +194,46 @@ export function leaveToMap(worldOrSave, inputConfig = CONFIG) {
 }
 
 /**
- * 根据进度同步 worldLevel（通关后调用）。
- * 第一批不解锁新区；后续批次可在此扩展 Boss → 区域解锁。
+ * 根据进度同步 worldLevel，并按 unlockRules 解锁新区（Boss 层通关）。
+ * desert ← clear floor 5；不主动撤销已解锁区域（向后兼容）。
  */
 export function syncWorldProgress(worldOrSave, progress, inputConfig = CONFIG) {
   const world = readWorld(worldOrSave, inputConfig);
   const highest = readHighestFloor(progress ?? worldOrSave);
+  const cleared = readClearedFloors(progress ?? worldOrSave);
+  const unlocked = new Set(world.unlockedRegions);
+  const rules = getUnlockRules(inputConfig);
+  for (const [regionId, rule] of Object.entries(rules)) {
+    if (unlocked.has(regionId)) continue;
+    if (evaluateUnlockRule(rule, { highest, cleared })) {
+      unlocked.add(regionId);
+    }
+  }
+  // 起始区始终保留
+  const starter = getWorldConfig(inputConfig).starterRegionId || "forest";
+  if (starter) unlocked.add(starter);
+
   return {
     ...world,
+    unlockedRegions: [...unlocked],
     worldLevel: deriveWorldLevel(highest, inputConfig),
   };
+}
+
+/** 纯查询：按当前进度应解锁哪些区域（含已解锁）。 */
+export function listUnlockableRegions(progress, inputConfig = CONFIG) {
+  const worldConfig = getWorldConfig(inputConfig);
+  const highest = readHighestFloor(progress);
+  const cleared = readClearedFloors(progress);
+  const result = [];
+  const starter = worldConfig.starterRegionId || "forest";
+  if (starter) result.push(starter);
+  for (const [regionId, rule] of Object.entries(getUnlockRules(inputConfig))) {
+    if (evaluateUnlockRule(rule, { highest, cleared }) && !result.includes(regionId)) {
+      result.push(regionId);
+    }
+  }
+  return result;
 }
 
 // ─── internals ───────────────────────────────────────────────
@@ -202,22 +242,38 @@ function getWorldConfig(inputConfig = CONFIG) {
   return isRecord(inputConfig?.world) ? inputConfig.world : {};
 }
 
+function getUnlockRules(inputConfig = CONFIG) {
+  const worldConfig = getWorldConfig(inputConfig);
+  return isRecord(worldConfig.unlockRules) ? worldConfig.unlockRules : {};
+}
+
+function evaluateUnlockRule(rule, context) {
+  if (!isRecord(rule)) return false;
+  if (rule.type === "clear_boss_floor" || rule.type === "clear_floor") {
+    const floorId = clampInteger(rule.floorId ?? rule.floor, 1, Number.MAX_SAFE_INTEGER, 0);
+    if (!floorId) return false;
+    // highestUnlockedFloor 在通关 N 后变为 N+1，故 highest > floorId 也算
+    if (context.highest > floorId) return true;
+    if (Array.isArray(context.cleared) && context.cleared.includes(floorId)) return true;
+    return false;
+  }
+  return false;
+}
+
+function readClearedFloors(source) {
+  if (!isRecord(source)) return [];
+  if (isRecord(source.progress)) return readClearedFloors(source.progress);
+  if (!Array.isArray(source.clearedFloors)) return [];
+  return source.clearedFloors
+    .map((value) => finiteInteger(value, 0))
+    .filter((value) => value > 0);
+}
+
 function listRegionIds(worldConfig) {
   const order = Array.isArray(worldConfig.regionOrder)
     ? worldConfig.regionOrder
     : Object.keys(worldConfig.regions || {});
   return order.filter((id) => isRecord(worldConfig.regions?.[id]));
-}
-
-function listNodeIds(worldConfig) {
-  const ids = [];
-  for (const region of Object.values(worldConfig.regions || {})) {
-    if (!isRecord(region) || !Array.isArray(region.nodes)) continue;
-    for (const node of region.nodes) {
-      if (isRecord(node) && typeof node.id === "string") ids.push(node.id);
-    }
-  }
-  return ids;
 }
 
 function deriveWorldLevel(highestUnlockedFloor, inputConfig = CONFIG) {

@@ -155,6 +155,26 @@ export const tests = [
     },
   },
   {
+    name: "sanitizeWorldState rejects locked current regions and nodes",
+    run() {
+      const cleaned = sanitizeWorldState({
+        unlockedRegions: ["forest"],
+        currentRegionId: "desert",
+        currentNodeId: "desert_town",
+      }, { highestUnlockedFloor: 1, clearedFloors: [] });
+      assert(cleaned.currentRegionId === "forest");
+      assert(cleaned.currentNodeId === null);
+
+      const unlocked = sanitizeWorldState({
+        unlockedRegions: ["forest", "desert"],
+        currentRegionId: "forest",
+        currentNodeId: "desert_town",
+      }, { highestUnlockedFloor: 6, clearedFloors: [5] });
+      assert(unlocked.currentRegionId === "desert");
+      assert(unlocked.currentNodeId === "desert_town");
+    },
+  },
+  {
     name: "applyVictory refreshes world level from floor progress",
     run() {
       let save = createDefaultSave();

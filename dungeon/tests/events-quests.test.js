@@ -30,6 +30,44 @@ const assert = (condition, message = "Assertion failed") => {
 
 export const tests = [
   {
+    name: "expanded event deck has valid regional choices for forest and desert",
+    run() {
+      const cards = CONFIG.events.cards;
+      const validTypes = new Set([
+        "loot", "gold", "experience", "material", "buff", "battle",
+        "heal", "damage", "questFlag", "spendGold",
+      ]);
+      assert(cards.length >= 17, "the expanded deck should contain at least 17 cards");
+      assert(CONFIG.events.eventChance >= 0.27 && CONFIG.events.eventChance <= 0.3);
+      for (const card of cards) {
+        assert(typeof card.id === "string" && card.id.length > 0);
+        assert(Array.isArray(card.options) && card.options.length > 0, `${card.id} needs options`);
+        for (const option of card.options) {
+          assert(typeof option.label === "string" && option.label.length > 0);
+          assert(Array.isArray(option.outcomes), `${card.id} option outcomes must be an array`);
+          assert(option.outcomes.every((outcome) => validTypes.has(outcome.type)), `${card.id} has an invalid outcome`);
+        }
+      }
+      const forest = listEligibleEventCards({ regionId: "forest", worldLevel: 10 }, CONFIG);
+      const desert = listEligibleEventCards({ regionId: "desert", worldLevel: 10 }, CONFIG);
+      assert(forest.filter((card) => card.regions?.includes("forest")).length >= 5);
+      assert(desert.filter((card) => card.regions?.includes("desert")).length >= 6);
+    },
+  },
+  {
+    name: "moonlit spring resolves deterministic healing and a permanent speed blessing",
+    run() {
+      const card = CONFIG.events.cards.find((entry) => entry.id === "moonlit_spring");
+      const context = { eventBuffs: {}, eventFlags: {}, worldLevel: 6 };
+      const first = resolveEventOption(card, 0, context, "moon-spring", CONFIG);
+      const second = resolveEventOption(card, 0, context, "moon-spring", CONFIG);
+      assert(first.ok && JSON.stringify(first) === JSON.stringify(second));
+      assert(first.heroPatch.hpDelta >= 35 && first.heroPatch.hpDelta <= 70);
+      assert(first.eventBuffs.speed === 1);
+      assert(first.eventFlags.moonlit_spring === true);
+    },
+  },
+  {
     name: "event trigger is seeded and respects eventChance / spacing",
     run() {
       const always = {
@@ -204,6 +242,38 @@ export const tests = [
       const log = listQuestLog(quests, CONFIG);
       assert(log.active.length === 1);
       assert(log.active[0].progressText.includes("0/10") || log.active[0].progressText.includes("腐狼"));
+    },
+  },
+  {
+    name: "NPC quest markers honor the supplied quest config",
+    run() {
+      const customConfig = {
+        ...CONFIG,
+        quests: {
+          npcs: {
+            custom_npc: {
+              id: "custom_npc",
+              town: "custom_town",
+              questIds: ["custom_collect"],
+            },
+          },
+          quests: {
+            custom_collect: {
+              id: "custom_collect",
+              name: "自定义收集",
+              giver: "custom_npc",
+              objective: { type: "collect", target: "custom_mat", count: 2 },
+            },
+          },
+        },
+      };
+      const quests = {
+        active: ["custom_collect"],
+        completed: [],
+        progress: { custom_collect: 2 },
+        flags: {},
+      };
+      assert(getNpcQuestMarker("custom_npc", quests, customConfig) === "turnin");
     },
   },
   {

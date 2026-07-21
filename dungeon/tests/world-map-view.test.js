@@ -105,6 +105,10 @@ export const tests = [
       assert(svg.includes("wm-region-fog") || svg.includes("is-locked-region"));
       assert(svg.includes("is-reduced-motion"));
       assert(svg.includes("feTurbulence"));
+      assert(svg.includes("wm-region-texture"));
+      assert(svg.includes("wm-map-cartouche"));
+      assert(svg.includes("wm-node-label-bg"));
+      assert(svg.includes("wm-decor-tree") || svg.includes("wm-decor-mountain"));
     },
   },
   {

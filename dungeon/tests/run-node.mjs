@@ -12,8 +12,9 @@ import { tests as qol } from "./qol.test.js";
 import { tests as world } from "./world.test.js";
 import { tests as worldMapView } from "./world-map-view.test.js";
 import { tests as eventsQuests } from "./events-quests.test.js";
+import { tests as batch2b } from "./batch2b.test.js";
 
-const tests = [...combat, ...save, ...skills, ...hero, ...dungeon, ...economy, ...outdoor, ...loot, ...effects, ...classes, ...qol, ...world, ...worldMapView, ...eventsQuests];
+const tests = [...combat, ...save, ...skills, ...hero, ...dungeon, ...economy, ...outdoor, ...loot, ...effects, ...classes, ...qol, ...world, ...worldMapView, ...eventsQuests, ...batch2b];
 let passed = 0;
 
 for (const test of tests) {

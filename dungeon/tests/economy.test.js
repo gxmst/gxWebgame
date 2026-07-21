@@ -303,6 +303,8 @@ function createSaveWithInventoryItem(seed) {
   save.hero.inventory = [item];
   save.hero.equipment[item.slot] = null;
   save.economy = createDefaultEconomy();
+  // 2B: 重铸可选消耗材料；测试夹具默认备齐，避免误伤旧用例。
+  save.materials = { wild_essence: 99 };
   return save;
 }
 
@@ -312,6 +314,7 @@ function createSaveWithEquippedItem(seed) {
   save.hero.inventory = [];
   save.hero.equipment.weapon = item;
   save.economy = createDefaultEconomy();
+  save.materials = { wild_essence: 99 };
   return save;
 }
 

@@ -1,5 +1,6 @@
-import { getReforgeCost, getSellValue, getShopPrice } from "./economy.js";
+import { getReforgeCost, getReforgeMaterialRequirement, getSellValue, getShopPrice } from "./economy.js";
 import { getAffixRollQuality } from "./loot.js";
+import { formatMaterialChip, getMaterialName, listOwnedMaterials } from "./materials.js";
 import { GameAudio } from "./audio.js";
 import {
   buildWorldMapModel,
@@ -11,6 +12,7 @@ const SLOT_META = {
   weapon: { label: "武器", icon: "🗡️" },
   helmet: { label: "头盔", icon: "⛑️" },
   armor: { label: "护甲", icon: "🛡️" },
+  footwear: { label: "鞋子", icon: "🥾" },
   accessory: { label: "饰品", icon: "💎" },
 };
 
@@ -60,6 +62,9 @@ export class DungeonUI {
     this.inventorySort = "default";
     this.inventoryFilter = "all";
     this.lastInventoryRender = null;
+    this.selectedInventoryItemId = null;
+    this.equipmentManagerExpanded = false;
+    this.currentCharacterSummary = null;
     // 动效开关:尊重系统的"减少动态效果"偏好。
     this.reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
     this.audio = new GameAudio();
@@ -75,6 +80,44 @@ export class DungeonUI {
       const inventoryTab = event.target.closest("[data-inventory-tab]");
       if (inventoryTab) {
         this.activateInventoryTab(inventoryTab.dataset.inventoryTab);
+        return;
+      }
+
+      if (event.target.closest("[data-equipment-manager-open]")) {
+        this.activateInventoryTab("inventory");
+        this.activatePanel("inventory");
+        this.setEquipmentManagerExpanded(
+          globalThis.matchMedia?.("(min-width: 1161px)")?.matches === true,
+        );
+        return;
+      }
+
+      if (event.target.closest("[data-equipment-manager-close]")) {
+        this.setEquipmentManagerExpanded(false);
+        return;
+      }
+
+      if (event.target.closest("[data-inventory-detail-close]")) {
+        this.selectedInventoryItemId = null;
+        const last = this.lastInventoryRender;
+        if (last) this.renderInventory(last.items, last.equipment, last.limit);
+        return;
+      }
+
+      const itemSelect = event.target.closest("[data-item-select]");
+      if (itemSelect) {
+        this.selectedInventoryItemId = itemSelect.dataset.itemSelect || null;
+        if (globalThis.matchMedia?.("(min-width: 1161px)")?.matches) {
+          this.setEquipmentManagerExpanded(true, false);
+        }
+        const last = this.lastInventoryRender;
+        if (last) this.renderInventory(last.items, last.equipment, last.limit);
+        return;
+      }
+
+      const loadoutFilter = event.target.closest("[data-loadout-filter]");
+      if (loadoutFilter) {
+        this.setInventoryView({ filter: loadoutFilter.dataset.loadoutFilter });
         return;
       }
 
@@ -385,6 +428,12 @@ export class DungeonUI {
       event.preventDefault();
       this.handlers.resolveReforge?.("keep");
     });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && this.equipmentManagerExpanded) {
+        this.setEquipmentManagerExpanded(false);
+      }
+    });
   }
 
   render(model) {
@@ -403,6 +452,7 @@ export class DungeonUI {
       model.character.equipment,
       model.inventoryLimit,
     );
+    this.renderMaterials(model.materialRows ?? model.materials);
     this.renderShop(model.economy?.shop, model.character.gold, model.character.equipment);
     const pendingReforge = Boolean(model.economy?.pendingReforge);
     for (const button of document.querySelectorAll("[data-equip-id], [data-sell-id], [data-unequip-slot], [data-reforge-id]")) {
@@ -433,6 +483,7 @@ export class DungeonUI {
 
   renderCharacter(character) {
     const { hero, stats, levelProgress, power, classMeta, skills, skillPoints, prestige } = character;
+    this.currentCharacterSummary = { hero, stats, power, classMeta };
     setText(this.dom.level, hero.level);
     setText(
       this.dom.expText,
@@ -448,6 +499,11 @@ export class DungeonUI {
       this.dom.expFill?.parentElement,
     );
     setText(this.dom.power, formatNumber(power));
+    setText(this.dom.managerPower, formatNumber(power));
+    setText(this.dom.managerHp, formatNumber(stats.maxHp));
+    setText(this.dom.managerAttack, formatNumber(stats.attack));
+    setText(this.dom.managerDefense, formatNumber(stats.defense));
+    setText(this.dom.managerSpeed, formatNumber(stats.speed));
     setText(this.dom.hp, formatNumber(stats.maxHp));
     setText(this.dom.attack, formatNumber(stats.attack));
     setText(this.dom.defense, formatNumber(stats.defense));
@@ -572,6 +628,32 @@ export class DungeonUI {
           </div>`;
       })
       .join("");
+
+    if (this.dom.managerEquipment) {
+      const classMeta = this.currentCharacterSummary?.classMeta ?? {};
+      const slots = Object.entries(SLOT_META).map(([slot, meta]) => {
+        const item = equipment?.[slot];
+        const selected = item?.id && item.id === this.selectedInventoryItemId;
+        if (!item) {
+          return `
+            <button class="loadout-slot slot-${slot} is-empty" type="button" data-loadout-filter="${slot}" aria-label="${meta.label}未装备，筛选${meta.label}">
+              <span aria-hidden="true">${meta.icon}</span><small>${meta.label}</small>
+            </button>`;
+        }
+        return `
+          <button class="loadout-slot slot-${slot} rarity-${rarityKey(item.rarity)} ${selected ? "is-selected" : ""}" type="button" data-item-select="${escapeHtml(item.id)}" aria-label="查看已装备的${escapeHtml(item.name)}">
+            <span aria-hidden="true">${escapeHtml(item.icon || meta.icon)}</span>
+            <small>${meta.label}</small>
+            <strong>${escapeHtml(item.name)}</strong>
+          </button>`;
+      }).join("");
+      this.dom.managerEquipment.innerHTML = `
+        <div class="loadout-avatar" aria-hidden="true">
+          <span>${escapeHtml(classMeta.emoji || "⚔️")}</span>
+          <strong>${escapeHtml(classMeta.name || "冒险者")}</strong>
+        </div>
+        ${slots}`;
+    }
   }
 
   renderFloors(floors = [], selectedFloorId) {
@@ -647,13 +729,65 @@ export class DungeonUI {
     const visible = this.applyInventoryView(items);
     this.dom.inventory.innerHTML = items.length > 0 && visible.length === 0
       ? `<div class="empty-state inventory-filter-empty"><span aria-hidden="true">🔍</span><strong>该分类暂无装备</strong><p>换一个筛选条件试试。</p></div>`
-      : visible.map((item) => renderInventoryItem(item, equippedBySlot[item.slot])).join("");
+      : visible.map((item) => renderInventoryTile(item, item.id === this.selectedInventoryItemId)).join("");
+
+    const equippedItems = Object.entries(equippedBySlot)
+      .filter(([, item]) => item)
+      .map(([slot, item]) => ({ slot, item }));
+    let selected = items.find((item) => item.id === this.selectedInventoryItemId) ?? null;
+    let selectedLocation = selected ? "inventory" : null;
+    let selectedSlot = selected?.slot ?? null;
+    if (!selected) {
+      const equipped = equippedItems.find((entry) => entry.item.id === this.selectedInventoryItemId);
+      if (equipped) {
+        selected = equipped.item;
+        selectedLocation = "equipment";
+        selectedSlot = equipped.slot;
+      }
+    }
+    if (!selected && this.equipmentManagerExpanded && visible[0]) {
+      selected = visible[0];
+      selectedLocation = "inventory";
+      selectedSlot = selected.slot;
+      this.selectedInventoryItemId = selected.id;
+    }
+    if (!selected && this.selectedInventoryItemId) this.selectedInventoryItemId = null;
+    for (const tile of this.dom.inventory.querySelectorAll("[data-item-select]")) {
+      const active = tile.dataset.itemSelect === this.selectedInventoryItemId;
+      tile.classList.toggle("is-selected", active);
+      tile.setAttribute("aria-pressed", String(active));
+    }
+    if (this.dom.inventoryDetail) {
+      this.dom.inventoryDetail.innerHTML = selected
+        ? renderItemInspector(selected, equippedBySlot[selected.slot], selectedLocation, selectedSlot)
+        : renderEmptyItemInspector();
+    }
+    this.dom.inventoryPanel?.classList.toggle("has-item-selection", Boolean(selected));
+    this.renderEquipment(equipment);
     if (this.dom.inventoryEmpty) this.dom.inventoryEmpty.hidden = items.length > 0;
     setText(this.dom.inventoryCount, `${items.length}`);
     setText(this.dom.inventoryLimit, `${limit}`);
     const capacity = this.dom.inventoryCount?.parentElement;
     if (capacity) capacity.setAttribute("aria-label", `背包容量 ${items.length} / ${limit}`);
     this.syncInventoryControls();
+  }
+
+  renderMaterials(rowsOrMap = []) {
+    if (!this.dom.materialsList) return;
+    const rows = Array.isArray(rowsOrMap)
+      ? rowsOrMap
+      : listOwnedMaterials(rowsOrMap);
+    if (rows.length === 0) {
+      this.dom.materialsList.innerHTML = `<p class="materials-empty">暂无材料。野外与事件中可获得。</p>`;
+      return;
+    }
+    this.dom.materialsList.innerHTML = rows.map((row) => `
+      <article class="material-chip" title="${escapeHtml(row.description || row.name)}">
+        <span aria-hidden="true">${escapeHtml(row.emoji || "📦")}</span>
+        <strong>${escapeHtml(row.name || getMaterialName(row.id))}</strong>
+        <em>×${formatNumber(row.amount)}</em>
+      </article>
+    `).join("");
   }
 
   /** Pure display-side filter + sort; the save's item order is never touched. */
@@ -674,11 +808,21 @@ export class DungeonUI {
   }
 
   setInventoryView({ filter, sort } = {}) {
-    if (filter) this.inventoryFilter = ["weapon", "helmet", "armor", "accessory"].includes(filter) ? filter : "all";
+    if (filter) this.inventoryFilter = ["weapon", "helmet", "armor", "footwear", "accessory"].includes(filter) ? filter : "all";
     if (sort) this.inventorySort = ["power", "rarity", "level"].includes(sort) ? sort : "default";
     const last = this.lastInventoryRender;
     if (last) this.renderInventory(last.items, last.equipment, last.limit);
     else this.syncInventoryControls();
+  }
+
+  setEquipmentManagerExpanded(expanded, render = true) {
+    this.equipmentManagerExpanded = expanded === true;
+    this.dom.inventoryPanel?.classList.toggle("is-expanded", this.equipmentManagerExpanded);
+    document.body.classList.toggle("has-equipment-manager", this.equipmentManagerExpanded);
+    if (render) {
+      const last = this.lastInventoryRender;
+      if (last) this.renderInventory(last.items, last.equipment, last.limit);
+    }
   }
 
   syncInventoryControls() {
@@ -1053,7 +1197,7 @@ export class DungeonUI {
   }
 
   activateInventoryTab(name) {
-    const selected = name === "shop" ? "shop" : "inventory";
+    const selected = ["shop", "materials"].includes(name) ? name : "inventory";
     for (const button of document.querySelectorAll("[data-inventory-tab]")) {
       const active = button.dataset.inventoryTab === selected;
       button.classList.toggle("is-active", active);
@@ -1268,25 +1412,76 @@ export class DungeonUI {
       return;
     }
     if (!Array.isArray(entry.targets)) return;
+    if (["single", "aoe"].includes(entry.actionType) && entry.actor) {
+      this.animateUnitAttack(entry.actor, entry.actionType === "aoe");
+    }
+    let landedHits = 0;
+    let criticalHits = 0;
     for (const target of entry.targets) {
       if (!target?.id || entry.actionType === "summon") continue;
       if (target.dodged) {
         this.floatOverUnit(target, "闪避", "is-dodge");
       } else {
         this.floatOverUnit(target, `-${formatNumber(target.damage)}`, target.critical ? "is-crit" : "", true);
+        this.impactOverUnit(target, target.critical === true);
+        landedHits += 1;
+        if (target.critical) criticalHits += 1;
       }
     }
+    if (criticalHits > 0 || (entry.actionType === "aoe" && landedHits >= 2)) {
+      this.pulseBattleImpact(criticalHits > 0);
+    }
+  }
+
+  animateUnitAttack(unit, isArea = false) {
+    const card = this.findUnitCard(unit);
+    if (!card) return;
+    card.classList.remove("is-attacking", "is-area-attacking", "is-attacking-left");
+    void card.offsetWidth;
+    card.classList.toggle("is-attacking-left", unit.side === "enemy");
+    card.classList.add(isArea ? "is-area-attacking" : "is-attacking");
+    setTimeout(() => {
+      card.classList.remove("is-attacking", "is-area-attacking", "is-attacking-left");
+    }, 280);
+  }
+
+  impactOverUnit(unit, critical = false) {
+    const card = this.findUnitCard(unit);
+    if (!card) return;
+    const burst = document.createElement("span");
+    burst.className = `hit-impact${critical ? " is-critical" : ""}`;
+    burst.setAttribute("aria-hidden", "true");
+    burst.innerHTML = `<i class="hit-impact-ring"></i>${[
+      [-17, -12], [18, -9], [-13, 14], [16, 13], [0, -20], [2, 20],
+    ].slice(0, critical ? 6 : 4).map(([x, y], index) =>
+      `<i class="hit-spark" style="--spark-x:${x}px;--spark-y:${y}px;--spark-delay:${index * 12}ms"></i>`,
+    ).join("")}`;
+    card.append(burst);
+    const remove = () => burst.remove();
+    burst.addEventListener("animationend", remove, { once: true });
+    setTimeout(remove, 620);
+  }
+
+  pulseBattleImpact(critical = false) {
+    const view = this.dom.battleView;
+    if (!view) return;
+    view.classList.remove("is-impacting", "is-critical-impact");
+    void view.offsetWidth;
+    view.classList.toggle("is-critical-impact", critical);
+    view.classList.add("is-impacting");
+    setTimeout(() => view.classList.remove("is-impacting", "is-critical-impact"), 260);
   }
 
   floatOverUnit(unit, text, extraClass = "", flash = false) {
     const card = this.findUnitCard(unit);
     if (!card) return;
     if (flash) {
-      card.classList.remove("is-hit");
+      card.classList.remove("is-hit", "is-hit-left");
       // 重新触发受击动画需要强制一次 reflow。
       void card.offsetWidth;
+      card.classList.toggle("is-hit-left", unit.side === "player" || unit.side === "minion");
       card.classList.add("is-hit");
-      setTimeout(() => card.classList.remove("is-hit"), 320);
+      setTimeout(() => card.classList.remove("is-hit", "is-hit-left"), 320);
     }
     const float = document.createElement("span");
     float.className = `damage-float ${extraClass}`.trim();
@@ -1435,7 +1630,7 @@ export class DungeonUI {
         <div><span>经验</span><strong>+${formatNumber(result.experience)}</strong></div>
         <div><span>金币</span><strong>+${formatNumber(result.gold)}</strong></div>
       </div>
-      <p class="outdoor-settlement-note">装备收入背包 ${formatNumber(stored)} 件${salvaged ? `，${formatNumber(salvaged)} 件已分解为金币` : ""}${result.materialCount ? `；材料 ${formatNumber(result.materialCount)} 件` : ""}。</p>
+      <p class="outdoor-settlement-note">装备收入背包 ${formatNumber(stored)} 件${salvaged ? `，${formatNumber(salvaged)} 件已分解为金币` : ""}${result.materialCount ? `；获得材料 ${formatNumber(result.materialCount)} 件` : ""}${Array.isArray(result.materialLabels) && result.materialLabels.length ? `（${result.materialLabels.map((label) => escapeHtml(label)).join("、")}）` : ""}。</p>
       ${result.saveFailed ? `<p class="save-error-note" role="alert">进度暂时无法写入浏览器存储，请检查存储权限后再继续。</p>` : ""}`;
     if (typeof this.dom.resultDialog.showModal === "function") {
       if (!this.dom.resultDialog.open) this.dom.resultDialog.showModal();
@@ -1564,6 +1759,12 @@ function collectDom() {
     prestige: hook("prestige"),
     autoAllocate: hook("auto-allocate"),
     equipment: hook("equipment"),
+    managerEquipment: hook("manager-equipment"),
+    managerPower: hook("manager-power"),
+    managerHp: hook("manager-hp"),
+    managerAttack: hook("manager-attack"),
+    managerDefense: hook("manager-defense"),
+    managerSpeed: hook("manager-speed"),
     floorList: hook("floor-list"),
     floorPreview: hook("floor-preview"),
     idleView: hook("idle-view"),
@@ -1579,9 +1780,12 @@ function collectDom() {
     skip: hook("skip"),
     retreat: hook("retreat"),
     inventory: hook("inventory"),
+    inventoryPanel: document.querySelector(".inventory-panel"),
+    inventoryDetail: hook("inventory-detail"),
     inventoryEmpty: hook("inventory-empty"),
     inventoryCount: hook("inventory-count"),
     inventoryLimit: hook("inventory-limit"),
+    materialsList: hook("materials-list"),
     shop: hook("shop"),
     shopRefresh: hook("shop-refresh"),
     classDialog: hook("class-dialog"),
@@ -1619,45 +1823,71 @@ function collectDom() {
   };
 }
 
-function renderInventoryItem(item, equippedItem) {
+function renderInventoryTile(item, selected = false) {
   const meta = SLOT_META[item.slot] || { label: "装备", icon: "◆" };
-  const comparison = compareStats(item, equippedItem);
-  const stats = comparison.length > 0
-    ? comparison.map(({ key, value, delta }) => {
-      const deltaMarkup = delta === 0
-        ? ""
-        : `<span class="${delta > 0 ? "comparison-up" : "comparison-down"}">${delta > 0 ? "↑" : "↓"}${formatStatValue(key, Math.abs(delta))}</span>`;
-      return `<span>${STAT_META[key]?.label || escapeHtml(key)} +${formatStatValue(key, value)} ${deltaMarkup}</span>`;
-    }).join("")
-    : "<span>无额外属性</span>";
-  const effectMarkup = renderEffect(item.effect);
   const locked = item.locked === true;
   return `
-    <article class="inventory-item rarity-${rarityKey(item.rarity)} ${locked ? "is-locked" : ""} ${item.upgradeDelta > 0 ? "is-upgrade" : ""}">
-      <div class="inventory-item-header">
-        <span class="slot-icon" aria-hidden="true">${escapeHtml(item.icon || meta.icon)}</span>
-        <span class="inventory-item-name">
-          <strong>${escapeHtml(item.name)}${item.upgradeDelta > 0 ? ` <span class="upgrade-badge" title="装备后战力提升">⬆ 升级 +${formatNumber(item.upgradeDelta)}</span>` : ""}</strong>
-          <small>${RARITY_LABELS[rarityKey(item.rarity)] || "普通"} · ${meta.label} · Lv.${numberOr(item.level, 1)}</small>
-        </span>
-        <button class="icon-button lock-button ${locked ? "is-locked" : ""}" type="button" data-lock-id="${escapeHtml(item.id)}" aria-label="${locked ? "解锁" : "锁定"}${escapeHtml(item.name)}" title="${locked ? "解锁(允许出售)" : "锁定(防止出售)"}">${locked ? "🔒" : "🔓"}</button>
-        <span class="item-power">✦ ${formatNumber(item.power)}</span>
+    <button class="inventory-item-tile rarity-${rarityKey(item.rarity)} ${locked ? "is-locked" : ""} ${item.upgradeDelta > 0 ? "is-upgrade" : ""} ${selected ? "is-selected" : ""}" type="button" data-item-select="${escapeHtml(item.id)}" aria-pressed="${selected ? "true" : "false"}" title="${escapeHtml(item.name)} · ${meta.label} · Lv.${numberOr(item.level, 1)}">
+      <span class="item-tile-icon" aria-hidden="true">${escapeHtml(item.icon || meta.icon)}</span>
+      <span class="item-tile-power">✦ ${formatNumber(item.power)}</span>
+      <span class="item-tile-name">${escapeHtml(item.name)}</span>
+      <span class="item-tile-level">Lv.${numberOr(item.level, 1)}</span>
+      ${item.upgradeDelta > 0 ? `<span class="item-tile-upgrade" title="预计提升 ${formatNumber(item.upgradeDelta)} 战力">↑</span>` : ""}
+      ${locked ? `<span class="item-tile-lock" aria-label="已锁定">🔒</span>` : ""}
+    </button>`;
+}
+
+function renderEmptyItemInspector() {
+  return `
+    <button class="icon-button item-inspector-close" type="button" data-inventory-detail-close aria-label="关闭装备详情" title="关闭详情">×</button>
+    <div class="item-inspector-empty">
+      <span aria-hidden="true">✦</span>
+      <strong>选择一件装备</strong>
+      <p>查看它与当前装备的属性差异。</p>
+    </div>`;
+}
+
+function renderItemInspector(item, equippedItem, location = "inventory", slot = item?.slot) {
+  const meta = SLOT_META[item.slot] || { label: "装备", icon: "◆" };
+  const locked = item.locked === true;
+  const isEquipped = location === "equipment";
+  const comparisonTarget = equippedItem?.id === item.id ? null : equippedItem;
+  const comparison = compareStats(item, comparisonTarget);
+  const statMarkup = comparison.length > 0
+    ? comparison.map(({ key, value, delta }) => {
+      const deltaMarkup = comparisonTarget && delta !== 0
+        ? `<em class="${delta > 0 ? "comparison-up" : "comparison-down"}">${delta > 0 ? "+" : "−"}${formatStatValue(key, Math.abs(delta))}</em>`
+        : "";
+      return `<div><span>${STAT_META[key]?.label || escapeHtml(key)}</span><strong>${formatStatValue(key, value)}</strong>${deltaMarkup}</div>`;
+    }).join("")
+    : `<p class="item-inspector-no-stats">无额外属性</p>`;
+  const comparisonLabel = comparisonTarget
+    ? `对比：${comparisonTarget.name}`
+    : (isEquipped ? "当前已装备" : `${meta.label}槽为空`);
+  const actions = isEquipped
+    ? `
+      <button class="secondary-button" type="button" data-unequip-slot="${escapeHtml(slot)}">卸下装备</button>
+      <button class="primary-button" type="button" data-reforge-id="${escapeHtml(item.id)}" data-reforge-location="equipment" data-reforge-slot="${escapeHtml(slot)}">重铸 ${formatNumber(getReforgeCost(item))}${formatReforgeMaterialSuffix()}</button>`
+    : `
+      <button class="primary-button" type="button" data-equip-id="${escapeHtml(item.id)}">${equippedItem ? "替换装备" : "装备"}</button>
+      <button class="secondary-button" type="button" data-reforge-id="${escapeHtml(item.id)}" data-reforge-location="inventory">重铸 ${formatNumber(getReforgeCost(item))}${formatReforgeMaterialSuffix()}</button>
+      <button class="secondary-button inspector-sell-button" type="button" data-sell-id="${escapeHtml(item.id)}" ${locked ? "disabled title=\"已锁定，无法出售\"" : ""}>出售 ${formatNumber(getSellValue(item))}</button>`;
+  return `
+    <button class="icon-button item-inspector-close" type="button" data-inventory-detail-close aria-label="关闭装备详情" title="关闭详情">×</button>
+    <div class="item-inspector-hero rarity-${rarityKey(item.rarity)}">
+      <span class="item-inspector-icon" aria-hidden="true">${escapeHtml(item.icon || meta.icon)}</span>
+      <div>
+        <p>${RARITY_LABELS[rarityKey(item.rarity)] || "普通"} · ${meta.label} · Lv.${numberOr(item.level, 1)}</p>
+        <h3>${escapeHtml(item.name)}</h3>
       </div>
-      <p class="item-stats">${stats}</p>
-      ${renderAffixQuality(item)}
-      ${effectMarkup}
-      <div class="item-actions">
-        <button class="secondary-button equip-button" type="button" data-equip-id="${escapeHtml(item.id)}">
-          ${equippedItem ? "替换装备" : "装备"}
-        </button>
-        <button class="secondary-button reforge-button" type="button" data-reforge-id="${escapeHtml(item.id)}" data-reforge-location="inventory">
-          重铸 ${formatNumber(getReforgeCost(item))}
-        </button>
-        <button class="secondary-button sell-button" type="button" data-sell-id="${escapeHtml(item.id)}" ${locked ? "disabled title=\"已锁定,无法出售\"" : ""}>
-          出售 ${formatNumber(getSellValue(item))}
-        </button>
-      </div>
-    </article>`;
+      <button class="icon-button lock-button ${locked ? "is-locked" : ""}" type="button" data-lock-id="${escapeHtml(item.id)}" aria-label="${locked ? "解锁" : "锁定"}${escapeHtml(item.name)}" title="${locked ? "解锁（允许出售）" : "锁定（防止出售）"}">${locked ? "🔒" : "🔓"}</button>
+    </div>
+    <div class="item-inspector-power"><span>装备战力</span><strong>✦ ${formatNumber(item.power)}</strong>${numberOr(item.upgradeDelta, 0) !== 0 && !isEquipped ? `<em class="${item.upgradeDelta > 0 ? "comparison-up" : "comparison-down"}">${item.upgradeDelta > 0 ? "+" : ""}${formatNumber(item.upgradeDelta)}</em>` : ""}</div>
+    <p class="item-comparison-label">${escapeHtml(comparisonLabel)}</p>
+    <div class="item-inspector-stats">${statMarkup}</div>
+    ${renderAffixQuality(item)}
+    ${renderEffect(item.effect)}
+    <div class="item-inspector-actions">${actions}</div>`;
 }
 
 /** Per-affix roll-quality chips: how close each roll is to its level ceiling. */
@@ -1913,6 +2143,12 @@ function cssEscape(value) {
   return String(value).replaceAll('"', '\\"');
 }
 
+function formatReforgeMaterialSuffix() {
+  const req = getReforgeMaterialRequirement();
+  if (!req?.required) return "";
+  return ` + ${req.emoji || "✨"}${req.name || getMaterialName(req.materialId)}×${req.amount || 1}`;
+}
+
 function numberOr(value, fallback) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
 }
@@ -1943,12 +2179,16 @@ function formatEventRewardChips(rewards) {
   }
   if (rewards.materials && typeof rewards.materials === "object") {
     for (const [id, amount] of Object.entries(rewards.materials)) {
-      if (amount > 0) chips.push(`<span>${escapeHtml(id)} ×${formatNumber(amount)}</span>`);
+      if (amount > 0) chips.push(`<span>${escapeHtml(formatMaterialChip(id, amount))}</span>`);
     }
   }
   if (rewards.buffs && typeof rewards.buffs === "object") {
+    const buffNames = { maxHp: "生命", attack: "攻击", defense: "防御", speed: "速度" };
     for (const [stat, amount] of Object.entries(rewards.buffs)) {
-      if (amount) chips.push(`<span>${escapeHtml(stat)} ${amount > 0 ? "+" : ""}${amount}</span>`);
+      if (amount) {
+        const label = buffNames[stat] || "属性";
+        chips.push(`<span>${escapeHtml(label)} ${amount > 0 ? "+" : ""}${amount}</span>`);
+      }
     }
   }
   if (rewards.battle) chips.push("<span>触发战斗</span>");

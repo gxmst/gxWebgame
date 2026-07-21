@@ -58,12 +58,15 @@ export class GameAudio {
     try {
       switch (type) {
         case "hit":
-          this.noise(ctx, t, 0.05, 0.05);
-          this.tone(ctx, { time: t, freq: 170, freqEnd: 95, duration: 0.08, type: "square", volume: 0.05 });
+          this.noise(ctx, t, 0.065, 0.065);
+          this.tone(ctx, { time: t, freq: 112, freqEnd: 48, duration: 0.11, type: "sine", volume: 0.09 });
+          this.tone(ctx, { time: t + 0.008, freq: 210, freqEnd: 92, duration: 0.075, type: "square", volume: 0.045 });
           break;
         case "crit":
-          this.noise(ctx, t, 0.06, 0.07);
-          this.tone(ctx, { time: t, freq: 660, freqEnd: 210, duration: 0.14, type: "triangle", volume: 0.1 });
+          this.noise(ctx, t, 0.095, 0.095);
+          this.tone(ctx, { time: t, freq: 82, freqEnd: 34, duration: 0.18, type: "sine", volume: 0.13 });
+          this.tone(ctx, { time: t + 0.006, freq: 760, freqEnd: 190, duration: 0.16, type: "triangle", volume: 0.105 });
+          this.tone(ctx, { time: t + 0.035, freq: 1280, freqEnd: 540, duration: 0.09, type: "square", volume: 0.028 });
           break;
         case "dodge":
           this.tone(ctx, { time: t, freq: 1250, freqEnd: 1850, duration: 0.06, type: "sine", volume: 0.035 });

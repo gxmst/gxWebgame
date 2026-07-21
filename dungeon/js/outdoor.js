@@ -2,6 +2,7 @@ import { CONFIG, createSeededRng } from "./config.js";
 import { createEnemyWave, getFloor, getFloorCap } from "./dungeon.js";
 import { sanitizeItem } from "./hero.js";
 import { generateLoot } from "./loot.js";
+import { pickOutdoorMaterialId } from "./materials.js";
 
 const MAX_REWARD = Number.MAX_SAFE_INTEGER;
 const OUTDOOR_STAT_KEYS = Object.freeze(["maxHp", "attack", "defense"]);
@@ -127,17 +128,43 @@ export function selectOutdoorFloor(saveOrProgress, seed = 0, inputConfig = CONFI
  * then applying only outdoor-specific strength and reward coefficients.
  */
 export function createOutdoorWave(saveOrProgress, stateOrSeed = 0, inputConfig = CONFIG) {
-  const tuning = normalizeOutdoorConfig(inputConfig);
+  const regionId = readRegionId(saveOrProgress, inputConfig);
+  const tuning = normalizeOutdoorConfig({
+    ...inputConfig,
+    regionId,
+    outdoor: {
+      ...(isRecord(inputConfig?.outdoor) ? inputConfig.outdoor : {}),
+      regionId,
+    },
+  });
   const state = isRecord(stateOrSeed) ? sanitizeOutdoorState(stateOrSeed) : null;
   const waveIndex = state?.nextWaveIndex ?? 0;
   const sessionSeed = state
     ? (state.sessionSeed ?? "0")
     : normalizeSeed(stateOrSeed);
   const waveSeed = `${sessionSeed ?? "0"}|outdoor-wave|${waveIndex}`;
-  const floor = selectOutdoorFloor(saveOrProgress, waveSeed, inputConfig);
+  // 区域强度：荒漠 outdoorEnemyStatMultiplier / floor bonus
+  const regionTuning = getRegionOutdoorTuning(regionId, inputConfig);
+  const floorSeed = waveSeed;
+  const floor = selectOutdoorFloor(
+    applyRegionFloorBonus(saveOrProgress, regionTuning),
+    floorSeed,
+    {
+      ...inputConfig,
+      outdoor: {
+        ...(isRecord(inputConfig?.outdoor) ? inputConfig.outdoor : {}),
+        enemyStatMultiplier: tuning.enemyStatMultiplier * regionTuning.enemyStatMultiplier,
+        regionId,
+      },
+    },
+  );
   if (!floor) return createEmptyOutdoorWave(waveSeed, waveIndex, tuning.minimumFloor);
   const source = createEnemyWave(floor.id, `${waveSeed}|enemies`);
-  const enemies = source.enemies.map((enemy) => scaleOutdoorEnemy(enemy, tuning));
+  const enemyMultiplier = tuning.enemyStatMultiplier * regionTuning.enemyStatMultiplier;
+  const enemies = source.enemies.map((enemy) => scaleOutdoorEnemy(enemy, {
+    ...tuning,
+    enemyStatMultiplier: enemyMultiplier,
+  }));
   const rewards = sumEnemyRewards(enemies);
 
   return {
@@ -147,6 +174,7 @@ export function createOutdoorWave(saveOrProgress, stateOrSeed = 0, inputConfig =
     waveIndex,
     seed: waveSeed,
     isBoss: false,
+    regionId,
     enemies,
     rewards: { ...rewards, lootCount: 0 },
     experienceReward: rewards.experience,
@@ -194,7 +222,9 @@ export function settleOutdoorWave(
         if (item) items.push(item);
       }
       if (tuning.materialsEnabled && rng() < tuning.materialDropChancePerEnemy) {
-        materials[tuning.materialId] = safeAdd(materials[tuning.materialId], 1);
+        const materialId = pickOutdoorMaterialId(tuning.regionId, inputConfig)
+          || tuning.materialId;
+        materials[materialId] = safeAdd(materials[materialId], 1);
       }
     }
   }
@@ -280,6 +310,7 @@ function normalizeOutdoorConfig(inputConfig) {
       0,
     ),
     materialId: safeString(source.materialId ?? materials.id, "wild_essence", 60),
+    regionId: safeString(source.regionId ?? root.regionId, "", 60),
   };
 }
 
@@ -512,6 +543,50 @@ function safeString(value, fallback, maxLength) {
   return typeof value === "string" && value.trim()
     ? value.trim().slice(0, maxLength)
     : fallback;
+}
+
+function readRegionId(saveOrProgress, inputConfig = CONFIG) {
+  const root = getCharacterContext(saveOrProgress);
+  const fromWorld = root?.world?.currentRegionId;
+  if (typeof fromWorld === "string" && fromWorld) return fromWorld;
+  const nodeId = root?.world?.currentNodeId;
+  if (typeof nodeId === "string" && nodeId) {
+    const regions = inputConfig?.world?.regions || CONFIG.world?.regions || {};
+    for (const region of Object.values(regions)) {
+      if (!isRecord(region) || !Array.isArray(region.nodes)) continue;
+      if (region.nodes.some((node) => node?.id === nodeId)) return region.id;
+    }
+  }
+  return inputConfig?.world?.starterRegionId || CONFIG.world?.starterRegionId || "forest";
+}
+
+function getRegionOutdoorTuning(regionId, inputConfig = CONFIG) {
+  const region = inputConfig?.world?.regions?.[regionId]
+    || CONFIG.world?.regions?.[regionId]
+    || {};
+  return {
+    enemyStatMultiplier: clampNumber(region.outdoorEnemyStatMultiplier, 0.5, 3, 1),
+    floorBonus: clampInteger(region.outdoorFloorBonus, 0, 50, 0),
+  };
+}
+
+/** 用影子 highest 抬高野外层段，不改真实存档。 */
+function applyRegionFloorBonus(saveOrProgress, regionTuning) {
+  const bonus = regionTuning?.floorBonus || 0;
+  if (!bonus) return saveOrProgress;
+  const root = getCharacterContext(saveOrProgress);
+  const highest = readHighestUnlockedFloor(saveOrProgress, CONFIG);
+  const boosted = Math.min(
+    clampInteger(CONFIG.dungeon?.maxFloor, 1, 1_000_000, 100),
+    highest + bonus,
+  );
+  if (isRecord(root.progress)) {
+    return {
+      ...root,
+      progress: { ...root.progress, highestUnlockedFloor: boosted },
+    };
+  }
+  return { ...root, highestUnlockedFloor: boosted };
 }
 
 function finiteInteger(value, fallback) {

@@ -78,8 +78,15 @@ import {
   getDialogueNode,
   listQuestLog,
   listTownNpcs,
+  progressCollectQuests,
+  progressDungeonQuests,
   progressKillQuests,
 } from "./quests.js";
+import {
+  addMaterials,
+  formatMaterialChip,
+  listOwnedMaterials,
+} from "./materials.js";
 import { DungeonUI } from "./ui.js";
 
 const BASE_LOG_DELAY = 175;
@@ -305,6 +312,7 @@ class DungeonGame {
         : null,
       eventBuffs: this.save.eventBuffs ?? {},
       materials: this.save.materials ?? {},
+      materialRows: listOwnedMaterials(this.save.materials, CONFIG),
       career: {
         totalVictories: this.save.progress.totalVictories,
         totalDefeats: this.save.progress.totalDefeats,
@@ -857,6 +865,9 @@ class DungeonGame {
     const goldDelta = Number(resolution.heroPatch?.goldDelta) || 0;
     const expDelta = Number(resolution.heroPatch?.experienceDelta) || 0;
     const items = Array.isArray(resolution.rewards?.items) ? resolution.rewards.items : [];
+    const materialGain = resolution.rewards?.materials && typeof resolution.rewards.materials === "object"
+      ? resolution.rewards.materials
+      : {};
     let nextSave = updateActiveCharacter(this.save, (active) => ({
       ...active,
       eventFlags: resolution.eventFlags ?? active.eventFlags,
@@ -896,6 +907,16 @@ class DungeonGame {
       }));
     }
     this.save = nextSave;
+    // 事件材料增量推进 collect 任务（材料本体已写入 materials）
+    if (Object.keys(materialGain).length) {
+      let quests = this.save.quests;
+      for (const [id, amount] of Object.entries(materialGain)) {
+        const qty = Math.max(0, Math.floor(Number(amount) || 0));
+        if (!qty) continue;
+        quests = progressCollectQuests(quests, id, qty, CONFIG).quests;
+      }
+      this.save = updateActiveCharacter(this.save, (active) => ({ ...active, quests }));
+    }
   }
 
   mergeQuestFlags(questState, flags) {
@@ -1042,6 +1063,28 @@ class DungeonGame {
     }
   }
 
+  recordDungeonProgress(floorId) {
+    if (!Number.isFinite(floorId)) return;
+    const progressed = progressDungeonQuests(this.save.quests, floorId, CONFIG);
+    if (progressed.updates.length === 0) return;
+    this.save = updateActiveCharacter(this.save, (active) => ({
+      ...active,
+      quests: progressed.quests,
+    }));
+    for (const update of progressed.updates) {
+      if (update.complete) {
+        this.ui.showToast?.(`任务「${update.name}」目标已达成，可回城镇交付。`, "reward");
+      }
+    }
+    // 通关 Boss 层后同步区域解锁（syncWorldProgress 在 applyVictory 里也会跑）
+    if (this.save.world) {
+      this.save = updateActiveCharacter(this.save, (active) => ({
+        ...active,
+        world: active.world,
+      }));
+    }
+  }
+
   openNpc(npcId) {
     if (this.battle || this.outdoorRun) {
       this.ui.showToast("请先结束当前活动。", "error");
@@ -1101,12 +1144,17 @@ class DungeonGame {
     let experience = 0;
     let gold = 0;
     const items = [];
+    const materials = {};
     for (const reward of rewards) {
       if (!reward || typeof reward !== "object") continue;
       if (reward.type === "experience") {
         experience += Math.max(0, Math.floor(Number(reward.amount) || 0));
       } else if (reward.type === "gold") {
         gold += Math.max(0, Math.floor(Number(reward.amount) || 0));
+      } else if (reward.type === "material") {
+        const id = String(reward.id || reward.materialId || "").trim();
+        const amount = Math.max(1, Math.floor(Number(reward.amount) || 1));
+        if (id) materials[id] = (materials[id] || 0) + amount;
       } else if (reward.type === "loot") {
         const item = generateLoot(
           Math.max(1, getWorldLevel(this.save)),
@@ -1133,6 +1181,7 @@ class DungeonGame {
         characterId: this.save.activeCharacterId,
       });
     }
+    if (Object.keys(materials).length) this.gainMaterials(materials);
   }
 
   closeDialogue() {
@@ -1222,7 +1271,10 @@ class DungeonGame {
     const storedItems = items.slice(0, available);
     const overflowItems = items.slice(available);
     const salvageGold = overflowItems.reduce((sum, item) => sum + getSellValue(item), 0);
-    const materialCount = Object.values(settlement.materials ?? {})
+    const gainedMaterials = settlement.materials && typeof settlement.materials === "object"
+      ? settlement.materials
+      : {};
+    const materialCount = Object.values(gainedMaterials)
       .reduce((sum, amount) => sum + (Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0), 0);
     const experience = Number.isFinite(settlement.experience) ? Math.max(0, Math.floor(settlement.experience)) : 0;
     const gold = Number.isFinite(settlement.gold) ? Math.max(0, Math.floor(settlement.gold)) : 0;
@@ -1234,6 +1286,12 @@ class DungeonGame {
         characterId: this.save.activeCharacterId,
       });
     }
+    if (materialCount > 0) {
+      this.gainMaterials(gainedMaterials);
+    }
+    const materialLabels = Object.entries(gainedMaterials)
+      .filter(([, amount]) => Number(amount) > 0)
+      .map(([id, amount]) => formatMaterialChip(id, amount, CONFIG));
     return {
       experience,
       gold: gold + salvageGold,
@@ -1241,7 +1299,33 @@ class DungeonGame {
       itemsSalvaged: overflowItems.length,
       salvageGold,
       materialCount,
+      materialLabels,
     };
+  }
+
+  /** 合并材料并推进 collect 任务。 */
+  gainMaterials(gained = {}) {
+    if (!gained || typeof gained !== "object") return;
+    const nextMaterials = addMaterials(this.save.materials, gained);
+    let quests = this.save.quests;
+    const updates = [];
+    for (const [id, amount] of Object.entries(gained)) {
+      const qty = Math.max(0, Math.floor(Number(amount) || 0));
+      if (!qty) continue;
+      const progressed = progressCollectQuests(quests, id, qty, CONFIG);
+      quests = progressed.quests;
+      updates.push(...progressed.updates);
+    }
+    this.save = updateActiveCharacter(this.save, (active) => ({
+      ...active,
+      materials: nextMaterials,
+      quests,
+    }));
+    for (const update of updates) {
+      if (update.complete) {
+        this.ui.showToast?.(`任务「${update.name}」目标已达成，可回城镇交付。`, "reward");
+      }
+    }
   }
 
   scheduleNextLog(delay) {
@@ -1357,6 +1441,7 @@ class DungeonGame {
 
     if (battle.result.victory) {
       this.recordKillProgress(battle.wave.enemies);
+      this.recordDungeonProgress(battle.floor?.id);
       // 第四批:Boss 必掉双件且稀有度保底,击杀精英有概率追加战利品。
       const drops = this.rollVictoryLoot(battle, previousHero);
       const delivery = resolveLootBatch(this.save, drops);
@@ -1996,6 +2081,7 @@ function shopFailureMessage(reason) {
 function reforgeFailureMessage(reason) {
   return {
     "insufficient-gold": "金币不足，无法重铸。",
+    "insufficient-material": "材料不足，无法重铸（需要荒野精华）。",
     "item-not-found": "找不到这件装备。",
     "reforge-pending": "请先处理上一件装备的重铸结果。",
     "no-pending-reforge": "没有待处理的重铸结果。",

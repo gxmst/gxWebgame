@@ -91,7 +91,7 @@ export function getNpcQuestMarker(npcId, questState, inputConfig = CONFIG) {
   const state = sanitizeQuestState(questState, inputConfig);
   const related = listNpcRelatedQuests(npc, inputConfig);
   for (const quest of related) {
-    if (state.active.includes(quest.id) && isQuestObjectiveMet(quest, state)) {
+    if (state.active.includes(quest.id) && isQuestObjectiveMet(quest, state, inputConfig)) {
       return "turnin";
     }
   }
@@ -192,7 +192,7 @@ export function progressKillQuests(questState, templateIds = [], inputConfig = C
   };
 }
 
-/** 收集类进度（材料等，2A 接口预留）。 */
+/** 收集类进度（材料等）。 */
 export function progressCollectQuests(questState, materialId, amount = 1, inputConfig = CONFIG) {
   const state = sanitizeQuestState(questState, inputConfig);
   const mat = safeId(materialId);
@@ -215,6 +215,70 @@ export function progressCollectQuests(questState, materialId, amount = 1, inputC
       current: next,
       needed,
       complete: next >= needed,
+      name: quest.name,
+    });
+  }
+  return { quests: { ...state, progress }, updates };
+}
+
+/**
+ * 通关地牢层进度（clear_dungeon）。
+ * floorId 命中 objective.floorId 或 objective.target === "floor" 且 count 记 1。
+ */
+export function progressDungeonQuests(questState, floorId, inputConfig = CONFIG) {
+  const state = sanitizeQuestState(questState, inputConfig);
+  const floor = clampInteger(floorId, 1, MAX_COUNT, 0);
+  if (!floor || state.active.length === 0) return { quests: state, updates: [] };
+  const progress = { ...state.progress };
+  const updates = [];
+  for (const questId of state.active) {
+    const quest = getQuest(questId, inputConfig);
+    if (!quest || quest.objective?.type !== "clear_dungeon") continue;
+    const targetFloor = clampInteger(
+      quest.objective.floorId ?? quest.objective.targetFloor ?? quest.objective.count,
+      1,
+      MAX_COUNT,
+      0,
+    );
+    // 若指定了 floorId，必须精确通关该层；否则任意 Boss/层都可推进 1
+    if (quest.objective.floorId != null || quest.objective.targetFloor != null) {
+      if (floor !== targetFloor) continue;
+    }
+    const current = clampInteger(progress[questId], 0, MAX_COUNT, 0);
+    if (current >= 1) continue;
+    progress[questId] = 1;
+    updates.push({
+      questId,
+      previous: current,
+      current: 1,
+      needed: 1,
+      complete: true,
+      name: quest.name,
+    });
+  }
+  return { quests: { ...state, progress }, updates };
+}
+
+/** 抵达区域进度。 */
+export function progressReachRegionQuests(questState, regionId, inputConfig = CONFIG) {
+  const state = sanitizeQuestState(questState, inputConfig);
+  const region = safeId(regionId);
+  if (!region) return { quests: state, updates: [] };
+  const progress = { ...state.progress };
+  const updates = [];
+  for (const questId of state.active) {
+    const quest = getQuest(questId, inputConfig);
+    if (!quest || quest.objective?.type !== "reach_region") continue;
+    if (safeId(quest.objective.target) !== region) continue;
+    const current = clampInteger(progress[questId], 0, MAX_COUNT, 0);
+    if (current >= 1) continue;
+    progress[questId] = 1;
+    updates.push({
+      questId,
+      previous: 0,
+      current: 1,
+      needed: 1,
+      complete: true,
       name: quest.name,
     });
   }
@@ -300,20 +364,36 @@ export function getDialogueNode(npcId, nodeId, questState, inputConfig = CONFIG)
   // 动态：优先插入可交付 / 可接的任务入口
   if (requested === "root") {
     const related = listNpcRelatedQuests(npc, inputConfig);
+    const options = [];
     const turnIn = related.find((quest) => canTurnInQuest(quest.id, state, inputConfig).ok);
     if (turnIn) {
-      return {
-        id: "root",
-        text: String(dialogue.root?.text ?? "……").slice(0, 500),
-        options: [
-          {
-            label: `✅ 交付任务：${turnIn.name}`,
-            action: { type: "turnInQuest", questId: turnIn.id },
-          },
-          ...normalizeStaticOptions(dialogue.root?.options, state, inputConfig),
-        ],
-      };
+      options.push({
+        label: `✅ 交付任务：${turnIn.name}`,
+        action: { type: "turnInQuest", questId: turnIn.id },
+      });
     }
+    const available = related.find((quest) => canAcceptQuest(quest.id, state, inputConfig).ok);
+    if (available) {
+      options.push({
+        label: `❗ 接取：${available.name}`,
+        action: { type: "acceptQuest", questId: available.id, end: true },
+      });
+    }
+    options.push(...normalizeStaticOptions(dialogue.root?.options, state, inputConfig));
+    // 去重 label
+    const seen = new Set();
+    const deduped = [];
+    for (const option of options) {
+      const key = `${option.action?.type}:${option.action?.questId || option.label}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(option);
+    }
+    return {
+      id: "root",
+      text: String(dialogue.root?.text ?? "……").slice(0, 500),
+      options: deduped,
+    };
   }
 
   const node = isRecord(dialogue[requested]) ? dialogue[requested] : dialogue.root;

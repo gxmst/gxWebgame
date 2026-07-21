@@ -209,7 +209,7 @@
           <section class="equipment-section" aria-labelledby="equipment-title">
             <div class="section-title-row">
               <h3 id="equipment-title">已装备</h3>
-              <span class="section-meta">4 个部位</span>
+              <button class="text-button" type="button" data-equipment-manager-open>打开整备台</button>
             </div>
             <div class="equipment-grid" data-equipment aria-live="polite">
               <div class="equipment-slot is-empty" data-slot="weapon">
@@ -223,6 +223,10 @@
               <div class="equipment-slot is-empty" data-slot="armor">
                 <span class="slot-icon" aria-hidden="true">🛡️</span>
                 <span><small>护甲</small><strong>未装备</strong></span>
+              </div>
+              <div class="equipment-slot is-empty" data-slot="footwear">
+                <span class="slot-icon" aria-hidden="true">🥾</span>
+                <span><small>鞋子</small><strong>未装备</strong></span>
               </div>
               <div class="equipment-slot is-empty" data-slot="accessory">
                 <span class="slot-icon" aria-hidden="true">💎</span>
@@ -448,64 +452,99 @@
         <aside class="game-panel inventory-panel" id="inventory-panel" data-game-panel="inventory" aria-labelledby="inventory-title">
           <header class="panel-heading">
             <div>
-              <p class="panel-kicker">战利品</p>
-              <h2 id="inventory-title">背包与商店</h2>
+              <p class="panel-kicker">冒险者整备台</p>
+              <h2 id="inventory-title">装备管理</h2>
             </div>
-            <span class="inventory-capacity" aria-label="背包容量"><strong data-inventory-count>0</strong> / <span data-inventory-limit>60</span></span>
+            <div class="inventory-heading-actions">
+              <span class="inventory-capacity" aria-label="背包容量"><strong data-inventory-count>0</strong> / <span data-inventory-limit>60</span></span>
+              <button class="icon-button equipment-manager-open" type="button" data-equipment-manager-open aria-label="展开装备管理" title="展开整备台">⛶</button>
+              <button class="icon-button equipment-manager-close" type="button" data-equipment-manager-close aria-label="关闭装备管理" title="关闭整备台">×</button>
+            </div>
           </header>
 
           <div class="inventory-tabs" role="tablist" aria-label="物品管理">
             <button class="is-active" type="button" role="tab" id="inventory-tab" data-inventory-tab="inventory" aria-selected="true" aria-controls="inventory-view">
-              <span aria-hidden="true">▣</span> 背包
+              <span aria-hidden="true">⚔</span> 装备
             </button>
             <button type="button" role="tab" id="shop-tab" data-inventory-tab="shop" aria-selected="false" aria-controls="shop-view" tabindex="-1">
               <span aria-hidden="true">◈</span> 商店
             </button>
+            <button type="button" role="tab" id="materials-tab" data-inventory-tab="materials" aria-selected="false" aria-controls="materials-view" tabindex="-1">
+              <span aria-hidden="true">◆</span> 材料
+            </button>
           </div>
 
           <section class="inventory-tab-panel" id="inventory-view" role="tabpanel" aria-labelledby="inventory-tab" data-inventory-view="inventory">
-            <div class="rarity-legend" aria-label="装备稀有度">
-              <span class="rarity-normal">普通</span>
-              <span class="rarity-excellent">优秀</span>
-              <span class="rarity-rare">稀有</span>
-              <span class="rarity-legendary">传说</span>
-            </div>
+            <div class="equipment-workbench">
+              <aside class="loadout-pane" aria-label="当前装备">
+                <div class="loadout-heading">
+                  <div><span>当前配装</span><strong>冒险者</strong></div>
+                  <span class="loadout-power">✦ <b data-manager-power>0</b></span>
+                </div>
+                <div class="loadout-paper-doll" data-manager-equipment aria-live="polite"></div>
+                <dl class="loadout-stats">
+                  <div><dt>生命</dt><dd data-manager-hp>0</dd></div>
+                  <div><dt>攻击</dt><dd data-manager-attack>0</dd></div>
+                  <div><dt>防御</dt><dd data-manager-defense>0</dd></div>
+                  <div><dt>速度</dt><dd data-manager-speed>0</dd></div>
+                </dl>
+              </aside>
 
-            <div class="inventory-toolbar" aria-label="背包筛选与排序">
-              <div class="chip-row" role="group" aria-label="部位筛选">
-                <button class="chip-button is-active" type="button" data-inventory-filter="all">全部</button>
-                <button class="chip-button" type="button" data-inventory-filter="weapon">武器</button>
-                <button class="chip-button" type="button" data-inventory-filter="helmet">头盔</button>
-                <button class="chip-button" type="button" data-inventory-filter="armor">护甲</button>
-                <button class="chip-button" type="button" data-inventory-filter="accessory">饰品</button>
-              </div>
-              <div class="chip-row" role="group" aria-label="排序方式">
-                <button class="chip-button is-active" type="button" data-inventory-sort="default">最新</button>
-                <button class="chip-button" type="button" data-inventory-sort="power">战力</button>
-                <button class="chip-button" type="button" data-inventory-sort="rarity">稀有度</button>
-                <button class="chip-button" type="button" data-inventory-sort="level">等级</button>
-              </div>
-              <div class="chip-row" role="group" aria-label="快捷整理">
-                <button class="chip-button equip-best-button" type="button" data-equip-best>⬆ 一键装备最强</button>
-              </div>
-              <div class="chip-row bulk-sell-row" role="group" aria-label="批量出售">
-                <select class="bulk-rarity-select" data-bulk-rarity aria-label="批量出售的稀有度上限">
-                  <option value="common">仅普通</option>
-                  <option value="uncommon">优秀及以下</option>
-                  <option value="rare">稀有及以下</option>
-                </select>
-                <button class="chip-button bulk-sell-button" type="button" data-bulk-sell>批量出售</button>
-                <span class="bulk-sell-hint">已锁定 🔒 的不会被卖出</span>
-              </div>
-            </div>
+              <div class="inventory-browser">
+                <div class="rarity-legend" aria-label="装备稀有度">
+                  <span class="rarity-normal">普通</span>
+                  <span class="rarity-excellent">优秀</span>
+                  <span class="rarity-rare">稀有</span>
+                  <span class="rarity-legendary">传说</span>
+                </div>
 
-            <div class="inventory-scroll">
-              <div class="inventory-list" data-inventory aria-live="polite"></div>
-              <div class="empty-state" data-inventory-empty>
-                <span aria-hidden="true">🧰</span>
-                <strong>背包空空如也</strong>
-                <p>地牢中的战利品会收纳在这里。</p>
+                <div class="inventory-toolbar" aria-label="背包筛选与排序">
+                  <div class="chip-row" role="group" aria-label="部位筛选">
+                    <button class="chip-button is-active" type="button" data-inventory-filter="all">全部</button>
+                    <button class="chip-button" type="button" data-inventory-filter="weapon">武器</button>
+                    <button class="chip-button" type="button" data-inventory-filter="helmet">头盔</button>
+                    <button class="chip-button" type="button" data-inventory-filter="armor">护甲</button>
+                    <button class="chip-button" type="button" data-inventory-filter="footwear">鞋子</button>
+                    <button class="chip-button" type="button" data-inventory-filter="accessory">饰品</button>
+                  </div>
+                  <div class="inventory-tools-row">
+                    <div class="chip-row" role="group" aria-label="排序方式">
+                      <button class="chip-button is-active" type="button" data-inventory-sort="default">最新</button>
+                      <button class="chip-button" type="button" data-inventory-sort="power">战力</button>
+                      <button class="chip-button" type="button" data-inventory-sort="rarity">稀有度</button>
+                      <button class="chip-button" type="button" data-inventory-sort="level">等级</button>
+                    </div>
+                    <button class="chip-button equip-best-button" type="button" data-equip-best>⬆ 一键装备最强</button>
+                  </div>
+                  <div class="chip-row bulk-sell-row" role="group" aria-label="批量出售">
+                    <select class="bulk-rarity-select" data-bulk-rarity aria-label="批量出售的稀有度上限">
+                      <option value="common">仅普通</option>
+                      <option value="uncommon">优秀及以下</option>
+                      <option value="rare">稀有及以下</option>
+                    </select>
+                    <button class="chip-button bulk-sell-button" type="button" data-bulk-sell>批量出售</button>
+                    <span class="bulk-sell-hint">锁定装备不会被出售</span>
+                  </div>
+                </div>
+
+                <div class="inventory-scroll">
+                  <div class="inventory-list" data-inventory aria-live="polite"></div>
+                  <div class="empty-state" data-inventory-empty>
+                    <span aria-hidden="true">🧰</span>
+                    <strong>背包空空如也</strong>
+                    <p>地牢中的战利品会收纳在这里。</p>
+                  </div>
+                </div>
               </div>
+
+              <aside class="item-inspector" data-inventory-detail aria-live="polite">
+                <button class="icon-button item-inspector-close" type="button" data-inventory-detail-close aria-label="关闭装备详情" title="关闭详情">×</button>
+                <div class="item-inspector-empty">
+                  <span aria-hidden="true">✦</span>
+                  <strong>选择一件装备</strong>
+                  <p>查看它与当前装备的属性差异。</p>
+                </div>
+              </aside>
             </div>
           </section>
 
@@ -526,6 +565,19 @@
                 <p>新的装备很快会陈列在这里。</p>
               </div>
             </div>
+          </section>
+
+          <section class="inventory-tab-panel materials-tab-panel" id="materials-view" role="tabpanel" aria-labelledby="materials-tab" data-inventory-view="materials" hidden>
+            <section class="materials-panel" data-materials-panel aria-label="材料">
+              <div class="section-title-row">
+                <div>
+                  <p class="panel-kicker">锻造资源</p>
+                  <h3>材料仓库</h3>
+                </div>
+                <span class="section-meta">野外、事件和任务中获得</span>
+              </div>
+              <div class="materials-list" data-materials-list></div>
+            </section>
           </section>
         </aside>
       </main>
