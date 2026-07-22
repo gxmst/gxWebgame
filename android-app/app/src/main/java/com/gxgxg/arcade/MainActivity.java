@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -27,12 +28,14 @@ import android.widget.Toast;
 public final class MainActivity extends Activity {
     private static final String HOME_URL = "https://game.gxgxg.com/";
     private static final String APP_HOST = "game.gxgxg.com";
-    private static final String APP_USER_AGENT = " GXArcadeApp/1.0";
+    private static final String APP_USER_AGENT = " GXArcadeApp/" + BuildConfig.VERSION_NAME;
     private static final String OFFLINE_BASE_URL = "https://offline.gxgxg.invalid/";
 
+    private FrameLayout rootView;
     private WebView webView;
     private ProgressBar progressBar;
     private boolean showingOfflinePage;
+    private boolean immersiveGame;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,14 +55,21 @@ public final class MainActivity extends Activity {
     private void configureWindow() {
         getWindow().setStatusBarColor(Color.rgb(5, 31, 43));
         getWindow().setNavigationBarColor(Color.rgb(4, 23, 32));
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            getWindow().setDecorFitsSystemWindows(false);
+        }
     }
 
     private void createContentView() {
-        FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.rgb(5, 31, 43));
+        rootView = new FrameLayout(this);
+        rootView.setBackgroundColor(Color.rgb(5, 31, 43));
+        rootView.setOnApplyWindowInsetsListener((view, insets) -> {
+            applySafeAreaInsets(insets);
+            return insets;
+        });
 
         webView = new WebView(this);
-        root.addView(webView, new FrameLayout.LayoutParams(
+        rootView.addView(webView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
 
@@ -69,8 +79,41 @@ public final class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 dp(3),
                 Gravity.TOP);
-        root.addView(progressBar, progressParams);
-        setContentView(root);
+        rootView.addView(progressBar, progressParams);
+        setContentView(rootView);
+        rootView.requestApplyInsets();
+    }
+
+    private void applySafeAreaInsets(WindowInsets windowInsets) {
+        int left;
+        int top;
+        int right;
+        int bottom;
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            int insetTypes = immersiveGame
+                    ? WindowInsets.Type.displayCutout() | WindowInsets.Type.mandatorySystemGestures()
+                    : WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout();
+            Insets safeInsets = windowInsets.getInsets(insetTypes);
+            left = safeInsets.left;
+            top = safeInsets.top;
+            right = safeInsets.right;
+            bottom = safeInsets.bottom;
+        } else {
+            left = windowInsets.getSystemWindowInsetLeft();
+            top = windowInsets.getSystemWindowInsetTop();
+            right = windowInsets.getSystemWindowInsetRight();
+            bottom = windowInsets.getSystemWindowInsetBottom();
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P
+                    && windowInsets.getDisplayCutout() != null) {
+                left = Math.max(left, windowInsets.getDisplayCutout().getSafeInsetLeft());
+                top = Math.max(top, windowInsets.getDisplayCutout().getSafeInsetTop());
+                right = Math.max(right, windowInsets.getDisplayCutout().getSafeInsetRight());
+                bottom = Math.max(bottom, windowInsets.getDisplayCutout().getSafeInsetBottom());
+            }
+        }
+
+        rootView.setPadding(left, top, right, bottom);
     }
 
     @SuppressWarnings("SetJavaScriptEnabled")
@@ -167,16 +210,19 @@ public final class MainActivity extends Activity {
     }
 
     private void setImmersiveMode(boolean enabled) {
+        immersiveGame = enabled;
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller == null) return;
-            if (enabled) {
-                controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                controller.setSystemBarsBehavior(
-                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            } else {
-                controller.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+            if (controller != null) {
+                if (enabled) {
+                    controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    controller.setSystemBarsBehavior(
+                            WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                } else {
+                    controller.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                }
             }
+            rootView.requestApplyInsets();
             return;
         }
 
@@ -192,6 +238,7 @@ public final class MainActivity extends Activity {
             getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         }
+        rootView.requestApplyInsets();
     }
 
     private void showOfflinePage() {
