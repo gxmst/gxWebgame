@@ -112,6 +112,58 @@ export const tests = [
     },
   },
   {
+    name: "hero sanitization caps legacy skill investment and validates branch choices",
+    run() {
+      const warrior = sanitizeHero({
+        ...createHeroForClass("warrior"),
+        level: CONFIG.hero.maxLevel,
+        unspentSkillPoints: 30,
+        skillLevels: {
+          basic_attack: 1,
+          heavy_strike: 10,
+          whirlwind: 10,
+          block: 10,
+        },
+        skillBranches: {
+          heavy_strike: "heavy_strike_crusher",
+          whirlwind: "not-a-real-branch",
+          fireball: "fireball_inferno",
+        },
+      });
+      const invested = Object.entries(warrior.skillLevels)
+        .reduce((sum, [skillId, level]) => (
+          sum + Math.max(0, level - (CONFIG.skills[skillId]?.leveling?.initialLevel ?? 1))
+        ), 0);
+
+      assert(invested === CONFIG.skillProgression.investmentCap, `kept ${invested} invested points`);
+      assert(warrior.unspentSkillPoints === CONFIG.skillProgression.totalPointCap - invested);
+      assert(warrior.skillBranches.heavy_strike === "heavy_strike_crusher");
+      assert(!Object.hasOwn(warrior.skillBranches, "whirlwind"));
+      assert(!Object.hasOwn(warrior.skillBranches, "fireball"));
+
+      const locked = sanitizeHero({
+        ...createHeroForClass("warrior"),
+        skillLevels: { heavy_strike: 4 },
+        skillBranches: { heavy_strike: "heavy_strike_crusher" },
+      });
+      assert(!Object.hasOwn(locked.skillBranches, "heavy_strike"));
+
+      const overflow = sanitizeHero({
+        ...createHeroForClass("warrior"),
+        level: 1,
+        experience: Number.MAX_SAFE_INTEGER,
+        unspentSkillPoints: CONFIG.skillProgression.totalPointCap,
+        skillLevels: { heavy_strike: 10, whirlwind: 10, block: 8 },
+      });
+      const overflowInvested = Object.entries(overflow.skillLevels)
+        .reduce((sum, [skillId, level]) => (
+          sum + Math.max(0, level - (CONFIG.skills[skillId]?.leveling?.initialLevel ?? 1))
+        ), 0);
+      assert(overflowInvested + overflow.unspentSkillPoints === CONFIG.skillProgression.totalPointCap,
+        "overflow-level migration exceeded the lifetime point cap");
+    },
+  },
+  {
     name: "class-derived stats make warriors tougher and mages faster and harder-hitting",
     run() {
       const warrior = getHeroStats(createHeroForClass("warrior"));

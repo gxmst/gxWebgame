@@ -1,12 +1,16 @@
 import { CONFIG } from "../js/config.js";
 import {
   FLOORS,
+  PROGRESSION_GATES,
   createEnemyWave,
   getAvailableFloors,
   getFloor,
   getFloorCap,
+  getFloorPacing,
   getFloorStatus,
+  getRecommendedPower,
   isFloorUnlocked,
+  shouldDropBaseLoot,
 } from "../js/dungeon.js";
 
 const assert = (condition, message = "Assertion failed") => {
@@ -106,6 +110,92 @@ export const tests = [
           `recommended power must not drop from floor ${id - 1} to ${id}`,
         );
       }
+    },
+  },
+  {
+    name: "progression gates form persistent stages with monotonic power targets",
+    run() {
+      const expectedFloors = [5, 10, 20, 35, 50, 70, 85, 100];
+      assert(JSON.stringify(PROGRESSION_GATES.map((gate) => gate.floor)) === JSON.stringify(expectedFloors));
+
+      let previousPower = 0;
+      let previousExperienceMultiplier = 1;
+      let previousLootChance = 1;
+      for (let floorId = 1; floorId <= CONFIG.dungeon.maxFloor; floorId += 1) {
+        const pacing = getFloorPacing(floorId);
+        assert(pacing && pacing.floorId === floorId);
+        assert(pacing.recommendedPower >= previousPower, `effective power must rise at floor ${floorId}`);
+        previousPower = pacing.recommendedPower;
+        if (!pacing.isGate) continue;
+        assert(expectedFloors.includes(floorId));
+        assert(pacing.rewardMultipliers.experience <= previousExperienceMultiplier);
+        assert(pacing.baseLootChance <= previousLootChance);
+        assert(pacing.mechanicIds.length > 0, `gate ${floorId} needs a boss mechanic`);
+        previousExperienceMultiplier = pacing.rewardMultipliers.experience;
+        previousLootChance = pacing.baseLootChance;
+      }
+
+      const status = getFloorStatus({ progress: { highestUnlockedFloor: 50 } }, 35);
+      assert(status.pacing.isGate === true);
+      assert(status.recommendedPower === getRecommendedPower(35));
+      assert(status.recommendedPower > getFloor(35).recommendedPower);
+      assert(getFloorPacing(36).stage === getFloorPacing(35).stage, "stage strength must persist after a gate");
+      assert(getFloorPacing(36).isGate === false);
+      assert(getFloorPacing(0) === null && getFloorPacing(101) === null);
+    },
+  },
+  {
+    name: "gate bosses expose seeded build-check mechanics and tempered rewards",
+    run() {
+      const checks = new Map([
+        [5, (stats) => stats.damageReduction >= 0.05],
+        [10, (stats) => stats.armorPenetration >= 0.08],
+        [20, (stats) => stats.damageReduction >= 0.08 && stats.lifesteal >= 0.08],
+        [35, (stats) => stats.critChance >= 0.12 && stats.armorPenetration >= 0.12],
+        [50, (stats) => stats.damageReduction >= 0.12 && stats.thorns >= 0.08],
+        [70, (stats) => stats.armorPenetration >= 0.16 && stats.multiHitChance >= 0.1],
+        [85, (stats) => stats.dodgeChance >= 0.06 && stats.damageReduction >= 0.14],
+        [100, (stats) => stats.damageReduction >= 0.16 && stats.armorPenetration >= 0.18],
+      ]);
+      for (const [floorId, check] of checks) {
+        const wave = createEnemyWave(floorId, `gate-check-${floorId}`);
+        const repeated = createEnemyWave(floorId, `gate-check-${floorId}`);
+        const pacing = getFloorPacing(floorId);
+        const enemy = wave.enemies[0];
+        assert(JSON.stringify(wave) === JSON.stringify(repeated));
+        assert(wave.isBoss && wave.progressionGate?.floor === floorId);
+        assert(enemy.progressionGate === true);
+        assert(JSON.stringify(enemy.gateMechanics) === JSON.stringify(pacing.mechanicIds));
+        assert(check(enemy.stats), `gate ${floorId} mechanic did not reach combat stats`);
+
+        const rawExperience = Math.round(
+          CONFIG.dungeon.experiencePerEnemy
+            * getFloor(floorId).rewardScale
+            * CONFIG.dungeon.bossRewardMultiplier,
+        );
+        assert(enemy.rewards.experience <= rawExperience, `gate ${floorId} XP should not outgrow the old curve`);
+      }
+    },
+  },
+  {
+    name: "normal equipment drops slow by stage while bosses remain guaranteed",
+    run() {
+      for (const floorId of [5, 10, 20, 35, 50, 70, 85, 100]) {
+        assert(shouldDropBaseLoot(floorId, "any-seed") === true, `boss ${floorId} must always drop`);
+      }
+      for (const floorId of [4, 21, 51, 86]) {
+        const first = shouldDropBaseLoot(floorId, "stable-drop-seed");
+        assert(first === shouldDropBaseLoot(floorId, "stable-drop-seed"));
+        const expected = getFloorPacing(floorId).baseLootChance;
+        const samples = 800;
+        let drops = 0;
+        for (let index = 0; index < samples; index += 1) {
+          if (shouldDropBaseLoot(floorId, `drop-sample-${index}`)) drops += 1;
+        }
+        assert(Math.abs(drops / samples - expected) < 0.06, `floor ${floorId} drop rate drifted`);
+      }
+      assert(getFloorPacing(4).baseLootChance > getFloorPacing(86).baseLootChance);
+      assert(shouldDropBaseLoot(0, "invalid") === false);
     },
   },
   {

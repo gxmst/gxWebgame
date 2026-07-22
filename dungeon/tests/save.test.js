@@ -282,16 +282,22 @@ export const tests = [
       save.hero.name = "Round Trip Hero";
       save.hero.gold = 1234;
       save.hero.experience = 17;
+      save.hero.skillLevels.heavy_strike = 5;
+      save.hero.skillBranches = { heavy_strike: "heavy_strike_crusher" };
       save.progress.highestUnlockedFloor = 2;
       save.progress.clearedFloors = [1];
       save.progress.totalVictories = 3;
       save.settings = { autoAllocate: false, battleSpeed: 3 };
+      save.settings.language = "en-US";
       save.unexpected = "discard me";
 
       const expected = sanitizeSave(save);
       assert(saveSave(save, storage), "saveSave should report a successful write");
       const loaded = loadSave(storage);
       assert(JSON.stringify(loaded) === JSON.stringify(expected), "stored save should survive a clean round trip");
+      assert(loaded.hero.skillBranches.heavy_strike === "heavy_strike_crusher",
+        "skill branch choice must survive storage");
+      assert(loaded.settings.language === "en-US", "language preference must survive storage");
       assert(!Object.hasOwn(loaded, "unexpected"), "unknown top-level fields must not persist");
       assert(storage.getItem(CONFIG.save.key), "the configured save key should be used");
 

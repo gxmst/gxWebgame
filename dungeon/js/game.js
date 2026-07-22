@@ -4,7 +4,9 @@ import {
   createEnemyWave,
   getFloor,
   getFloorCap,
+  getFloorPacing,
   isFloorUnlocked,
+  shouldDropBaseLoot,
 } from "./dungeon.js";
 import {
   allocateStat,
@@ -28,6 +30,8 @@ import {
 } from "./economy.js";
 import {
   getHeroSkills,
+  chooseSkillBranch,
+  getSkillBranchChoice,
   getPrestigePreview,
   resolveSkillAtLevel,
   getSkillPointState,
@@ -88,6 +92,8 @@ import {
   listOwnedMaterials,
 } from "./materials.js";
 import { DungeonUI } from "./ui.js";
+import { localizeContent, localizeDialogue, normalizeLanguage, t } from "./i18n.js";
+import { diagnoseDefeat } from "./diagnostics.js";
 
 const BASE_LOG_DELAY = 175;
 
@@ -131,6 +137,7 @@ class DungeonGame {
       refreshShop: () => this.checkShopRefresh(),
       allocateStat: (stat) => this.spendStatPoint(stat),
       upgradeSkill: (skillId) => this.spendSkillPoint(skillId),
+      chooseSkillBranch: (skillId, branchId) => this.chooseSkillBranch(skillId, branchId),
       resetSkills: () => this.resetSkills(),
       prestige: () => this.prestige(),
       manageCharacters: () => this.openCharacterManager(),
@@ -149,6 +156,7 @@ class DungeonGame {
       equipBest: () => this.equipBestGear(),
       toggleLock: (itemId) => this.toggleLock(itemId),
       toggleSound: () => this.toggleSound(),
+      toggleLanguage: () => this.toggleLanguage(),
       enterWorldNode: (nodeId) => this.enterWorldNode(nodeId),
       returnToWorldMap: () => this.returnToWorldMap(),
       setWorldMapViewMode: (mode) => this.setWorldMapViewMode(mode),
@@ -185,12 +193,17 @@ class DungeonGame {
   }
 
   buildViewModel() {
+    const language = normalizeLanguage(this.save.settings.language);
     const hero = this.save.hero;
     const stats = getHeroStats(hero);
     const highest = this.save.progress.highestUnlockedFloor;
     const floorCap = getFloorCap(this.save);
     const cleared = new Set(this.save.progress.clearedFloors);
-    const classMeta = CONFIG.classes[hero.classId] ?? CONFIG.classes.warrior;
+    const classMeta = localizeContent(
+      CONFIG.classes[hero.classId] ?? CONFIG.classes.warrior,
+      "class",
+      language,
+    );
     const outdoorSaved = this.save.outdoor ?? {};
     const outdoorFloor = this.outdoorRun?.wave?.floorId
       ?? selectOutdoorFloor(this.save, "preview", CONFIG)?.id
@@ -200,29 +213,48 @@ class DungeonGame {
     const skillPoints = getSkillPointState(hero);
     const prestige = getPrestigePreview(hero);
     const skills = getHeroSkills(hero).map((skill) => ({
-      ...skill,
+      ...localizeContent(skill, "skill", language),
       nextLevel: skill.level < skill.maxLevel
-        ? resolveSkillAtLevel(skill.id, skill.level + 1)
+        ? resolveSkillAtLevel(
+          skill.id,
+          skill.level + 1,
+          getSkillBranchChoice(hero, skill.id),
+        )
         : null,
     }));
     const floors = CONFIG.floors.map((floor) => {
+      const pacing = getFloorPacing(floor.id);
       const [minimumEnemies, maximumEnemies] = floor.enemyCount;
-      const baseGold = CONFIG.dungeon.goldPerEnemy * floor.rewardScale;
-      const rewardMultiplier = floor.boss ? 4 : 1;
+      const baseGold = CONFIG.dungeon.goldPerEnemy
+        * floor.rewardScale
+        * (pacing?.rewardMultipliers.gold ?? 1)
+        * (pacing?.gateRewardMultiplier ?? 1);
+      const rewardMultiplier = floor.boss
+        ? (Number.isFinite(CONFIG.dungeon.bossRewardMultiplier)
+          ? CONFIG.dungeon.bossRewardMultiplier
+          : 4)
+        : 1;
       const minimumGold = Math.round(baseGold * minimumEnemies * rewardMultiplier);
       const maximumGold = Math.round(baseGold * maximumEnemies * rewardMultiplier);
       return {
         ...floor,
+        name: language === "en-US" ? `Floor ${floor.id}` : floor.name,
+        title: language === "en-US" ? (floor.boss ? `Gatekeeper · Floor ${floor.id}` : `Dungeon Floor ${floor.id}`) : floor.title,
+        description: language === "en-US"
+          ? (floor.boss ? "A progression gate that tests damage, defense, and build cohesion." : "Enemies grow stronger here; improve gear and refine your build before advancing.")
+          : floor.description,
+        recommendedPower: pacing?.recommendedPower ?? floor.recommendedPower,
+        pacing,
         isBoss: floor.boss,
         icon: floor.emoji,
         unlocked: isFloorUnlocked(this.save, floor.id),
         lockedByPrestige: floor.id <= highest && floor.id > floorCap,
         cleared: cleared.has(floor.id),
         enemyCountText: floor.boss
-          ? "1 名首领"
+          ? (language === "en-US" ? "1 Boss" : "1 名首领")
           : minimumEnemies === maximumEnemies
-            ? `${minimumEnemies} 名`
-            : `${minimumEnemies}–${maximumEnemies} 名`,
+            ? (language === "en-US" ? `${minimumEnemies}` : `${minimumEnemies} 名`)
+            : (language === "en-US" ? `${minimumEnemies}-${maximumEnemies}` : `${minimumEnemies}–${maximumEnemies} 名`),
         goldText: minimumGold === maximumGold
           ? `${minimumGold}`
           : `${minimumGold}–${maximumGold}`,
@@ -269,7 +301,7 @@ class DungeonGame {
         const characterHero = character.hero ?? {};
         return {
           ...character,
-          classMeta: CONFIG.classes[characterHero.classId] ?? CONFIG.classes.warrior,
+          classMeta: localizeContent(CONFIG.classes[characterHero.classId] ?? CONFIG.classes.warrior, "class", language),
           level: characterHero.level,
           prestigeCount: characterHero.prestigeCount,
         };
@@ -280,6 +312,7 @@ class DungeonGame {
       worldScene: this.worldScene,
       worldLevel: getWorldLevel(this.save),
       world: this.buildWorldViewModel(),
+      endgame: this.buildEndgameViewModel(highest, cleared, language),
       outdoor: {
         ...outdoorSaved,
         targetFloor: outdoorFloor,
@@ -287,24 +320,25 @@ class DungeonGame {
         running: Boolean(this.outdoorRun),
         eventPending: Boolean(this.pendingEvent),
       },
-      quests: listQuestLog(this.save.quests, CONFIG),
-      townNpcs: this.buildTownNpcView(),
+      quests: Object.fromEntries(Object.entries(listQuestLog(this.save.quests, CONFIG)).map(([key, rows]) => [key, Array.isArray(rows) ? rows.map((row) => localizeContent(row, "quest", language)) : rows])),
+      townNpcs: this.buildTownNpcView().map((npc) => localizeContent(npc, "npc", language)),
       dialogue: this.dialogue
-        ? {
-          npc: listTownNpcs(this.save.world?.currentNodeId, this.save.quests, CONFIG)
+        ? (() => {
+          const npc = listTownNpcs(this.save.world?.currentNodeId, this.save.quests, CONFIG)
             .find((npc) => npc.id === this.dialogue.npcId)
-            ?? null,
-          node: getDialogueNode(
+            ?? null;
+          const node = getDialogueNode(
             this.dialogue.npcId,
             this.dialogue.nodeId,
             this.save.quests,
             CONFIG,
-          ),
-        }
+          );
+          return { npc: localizeContent(npc, "npc", language), node: localizeDialogue(npc, node, language) };
+        })()
         : null,
       pendingEvent: this.pendingEvent
         ? {
-          card: this.pendingEvent.card,
+          card: localizeContent(this.pendingEvent.card, "event", language),
           phase: this.pendingEvent.phase,
           resultText: this.pendingEvent.resolution?.resultText ?? null,
           rewards: this.pendingEvent.resolution?.rewards ?? null,
@@ -322,8 +356,9 @@ class DungeonGame {
       settings: {
         soundEnabled: this.save.settings.soundEnabled !== false,
         worldMapViewMode: this.save.settings.worldMapViewMode === "list" ? "list" : "map",
+        language: normalizeLanguage(this.save.settings.language),
       },
-      classes: Object.values(CONFIG.classes),
+      classes: Object.values(CONFIG.classes).map((entry) => localizeContent(entry, "class", language)),
     };
   }
 
@@ -336,10 +371,14 @@ class DungeonGame {
   }
 
   buildWorldViewModel() {
+    const language = normalizeLanguage(this.save.settings.language);
     const world = this.save.world ?? {};
-    const regions = listRegions(this.save, CONFIG);
+    const regions = listRegions(this.save, CONFIG).map((region) => {
+      const localized = localizeContent(region, "region", language);
+      return { ...localized, nodes: (region.nodes ?? []).map((node) => localizeContent(node, "node", language)) };
+    });
     const currentNode = world.currentNodeId
-      ? getNode(world.currentNodeId, CONFIG)
+      ? localizeContent(getNode(world.currentNodeId, CONFIG), "node", language)
       : null;
     const currentRegion = regions.find((region) => region.id === world.currentRegionId)
       ?? regions.find((region) => region.unlocked)
@@ -351,6 +390,20 @@ class DungeonGame {
       currentNode,
       currentRegionName: currentRegion?.name ?? "—",
       currentRegionEmoji: currentRegion?.emoji ?? "◆",
+    };
+  }
+
+  buildEndgameViewModel(highestFloor, clearedFloors = new Set(), language = "zh-CN") {
+    const objectives = Array.isArray(CONFIG.endgame?.objectives) ? CONFIG.endgame.objectives : [];
+    const current = objectives.find((entry) => !clearedFloors.has(entry.floor)) ?? objectives.at(-1) ?? null;
+    if (!current) return null;
+    const english = language === "en-US";
+    return {
+      ...current,
+      name: english ? ({ reach_50: "Enter the Abyss", reach_85: "Complete the Build", clear_100: "Conquer the Endgame" }[current.id] ?? current.name) : current.name,
+      description: english ? ({ reach_50: "Defeat the Floor 50 gatekeeper.", reach_85: "Pass the Void build check with a complete 25-point build.", clear_100: "Defeat the Void Sovereign on Floor 100." }[current.id] ?? current.description) : current.description,
+      complete: clearedFloors.has(current.floor),
+      currentFloor: highestFloor,
     };
   }
 
@@ -1516,6 +1569,16 @@ class DungeonGame {
         summary: battle.retreat
           ? `你从第 ${battle.floor.id} 层撤回营地，保留了角色与装备。`
           : `第 ${battle.floor.id} 层的敌群击退了你。`,
+        diagnosis: battle.retreat ? null : diagnoseDefeat({
+          heroStats: { ...getHeroStats(previousHero), power: getPower(previousHero) },
+          skillPointState: getSkillPointState(previousHero),
+          statistics: { ...battle.result.statistics, rounds: battle.result.rounds },
+          floor: {
+            ...battle.floor,
+            recommendedPower: getFloorPacing(battle.floor.id)?.recommendedPower
+              ?? battle.floor.recommendedPower,
+          },
+        }),
       };
     }
 
@@ -1628,6 +1691,32 @@ class DungeonGame {
     const saved = this.persist();
     this.render();
     if (saved) this.ui.showToast("技能等级已提升。", "reward");
+  }
+
+  chooseSkillBranch(skillId, branchId) {
+    if (this.battle && !this.battle.settled) {
+      this.ui.showToast("战斗中无法调整技能构筑。", "error");
+      return;
+    }
+    const currentSkill = getHeroSkills(this.save.hero)
+      .find((skill) => skill.id === skillId);
+    const branch = currentSkill?.branches?.find((entry) => entry.id === branchId);
+    if (!branch || currentSkill?.branchUnlocked !== true) {
+      this.ui.showToast("该派生尚未解锁。", "error");
+      return;
+    }
+    if (currentSkill.selectedBranchId && currentSkill.selectedBranchId !== branchId) {
+      this.ui.showToast("派生选择已经锁定，请先重置技能构筑。", "error");
+      return;
+    }
+    if (currentSkill.selectedBranchId === branchId) return;
+    if (!globalThis.confirm(`选择「${branch.name}」作为${currentSkill.name}的派生？确认后只能通过重置技能更换。`)) return;
+    const nextHero = chooseSkillBranch(this.save.hero, skillId, branchId);
+    if (getSkillBranchChoice(nextHero, skillId) !== branchId) return;
+    this.save.hero = nextHero;
+    const saved = this.persist();
+    this.render();
+    if (saved) this.ui.showToast(`已选择「${branch.name}」。`, "reward");
   }
 
   resetSkills() {
@@ -1753,9 +1842,10 @@ class DungeonGame {
   }
 
   /**
-   * Deterministic victory drop plan: one base drop, boss floors add
-   * `bossLoot.extraDrops` more with a rarity floor by boss tier, and every
-   * defeated elite has an independent seeded chance to add one drop.
+   * Deterministic victory drop plan: normal-floor base drops follow the
+   * progression-stage chance, bosses stay guaranteed and add
+   * `bossLoot.extraDrops` with a rarity floor. Every defeated elite still has
+   * an independent seeded chance to add one drop.
    */
   rollVictoryLoot(battle, hero) {
     const bossRules = CONFIG.loot.bossLoot ?? {};
@@ -1763,7 +1853,9 @@ class DungeonGame {
       ? resolveBossMinimumRarity(battle.floor.bossTier)
       : null;
     const baseOptions = minimumRarity ? { minimumRarity } : {};
-    const plans = [{ seed: `${battle.seed}|drop`, options: baseOptions }];
+    const plans = shouldDropBaseLoot(battle.floor.id, battle.seed)
+      ? [{ seed: `${battle.seed}|drop`, options: baseOptions }]
+      : [];
     if (battle.floor.boss) {
       const extraDrops = Math.max(0, Math.floor(Number(bossRules.extraDrops) || 0));
       for (let index = 0; index < extraDrops; index += 1) {
@@ -1780,6 +1872,9 @@ class DungeonGame {
     }
     return plans
       .map((plan) => generateLoot(battle.floor.id, plan.seed, hero, plan.options))
+      .map((item, index) => item && battle.floor.boss
+        ? applyBossSignature(item, battle.floor.id, index)
+        : item)
       .filter(Boolean);
   }
 
@@ -2013,6 +2108,15 @@ class DungeonGame {
     this.ui.showToast(enabled ? "音效已开启。" : "音效已关闭。");
   }
 
+  toggleLanguage() {
+    const current = normalizeLanguage(this.save.settings.language);
+    const next = current === "zh-CN" ? "en-US" : "zh-CN";
+    this.save.settings.language = next;
+    const saved = this.persist();
+    this.render();
+    if (saved) this.ui.showToast(t("language.switched", next), "reward");
+  }
+
   resetProgress() {
     if ((this.battle && !this.battle.settled) || this.outdoorRun) {
       this.ui.showToast("请先结束当前战斗。", "error");
@@ -2058,6 +2162,23 @@ function resolveBossMinimumRarity(bossTier) {
     }
   }
   return result;
+}
+
+/** Boss drops carry a visible, deterministic provenance without changing roll power. */
+export function applyBossSignature(item, floorId, index) {
+  if (!item) return item;
+  const label = floorId >= 100
+    ? "虚空君王的"
+    : floorId >= 85
+      ? "虚空检验的"
+      : floorId >= 50
+        ? "深渊守门者的"
+        : "守门者的";
+  return {
+    ...item,
+    id: `${item.id}-boss-${floorId}-${index}`,
+    name: item.name.startsWith(label) ? item.name : `${label}${item.name}`.slice(0, 50),
+  };
 }
 
 function rarityLabel(rarity) {

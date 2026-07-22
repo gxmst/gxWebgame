@@ -8,6 +8,7 @@ import {
 import {
   getHeroSkills,
   getPrestigeBonuses,
+  getSkillBranches,
   getSkillPointsEarnedAtLevel,
 } from "./skills.js";
 
@@ -29,7 +30,7 @@ const BONUS_KEYS = Object.freeze([
 /**
  * Hero save shape:
  * { id, name, classId, classChosen, level, experience, totalExperience,
- *   unspentStatPoints, unspentSkillPoints, skillLevels, prestigeCount,
+ *   unspentStatPoints, unspentSkillPoints, skillLevels, skillBranches, prestigeCount,
  *   baseStats, equipment, inventory, skills, gold }
  *
  * baseStats only contains the four allocated attributes. Combat values are
@@ -53,8 +54,12 @@ export function createDefaultHero(classId = CONFIG.hero.classId, options = {}) {
     experience: 0,
     totalExperience: 0,
     unspentStatPoints: 0,
-    unspentSkillPoints: 0,
+    // 初始技能点让满级累计值恰好达到 30（之后每级 1 点）。
+    unspentSkillPoints: Number.isFinite(CONFIG.skillProgression?.initialPoints)
+      ? Math.max(0, Math.floor(CONFIG.skillProgression.initialPoints))
+      : 0,
     skillLevels: initialSkillLevels,
+    skillBranches: {},
     prestigeCount: 0,
     baseStats: { ...classDefinition.startingStats },
     equipment: Object.fromEntries(EQUIPMENT_SLOT_IDS.map((slot) => [slot, null])),
@@ -112,26 +117,50 @@ export function sanitizeHero(candidate) {
     0,
   );
   const rawSkillLevels = isRecord(source.skillLevels) ? source.skillLevels : {};
-  const skillLevels = Object.fromEntries(classDefinition.skills.map((skillId) => [
-    skillId,
-    clampInteger(
-      rawSkillLevels[skillId],
-      getSkillInitialLevel(skillId),
-      getSkillMaxLevel(skillId),
-      getSkillInitialLevel(skillId),
-    ),
-  ]));
-  const historicalSkillPoints = getSkillPointsEarnedAtLevel(level)
-    + prestigeCount * CONFIG.skillProgression.pointsPerPrestige;
-  const investedSkillPoints = Object.entries(skillLevels).reduce(
-    (sum, [skillId, rank]) => sum + Math.max(0, rank - getSkillInitialLevel(skillId)),
+  const investmentCap = clampInteger(
+    CONFIG.skillProgression?.investmentCap,
     0,
+    CONFIG.skillProgression?.totalPointCap ?? 30,
+    25,
+  );
+  let remainingInvestment = investmentCap;
+  const skillLevels = Object.fromEntries(classDefinition.skills.map((skillId) => {
+    const initial = getSkillInitialLevel(skillId);
+    const requested = clampInteger(
+      rawSkillLevels[skillId],
+      initial,
+      getSkillMaxLevel(skillId),
+      initial,
+    );
+    const requestedInvestment = Math.max(0, requested - initial);
+    const keptInvestment = Math.min(requestedInvestment, remainingInvestment);
+    remainingInvestment -= keptInvestment;
+    return [skillId, initial + keptInvestment];
+  }));
+  const investedSkillPoints = investmentCap - remainingInvestment;
+  const totalSkillPointCap = clampInteger(
+    CONFIG.skillProgression?.totalPointCap,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    30,
+  );
+  const historicalSkillPoints = Math.min(
+    totalSkillPointCap,
+    getSkillPointsEarnedAtLevel(level)
+      + prestigeCount * (CONFIG.skillProgression?.pointsPerPrestige ?? 0),
   );
   let unspentSkillPoints = clampInteger(
     source.unspentSkillPoints ?? source.skillPoints,
     0,
-    CONFIG.stats.maximumValue,
-    Math.max(0, historicalSkillPoints - investedSkillPoints),
+    totalSkillPointCap,
+    Math.max(0, Math.min(
+      totalSkillPointCap - investedSkillPoints,
+      historicalSkillPoints - investedSkillPoints,
+    )),
+  );
+  unspentSkillPoints = Math.min(
+    unspentSkillPoints,
+    Math.max(0, totalSkillPointCap - investedSkillPoints),
   );
 
   // Overflow XP from an older build is normalized instead of being discarded.
@@ -152,6 +181,10 @@ export function sanitizeHero(candidate) {
     }
   }
   if (level >= CONFIG.hero.maxLevel) experience = 0;
+  unspentSkillPoints = Math.min(
+    unspentSkillPoints,
+    Math.max(0, totalSkillPointCap - investedSkillPoints),
+  );
 
   const rawEquipment = firstRecord(source.equipment, source.gear) ?? {};
   const equipment = {};
@@ -173,6 +206,25 @@ export function sanitizeHero(candidate) {
   const basicSkillId = classDefinition.basicSkillId ?? classDefinition.skills[0];
   if (!skills.includes(basicSkillId)) skills.unshift(basicSkillId);
 
+  const rawSkillBranches = firstRecord(
+    source.skillBranches,
+    source.skillSpecializations,
+    source.skillProgress?.branches,
+  ) ?? {};
+  const skillBranches = Object.fromEntries(Object.entries(rawSkillBranches)
+    .map(([skillId, branchId]) => [skillId, typeof branchId === "string"
+      ? branchId.trim().slice(0, 80)
+      : ""])
+    .filter(([skillId, branchId]) => {
+      if (!classDefinition.skills.includes(skillId) || !branchId) return false;
+      const selectedBranch = getSkillBranches(skillId)
+        .find((branch) => branch.id === branchId);
+      return Boolean(
+        selectedBranch
+        && skillLevels[skillId] >= selectedBranch.unlockLevel,
+      );
+    }));
+
   return {
     id: safeString(source.id, classDefaults.id, 80),
     name: safeString(source.name, classDefaults.name, 30),
@@ -189,6 +241,7 @@ export function sanitizeHero(candidate) {
     unspentStatPoints,
     unspentSkillPoints,
     skillLevels,
+    skillBranches,
     prestigeCount,
     baseStats,
     equipment,

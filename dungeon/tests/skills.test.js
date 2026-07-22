@@ -1,6 +1,11 @@
 import {
   allocateSkillPoint,
   canPrestige,
+  chooseSkillBranch,
+  clearSkillBranches,
+  getSelectedSkillBranch,
+  getSkillBranchChoice,
+  getSkillBranches,
   getHeroSkills,
   getPrestigeBonuses,
   getPrestigePreview,
@@ -149,10 +154,88 @@ export const tests = [
     },
   },
   {
+    name: "skill points are capped at thirty earned and twenty-five invested",
+    run() {
+      const maxLevel = CONFIG.hero.maxLevel;
+      const earned = getSkillPointsEarnedAtLevel(maxLevel);
+      assert(earned <= 30, `earned points exceeded cap: ${earned}`);
+      assert(getSkillPointsEarnedAtLevel(Number.MAX_SAFE_INTEGER) <= 30);
+
+      const hero = makeHero({
+        level: maxLevel,
+        skillLevels: { heavy_strike: 10, whirlwind: 10, block: 7 },
+        unspentSkillPoints: 10,
+      });
+      const before = getSkillPointState(hero);
+      assert(before.spent === 24, `spent was ${before.spent}`);
+      assert(before.investmentCap === 25);
+      assert(before.available === 1, `available was ${before.available}`);
+      assert(before.reserve >= 0);
+      const upgraded = upgradeSkill(hero, "block", 9);
+      const after = getSkillPointState(upgraded);
+      assert(after.spent === 25, `investment cap was bypassed: ${after.spent}`);
+      assert(getSkillLevel(upgraded, "block") === 8);
+      assert(after.available === 0 && after.atInvestmentCap);
+      assert(getSkillLevel(upgradeSkill(upgraded, "block", 1), "block") === 8);
+    },
+  },
+  {
+    name: "skill branches are mutually exclusive, unlock at rank, and affect resolution",
+    run() {
+      const branches = [
+        {
+          id: "crusher",
+          name: "碎甲重击",
+          unlockLevel: 5,
+          add: { multiplier: 0.25, armorPenetration: 0.2 },
+        },
+        {
+          id: "executioner",
+          name: "处决重击",
+          unlockLevel: 5,
+          changes: { critChanceBonus: 0.3 },
+          set: { canCrit: true },
+        },
+      ];
+      const branchSkill = { ...CONFIG.skills.heavy_strike, branches };
+      const hero = makeHero({
+        level: 10,
+        skills: ["basic_attack", branchSkill, "whirlwind", "block"],
+        skillLevels: { heavy_strike: 5 },
+        skillBranches: {},
+      });
+      assert(getSkillBranches(branchSkill).length === 2);
+      assert(getSkillBranchChoice(hero, "heavy_strike") === null);
+      const unselected = getHeroSkills(hero).find((entry) => entry.id === "heavy_strike");
+      assert(unselected?.branchUnlocked === true && unselected?.selectedBranchId === null);
+      const locked = chooseSkillBranch({ ...hero, skillLevels: { heavy_strike: 4 } }, "heavy_strike", "crusher");
+      assert(getSkillBranchChoice(locked, "heavy_strike") === null);
+
+      const chosen = chooseSkillBranch(hero, "heavy_strike", "crusher");
+      assert(getSkillBranchChoice(chosen, "heavy_strike") === "crusher");
+      assert(getSelectedSkillBranch(chosen, "heavy_strike")?.id === "crusher");
+      assert(hero.skillBranches?.heavy_strike === undefined);
+      const resolved = getHeroSkills(chosen).find((entry) => entry.id === "heavy_strike");
+      assert(resolved?.selectedBranchId === "crusher");
+      assert(resolved?.branchUnlocked === true);
+      assert(resolved?.branchUnlockLevel === 5);
+      assert(resolved?.multiplier === 2.44, `branch multiplier was ${resolved?.multiplier}`);
+      assert(resolved?.armorPenetration === 0.2);
+      const rejected = chooseSkillBranch(chosen, "heavy_strike", "executioner");
+      assert(getSkillBranchChoice(rejected, "heavy_strike") === "crusher");
+
+      const cleared = clearSkillBranches(chosen, "heavy_strike");
+      assert(getSkillBranchChoice(cleared, "heavy_strike") === null);
+      assert(getHeroSkills(cleared).find((entry) => entry.id === "heavy_strike")?.selectedBranchId === null);
+      assert(getSkillBranchChoice(clearSkillBranches(chosen), "heavy_strike") === null);
+    },
+  },
+  {
     name: "resetSkillPoints refunds invested points and restores base ranks",
     run() {
       const hero = makeHero({
         skillLevels: { heavy_strike: 3, whirlwind: 2 },
+        skillBranches: { heavy_strike: "crusher" },
         unspentSkillPoints: 1,
       });
       const state = getSkillPointState(hero);
@@ -160,6 +243,7 @@ export const tests = [
       assert(getSkillLevel(reset, "heavy_strike") === 1);
       assert(getSkillLevel(reset, "whirlwind") === 1);
       assert(reset.unspentSkillPoints === state.unspent + state.spent);
+      assert(Object.keys(reset.skillBranches).length === 0);
       assert(getSkillLevel(hero, "heavy_strike") === 3);
     },
   },

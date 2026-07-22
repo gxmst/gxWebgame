@@ -5426,3 +5426,447 @@ body.has-equipment-manager {
     font-size: 8px;
   }
 }
+
+/* ============================================================
+   角色工作台：摘要常驻，详情按工作区切换
+   ============================================================ */
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.character-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.character-dashboard {
+  flex: 0 0 auto;
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.character-dashboard .character-summary {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.character-dashboard .identity-row {
+  margin-bottom: 9px;
+}
+
+.character-combat-summary {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 1fr;
+}
+
+.character-combat-summary .power-block {
+  min-height: 48px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.character-combat-summary .power-icon {
+  font-size: 17px;
+}
+
+.character-combat-summary .power-block strong {
+  font-size: 18px;
+}
+
+.character-combat-summary .stat-section {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.character-combat-summary .stat-grid {
+  gap: 4px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.character-combat-summary .stat-grid > div {
+  min-width: 0;
+  padding: 5px 3px;
+  text-align: center;
+}
+
+.character-combat-summary .stat-grid dt {
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-combat-summary .stat-grid dt span {
+  width: auto;
+  margin-right: 1px;
+}
+
+.character-combat-summary .stat-grid dd {
+  margin-top: 1px;
+  font-size: 13px;
+}
+
+.character-dashboard .progression-section {
+  padding: 9px 12px;
+  border-bottom: 0;
+}
+
+.character-dashboard .class-summary-row {
+  min-height: 36px;
+  gap: 8px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+}
+
+.character-dashboard .progression-icon {
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
+}
+
+.character-dashboard .compact-button {
+  min-height: 28px;
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+.character-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.character-workspace-tabs {
+  display: grid;
+  flex: 0 0 auto;
+  min-width: 0;
+  border-bottom: 1px solid var(--line-strong);
+  background: #17191c;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.character-workspace-tabs button {
+  position: relative;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 5px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.character-workspace-tabs button:hover,
+.character-workspace-tabs button:focus-visible {
+  background: var(--surface-raised);
+  color: var(--text-soft);
+}
+
+.character-workspace-tabs button.is-active,
+.character-workspace-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--gold);
+  color: var(--gold-soft);
+}
+
+.character-workspace-panels {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.character-workspace-panel {
+  display: none;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 12px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-bottom: 0;
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.character-workspace-panel.is-active {
+  display: block;
+}
+
+.character-workspace-panel[hidden] {
+  display: none !important;
+}
+
+.character-workspace-panel .section-title-row {
+  margin-bottom: 9px;
+}
+
+.character-workspace-panel .attribute-list {
+  gap: 1px;
+}
+
+.character-workspace-panel .auto-allocation {
+  min-height: 30px;
+  margin-top: 7px;
+}
+
+.character-workspace-panel .career-grid {
+  gap: 4px;
+}
+
+.character-workspace-panel .prestige-button {
+  margin-top: 10px;
+}
+
+.character-workspace-panel .equipment-grid {
+  gap: 6px;
+}
+
+.skill-budget-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -2px 0 8px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #15171a;
+  color: var(--muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.skill-tree-header {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.skill-tree-header > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.skill-tree-header > div:first-child strong { color: var(--gold-soft); font-size: 12px; }
+.skill-tree-header > div:first-child small { color: var(--muted); font-size: 8px; }
+.skill-tree-header .skill-budget-summary { margin: 0; }
+
+.skill-tree-node { position: relative; padding-top: 15px; }
+.skill-tree-node-label { position: absolute; top: 2px; left: 39px; color: var(--muted); font-size: 8px; letter-spacing: .04em; }
+.skill-tree-connector { display: block; width: 1px; height: 9px; margin: -3px 0 0 50%; background: var(--line-strong); }
+.skill-tree-node .skill-branches { position: relative; margin-top: 0; }
+.skill-tree-node .skill-branches::before { content: ""; position: absolute; top: 16px; left: 25%; right: 25%; height: 1px; background: var(--line-strong); }
+.skill-tree-node .skill-branch-option { position: relative; z-index: 1; background: #17191c; }
+
+.language-toggle {
+  display: inline-grid; min-width: 36px; height: 32px; place-items: center; padding: 0 7px;
+  border: 1px solid var(--line-strong); border-radius: 5px; background: #17191c; color: var(--gold-soft);
+  font-size: 10px; font-weight: 800; cursor: pointer;
+}
+
+.language-toggle:hover { border-color: var(--gold); }
+
+.battle-diagnosis { margin-top: 12px; padding: 10px; border: 1px solid #5a4930; border-radius: 6px; background: #191712; }
+.battle-diagnosis h3 { margin: 0 0 8px; color: var(--gold-soft); font-size: 12px; }
+.battle-diagnosis > div { display: grid; gap: 6px; }
+.battle-diagnosis article { padding: 7px 8px; border-left: 2px solid var(--muted); background: #141619; }
+.battle-diagnosis article.severity-high { border-left-color: var(--crimson); }
+.battle-diagnosis article.severity-medium { border-left-color: var(--orange); }
+.battle-diagnosis article strong { font-size: 11px; }
+.battle-diagnosis article p { margin: 3px 0; color: var(--text-soft); font-size: 10px; line-height: 1.4; }
+.battle-diagnosis article small { color: var(--muted); font-size: 9px; line-height: 1.4; }
+
+.endgame-objective { display: grid; min-width: 180px; max-width: 290px; gap: 1px; padding: 6px 9px; border-left: 2px solid var(--purple); background: #191620; }
+.endgame-objective span { color: var(--muted); font-size: 8px; text-transform: uppercase; letter-spacing: .08em; }
+.endgame-objective strong { color: #d5c3ee; font-size: 11px; }
+.endgame-objective small { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+
+body[data-language="en-US"] .character-workspace-tabs button,
+body[data-language="en-US"] .mobile-tabs button { font-size: 9px; }
+body[data-language="en-US"] .skill-copy small { white-space: normal; line-height: 1.35; }
+body[data-language="en-US"] .skill-branch-option strong { white-space: normal; line-height: 1.25; }
+
+.skill-entry {
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.skill-entry:last-child {
+  border-bottom: 0;
+}
+
+.skill-branches {
+  min-width: 0;
+  margin: -2px 0 7px 39px;
+}
+
+.skill-branch-heading {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.skill-branch-options {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.skill-branch-option {
+  display: flex;
+  min-width: 0;
+  min-height: 34px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #17191c;
+  color: var(--text-soft);
+  text-align: left;
+}
+
+.skill-branch-option:hover:not(:disabled),
+.skill-branch-option:focus-visible {
+  border-color: var(--gold);
+  background: #211e18;
+}
+
+.skill-branch-option.is-selected {
+  border-color: var(--gold);
+  background: #272117;
+  color: var(--gold-soft);
+}
+
+.skill-branch-option:disabled:not(.is-selected) {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.skill-branch-option strong,
+.skill-branch-option small,
+.skill-branch-option em {
+  min-width: 0;
+}
+
+.skill-branch-option strong {
+  display: block;
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-branch-option span {
+  min-width: 0;
+}
+
+.skill-branch-option em {
+  display: -webkit-box;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  font-style: normal;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.skill-branch-option small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.floor-gate-hint {
+  display: grid;
+  gap: 2px;
+  margin: 8px 0 0;
+  padding: 7px 8px;
+  border-left: 2px solid var(--gold);
+  background: #211e18;
+  color: var(--text-soft);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.floor-gate-hint strong {
+  color: var(--gold-soft);
+  font-size: 10px;
+}
+
+.floor-gate-hint span {
+  color: var(--muted);
+}
+
+@media (max-width: 430px) {
+  .account-strip .language-toggle {
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
+  }
+
+  .skill-branches {
+    margin-left: 0;
+  }
+
+  .skill-branch-option {
+    min-height: 32px;
+    padding-right: 5px;
+    padding-left: 5px;
+  }
+
+  .skill-branch-options { grid-template-columns: 1fr; }
+  .skill-tree-node .skill-branches::before { display: none; }
+  .endgame-objective { min-width: 0; width: 100%; max-width: none; }
+}
+
+@media (max-width: 1160.999px) {
+  .character-panel {
+    overflow: hidden;
+  }
+
+  .character-workspace-panel {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+}
+
+@media (max-width: 430px) {
+  .character-dashboard .character-summary {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .character-dashboard .progression-section {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .character-workspace-tabs button {
+    min-height: 36px;
+    font-size: 10px;
+  }
+}

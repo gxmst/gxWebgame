@@ -30,6 +30,7 @@ import {
   sanitizeQuestState,
 } from "./quests.js";
 import { canPrestige, prestigeHero } from "./skills.js";
+import { normalizeLanguage } from "./i18n.js";
 
 export const DEFAULT_SAVE_KEY = CONFIG.save.key;
 
@@ -191,6 +192,7 @@ export function sanitizeSave(candidate) {
         || source.worldMapViewMode === "list"
         ? "list"
         : "map",
+      language: normalizeLanguage(rawSettings.language ?? source.language),
     },
   });
 }
@@ -484,6 +486,7 @@ function createDefaultSettings() {
     battleSpeed: 1,
     soundEnabled: true,
     worldMapViewMode: "map",
+    language: "zh-CN",
   };
 }
 

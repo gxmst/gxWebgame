@@ -1,7 +1,11 @@
 import { getReforgeCost, getReforgeMaterialRequirement, getSellValue, getShopPrice } from "./economy.js";
 import { getAffixRollQuality } from "./loot.js";
-import { formatMaterialChip, getMaterialName, listOwnedMaterials } from "./materials.js";
+import { getMaterialName, listOwnedMaterials } from "./materials.js";
 import { GameAudio } from "./audio.js";
+import {
+  applyTranslations, getItemDisplayName, getRarityLabel, getSlotLabel, getStatLabel,
+  getUnitDisplayName, localizeAffix, localizeBattleLog, localizeDiagnosis, localizeEffect, localizeMaterial, localizeRuntimeText, normalizeLanguage, pickLanguage, t,
+} from "./i18n.js";
 import {
   buildWorldMapModel,
   mountWorldMapSvg,
@@ -9,39 +13,17 @@ import {
 } from "./world-map-view.js";
 
 const SLOT_META = {
-  weapon: { label: "武器", icon: "🗡️" },
-  helmet: { label: "头盔", icon: "⛑️" },
-  armor: { label: "护甲", icon: "🛡️" },
-  footwear: { label: "鞋子", icon: "🥾" },
-  accessory: { label: "饰品", icon: "💎" },
+  weapon: { icon: "🗡️" }, helmet: { icon: "⛑️" }, armor: { icon: "🛡️" },
+  footwear: { icon: "🥾" }, accessory: { icon: "💎" },
 };
 
 const STAT_META = {
-  maxHp: { label: "生命", order: 1 },
-  hp: { label: "生命", order: 1 },
-  attack: { label: "攻击", order: 2 },
-  defense: { label: "防御", order: 3 },
-  speed: { label: "速度", order: 4 },
-  strength: { label: "力量", order: 5 },
-  agility: { label: "敏捷", order: 6 },
-  intelligence: { label: "智力", order: 7 },
-  vitality: { label: "体质", order: 8 },
-  critChance: { label: "暴击", order: 9, percent: true },
-  critDamage: { label: "暴伤", order: 10, percent: true },
-  dodgeChance: { label: "闪避", order: 10, percent: true },
-  damagePercent: { label: "增伤", order: 11, percent: true },
-  physicalDamagePercent: { label: "物理增伤", order: 11, percent: true },
-  magicDamagePercent: { label: "法术增伤", order: 11, percent: true },
-  damageReduction: { label: "减伤", order: 12, percent: true },
-};
-
-const RARITY_LABELS = {
-  normal: "普通",
-  excellent: "优秀",
-  common: "普通",
-  uncommon: "优秀",
-  rare: "稀有",
-  legendary: "传说",
+  maxHp: { order: 1 }, hp: { order: 1 }, attack: { order: 2 }, defense: { order: 3 }, speed: { order: 4 },
+  strength: { order: 5 }, agility: { order: 6 }, intelligence: { order: 7 }, vitality: { order: 8 },
+  critChance: { order: 9, percent: true }, critDamage: { order: 10, percent: true },
+  dodgeChance: { order: 10, percent: true }, damagePercent: { order: 11, percent: true },
+  physicalDamagePercent: { order: 11, percent: true }, magicDamagePercent: { order: 11, percent: true },
+  damageReduction: { order: 12, percent: true },
 };
 
 const RARITY_CLASSES = {
@@ -77,6 +59,12 @@ export class DungeonUI {
 
   bindEvents() {
     document.addEventListener("click", (event) => {
+      const characterTab = event.target.closest("[data-character-tab]");
+      if (characterTab) {
+        this.activateCharacterTab(characterTab.dataset.characterTab, { focus: true });
+        return;
+      }
+
       const inventoryTab = event.target.closest("[data-inventory-tab]");
       if (inventoryTab) {
         this.activateInventoryTab(inventoryTab.dataset.inventoryTab);
@@ -160,6 +148,11 @@ export class DungeonUI {
 
       if (event.target.closest("[data-toggle-sound]")) {
         this.handlers.toggleSound?.();
+        return;
+      }
+
+      if (event.target.closest("[data-toggle-language]")) {
+        this.handlers.toggleLanguage?.();
         return;
       }
 
@@ -301,6 +294,15 @@ export class DungeonUI {
         return;
       }
 
+      const branchButton = event.target.closest("[data-choose-skill-branch]");
+      if (branchButton) {
+        this.handlers.chooseSkillBranch?.(
+          branchButton.dataset.chooseSkillBranch,
+          branchButton.dataset.skillBranch,
+        );
+        return;
+      }
+
       if (event.target.closest("[data-reset-skills]")) {
         this.handlers.resetSkills?.();
         return;
@@ -434,9 +436,30 @@ export class DungeonUI {
         this.setEquipmentManagerExpanded(false);
       }
     });
+
+    document.addEventListener("keydown", (event) => {
+      const tab = event.target.closest?.("[data-character-tab]");
+      if (!tab || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      const tabs = [...document.querySelectorAll("[data-character-tab]")];
+      if (!tabs.length) return;
+      const index = tabs.indexOf(tab);
+      if (index < 0) return;
+      const nextIndex = event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabs.length - 1
+          : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+      event.preventDefault();
+      this.activateCharacterTab(tabs[nextIndex].dataset.characterTab, { focus: true });
+    });
   }
 
   render(model) {
+    this.language = applyTranslations(document, model.settings?.language);
+    document.body.dataset.language = this.language;
+    if (this.dom.languageLabel) {
+      this.dom.languageLabel.textContent = this.language === "zh-CN" ? "EN" : "中";
+    }
     this.renderHeader(model);
     this.syncSound(model.settings?.soundEnabled !== false);
     this.renderCharacter(model.character);
@@ -446,6 +469,7 @@ export class DungeonUI {
     this.renderFloors(model.floors, model.selectedFloorId);
     this.renderFloorPreview(model.selectedFloor, model.character.power);
     this.renderWorld(model);
+    this.renderEndgameObjective(model.endgame);
     this.renderAdventureMode(model.adventureMode, model.outdoor, model.worldScene);
     this.renderInventory(
       model.character.inventory,
@@ -466,18 +490,26 @@ export class DungeonUI {
     setText(this.dom.worldLevel, model.worldLevel ?? model.highestUnlockedFloor ?? 1);
   }
 
+  renderEndgameObjective(objective) {
+    if (!this.dom.endgameObjective) return;
+    if (!objective) { this.dom.endgameObjective.hidden = true; return; }
+    this.dom.endgameObjective.hidden = false;
+    this.dom.endgameObjective.innerHTML = `<span>${escapeHtml(t("endgame.label", this.language))}</span><strong>${escapeHtml(objective.name)}</strong><small>${escapeHtml(objective.description)} · ${formatNumber(Math.min(objective.currentFloor, objective.floor))}/${formatNumber(objective.floor)}</small>`;
+  }
+
   syncSound(enabled) {
     this.audio.setEnabled(enabled);
     if (!this.dom.soundToggle) return;
     this.dom.soundToggle.textContent = enabled ? "🔊" : "🔇";
-    this.dom.soundToggle.setAttribute("aria-label", enabled ? "关闭音效" : "开启音效");
-    this.dom.soundToggle.title = enabled ? "关闭音效" : "开启音效";
+    const label = enabled ? pickLanguage("关闭音效", "Mute sound", this.language) : pickLanguage("开启音效", "Enable sound", this.language);
+    this.dom.soundToggle.setAttribute("aria-label", label);
+    this.dom.soundToggle.title = label;
   }
 
   renderCareer(career = {}) {
     setText(this.dom.careerVictories, formatNumber(career.totalVictories));
     setText(this.dom.careerDefeats, formatNumber(career.totalDefeats));
-    setText(this.dom.careerFloor, `第 ${formatNumber(Math.max(1, numberOr(career.highestFloor, 1)))} 层`);
+    setText(this.dom.careerFloor, this.language === "en-US" ? `Floor ${formatNumber(Math.max(1, numberOr(career.highestFloor, 1)))}` : `第 ${formatNumber(Math.max(1, numberOr(career.highestFloor, 1)))} 层`);
     setText(this.dom.careerWaves, formatNumber(career.outdoorWaves));
   }
 
@@ -488,7 +520,7 @@ export class DungeonUI {
     setText(
       this.dom.expText,
       levelProgress.maxLevel
-        ? "已满级"
+        ? pickLanguage("已满级", "Max Level", this.language)
         : `${formatNumber(levelProgress.current)} / ${formatNumber(levelProgress.required)}`,
     );
     setMeter(
@@ -508,22 +540,25 @@ export class DungeonUI {
     setText(this.dom.attack, formatNumber(stats.attack));
     setText(this.dom.defense, formatNumber(stats.defense));
     setText(this.dom.speed, formatNumber(stats.speed));
-    renderAttribute(this.dom.strength, "strength", stats.strength);
-    renderAttribute(this.dom.agility, "agility", stats.agility);
-    renderAttribute(this.dom.intelligence, "intelligence", stats.intelligence);
-    renderAttribute(this.dom.vitality, "vitality", stats.vitality);
+    renderAttribute(this.dom.strength, "strength", stats.strength, this.language);
+    renderAttribute(this.dom.agility, "agility", stats.agility, this.language);
+    renderAttribute(this.dom.intelligence, "intelligence", stats.intelligence, this.language);
+    renderAttribute(this.dom.vitality, "vitality", stats.vitality, this.language);
     setText(this.dom.statPoints, formatNumber(hero.unspentStatPoints));
-    setText(this.dom.skillPoints, formatNumber(skillPoints?.unspent ?? hero.unspentSkillPoints));
+    setText(
+      this.dom.skillPoints,
+      formatNumber(skillPoints?.available ?? skillPoints?.unspent ?? hero.unspentSkillPoints),
+    );
 
     const name = document.querySelector(".hero-name");
     const className = document.querySelector(".hero-class");
-    setText(name, hero.name || `无名${classMeta?.name ?? "冒险者"}`);
-    setText(className, `${classMeta?.name ?? "职业"} · ${classMeta?.role ?? "探索者"}`);
-    setText(this.dom.className, classMeta?.name ?? "战士");
+    setText(name, hero.name || pickLanguage(`无名${classMeta?.name ?? "冒险者"}`, `Unnamed ${classMeta?.name ?? "Adventurer"}`, this.language));
+    setText(className, `${classMeta?.name ?? pickLanguage("职业", "Class", this.language)} · ${classMeta?.role ?? pickLanguage("探索者", "Explorer", this.language)}`);
+    setText(this.dom.className, classMeta?.name ?? pickLanguage("战士", "Warrior", this.language));
     setText(this.dom.prestigeCount, prestige?.currentCount ?? hero.prestigeCount ?? 0);
     if (this.dom.classMark) {
       this.dom.classMark.textContent = classMeta?.emoji ?? "⚔️";
-      this.dom.classMark.setAttribute("aria-label", `职业：${classMeta?.name ?? "战士"}`);
+      this.dom.classMark.setAttribute("aria-label", `${pickLanguage("职业", "Class", this.language)}: ${classMeta?.name ?? pickLanguage("战士", "Warrior", this.language)}`);
     }
 
     this.renderSkills(skills, skillPoints);
@@ -546,14 +581,9 @@ export class DungeonUI {
 
   renderSkills(skills = [], pointState = {}) {
     if (!this.dom.skills) return;
+    const english = normalizeLanguage(this.language) === "en-US";
     const rows = skills.map((skill) => {
-      const typeLabel = {
-        aoe: "群体",
-        guard: "自保",
-        heal: "治疗",
-        summon: "召唤",
-        empower: "形态",
-      }[skill.type] ?? "单体";
+      const typeLabel = (english ? { aoe: "Area", guard: "Defense", heal: "Healing", summon: "Summon", empower: "Form" } : { aoe: "群体", guard: "自保", heal: "治疗", summon: "召唤", empower: "形态" })[skill.type] ?? (english ? "Single Target" : "单体");
       const next = skill.nextLevel;
       const cooldownPreview = next && next.cooldown !== skill.cooldown
         ? `${skill.cooldown}→${next.cooldown}`
@@ -561,47 +591,72 @@ export class DungeonUI {
       const effectParts = [];
       if (skill.type === "guard") {
         if (numberOr(skill.reduction, 0) > 0) {
-          effectParts.push(`减伤 ${Math.round(numberOr(skill.reduction, 0) * 100)}%${next ? `→${Math.round(numberOr(next.reduction, 0) * 100)}%` : ""}`);
+          effectParts.push(`${english ? "DR" : "减伤"} ${Math.round(numberOr(skill.reduction, 0) * 100)}%${next ? `→${Math.round(numberOr(next.reduction, 0) * 100)}%` : ""}`);
         }
         if (numberOr(skill.dodgeBonus, 0) > 0) {
-          effectParts.push(`闪避 +${Math.round(numberOr(skill.dodgeBonus, 0) * 100)}%${next ? `→${Math.round(numberOr(next.dodgeBonus, 0) * 100)}%` : ""}`);
+          effectParts.push(`${english ? "Dodge" : "闪避"} +${Math.round(numberOr(skill.dodgeBonus, 0) * 100)}%${next ? `→${Math.round(numberOr(next.dodgeBonus, 0) * 100)}%` : ""}`);
         }
       } else if (skill.type === "heal") {
-        effectParts.push(`恢复 ${Math.round(numberOr(skill.healRatio, 0) * 100)}%${next ? `→${Math.round(numberOr(next.healRatio, 0) * 100)}%` : ""} 生命`);
+        effectParts.push(`${english ? "Heal" : "恢复"} ${Math.round(numberOr(skill.healRatio, 0) * 100)}%${next ? `→${Math.round(numberOr(next.healRatio, 0) * 100)}%` : ""}${english ? " HP" : " 生命"}`);
       } else if (skill.type === "summon") {
-        effectParts.push(`召唤 ${numberOr(skill.summonCount, 1)}${next && numberOr(next.summonCount, 1) !== numberOr(skill.summonCount, 1) ? `→${numberOr(next.summonCount, 1)}` : ""} 名 · 上限 ${numberOr(skill.maxMinions, 1)}${next && numberOr(next.maxMinions, 1) !== numberOr(skill.maxMinions, 1) ? `→${numberOr(next.maxMinions, 1)}` : ""}`);
-        effectParts.push(`攻 ${Math.round(numberOr(skill.minionAttackRatio, 0) * 100)}%${next ? `→${Math.round(numberOr(next.minionAttackRatio, 0) * 100)}%` : ""}`);
+        effectParts.push(`${english ? "Summon" : "召唤"} ${numberOr(skill.summonCount, 1)}${next && numberOr(next.summonCount, 1) !== numberOr(skill.summonCount, 1) ? `→${numberOr(next.summonCount, 1)}` : ""} · ${english ? "Cap" : "上限"} ${numberOr(skill.maxMinions, 1)}${next && numberOr(next.maxMinions, 1) !== numberOr(skill.maxMinions, 1) ? `→${numberOr(next.maxMinions, 1)}` : ""}`);
+        effectParts.push(`${english ? "ATK" : "攻"} ${Math.round(numberOr(skill.minionAttackRatio, 0) * 100)}%${next ? `→${Math.round(numberOr(next.minionAttackRatio, 0) * 100)}%` : ""}`);
       } else if (skill.type === "empower") {
-        effectParts.push(`增伤 ${Math.round(numberOr(skill.damageBonus, 0) * 100)}%${next ? `→${Math.round(numberOr(next.damageBonus, 0) * 100)}%` : ""}`);
+        effectParts.push(`${english ? "Damage" : "增伤"} +${Math.round(numberOr(skill.damageBonus, 0) * 100)}%${next ? `→${Math.round(numberOr(next.damageBonus, 0) * 100)}%` : ""}`);
         if (numberOr(skill.lifestealBonus, 0) > 0) {
-          effectParts.push(`吸血 +${Math.round(numberOr(skill.lifestealBonus, 0) * 100)}%`);
+          effectParts.push(`${english ? "Lifesteal" : "吸血"} +${Math.round(numberOr(skill.lifestealBonus, 0) * 100)}%`);
         }
-        effectParts.push(`持续 ${numberOr(skill.duration, 1)} 回合`);
+        effectParts.push(`${english ? "Duration" : "持续"} ${numberOr(skill.duration, 1)}${english ? " turns" : " 回合"}`);
       } else {
-        effectParts.push(`倍率 ${Number(skill.multiplier ?? 1).toFixed(2)}${next ? `→${Number(next.multiplier ?? 1).toFixed(2)}` : ""}`);
-        if (numberOr(skill.hitCount, 1) > 1) effectParts.push(`${numberOr(skill.hitCount, 1)} 段`);
+        effectParts.push(`${english ? "Power" : "倍率"} ${Number(skill.multiplier ?? 1).toFixed(2)}${next ? `→${Number(next.multiplier ?? 1).toFixed(2)}` : ""}`);
+        if (numberOr(skill.hitCount, 1) > 1) effectParts.push(`${numberOr(skill.hitCount, 1)} ${english ? "hits" : "段"}`);
         if (numberOr(skill.critChanceBonus, 0) > 0) {
-          effectParts.push(`暴击 +${Math.round(numberOr(skill.critChanceBonus, 0) * 100)}%`);
+          effectParts.push(`${english ? "Crit" : "暴击"} +${Math.round(numberOr(skill.critChanceBonus, 0) * 100)}%`);
         }
       }
-      effectParts.push(`冷却 ${cooldownPreview}`);
+      effectParts.push(`${english ? "Cooldown" : "冷却"} ${cooldownPreview}`);
       const effect = effectParts.join(" · ");
       const maxLevel = numberOr(skill.maxLevel, numberOr(skill.level, 1));
       const basic = skill.isBasic === true;
-      const canUpgrade = !basic && numberOr(pointState.unspent, 0) > 0 && numberOr(skill.level, 1) < maxLevel;
+      const canUpgrade = !basic
+        && numberOr(pointState.available ?? pointState.unspent, 0) > 0
+        && numberOr(skill.level, 1) < maxLevel;
+      const branchChoices = !basic && Array.isArray(skill.branches) && skill.branches.length > 0
+        ? `<div class="skill-branches" aria-label="${escapeHtml(skill.name || skill.id)}派生分支">
+            <span class="skill-branch-heading">${skill.branchUnlocked ? "选择一个派生" : `Lv.${numberOr(skill.branchUnlockLevel, 5)} 解锁派生`}</span>
+            <div class="skill-branch-options">
+              ${skill.branches.map((branch) => {
+                const selected = branch.selected === true;
+                const unlocked = branch.unlocked === true;
+                const disabled = selected || !unlocked || Boolean(skill.selectedBranchId && !selected);
+                const stateLabel = selected ? t("skills.selected", this.language) : unlocked ? t("skills.choose", this.language) : `Lv.${numberOr(branch.unlockLevel, skill.branchUnlockLevel ?? 5)}`;
+                return `<button class="skill-branch-option ${selected ? "is-selected" : ""}" type="button" data-choose-skill-branch="${escapeHtml(skill.id)}" data-skill-branch="${escapeHtml(branch.id)}" ${disabled ? "disabled" : ""} title="${escapeHtml(branch.description || "")}">
+                  <span><strong>${escapeHtml(branch.name || branch.id)}</strong><em>${escapeHtml(branch.description || "选择后锁定，重置技能可更换。")}</em></span><small>${escapeHtml(stateLabel)}</small>
+                </button>`;
+              }).join("")}
+            </div>
+          </div>`
+        : "";
       return `
-        <div class="skill-row ${basic ? "is-basic" : ""}">
+        <div class="skill-entry skill-tree-node">
+          <span class="skill-tree-node-label">${escapeHtml(t("skills.core", this.language))}</span>
+          <div class="skill-row ${basic ? "is-basic" : ""}">
           <span class="skill-icon" aria-hidden="true">${escapeHtml(skill.emoji || "✦")}</span>
           <span class="skill-copy"><strong>${escapeHtml(skill.name || skill.id)}</strong><small>${typeLabel} · ${effect}</small></span>
           <span class="skill-level">Lv.${numberOr(skill.level, 1)}/${maxLevel}</span>
           ${basic ? "" : `<button class="skill-upgrade-button" type="button" data-upgrade-skill="${escapeHtml(skill.id)}" ${canUpgrade ? "" : "disabled"} aria-label="提升${escapeHtml(skill.name || skill.id)}">+</button>`}
+          </div>
+          ${branchChoices ? `<span class="skill-tree-connector" aria-hidden="true"></span>${branchChoices}` : ""}
         </div>`;
     }).join("");
-    this.dom.skills.innerHTML = `${rows}${numberOr(pointState.spent, 0) > 0
-      ? `<button class="skills-reset-button" type="button" data-reset-skills>重置技能点</button>`
+    const budget = pointState.investmentCap === undefined
+      ? ""
+      : `<div class="skill-tree-header"><div><strong>${escapeHtml(t("skills.tree", this.language))}</strong><small>${escapeHtml(t("skills.chooseOne", this.language))}</small></div><div class="skill-budget-summary"><span>${escapeHtml(t("skills.invested", this.language, { spent: formatNumber(pointState.spent), cap: formatNumber(pointState.investmentCap) }))}</span><span>${escapeHtml(pointState.reserve > 0 ? t("skills.reserve", this.language, { count: formatNumber(pointState.reserve) }) : t("skills.cap", this.language))}</span></div></div>`;
+    this.dom.skills.innerHTML = `${budget}${rows}${numberOr(pointState.spent, 0) > 0
+      ? `<button class="skills-reset-button" type="button" data-reset-skills>${escapeHtml(t("skills.reset", this.language))}</button>`
       : ""}`;
     if (!skills.length) {
-      this.dom.skills.innerHTML = `<div class="empty-state"><strong>暂无可用技能</strong></div>`;
+      this.dom.skills.innerHTML = `<div class="empty-state"><strong>${escapeHtml(t("skills.empty", this.language))}</strong></div>`;
     }
   }
 
@@ -609,18 +664,19 @@ export class DungeonUI {
     if (!this.dom.equipment) return;
     this.dom.equipment.innerHTML = Object.entries(SLOT_META)
       .map(([slot, meta]) => {
+        const label = getSlotLabel(slot, this.language);
         const item = equipment?.[slot];
         if (!item) {
           return `
             <div class="equipment-slot is-empty" data-slot="${slot}">
               <span class="slot-icon" aria-hidden="true">${meta.icon}</span>
-              <span><small>${meta.label}</small><strong>未装备</strong></span>
+              <span><small>${label}</small><strong>${pickLanguage("未装备", "Empty", this.language)}</strong></span>
             </div>`;
         }
         return `
           <div class="equipment-slot rarity-${rarityKey(item.rarity)}" data-slot="${slot}">
             <span class="slot-icon" aria-hidden="true">${escapeHtml(item.icon || meta.icon)}</span>
-            <span><small>${meta.label}</small><strong>${escapeHtml(item.name)}</strong></span>
+            <span><small>${label}</small><strong>${escapeHtml(getItemDisplayName(item, this.language))}</strong></span>
             <span class="equipment-slot-actions">
               <button class="icon-button" type="button" data-unequip-slot="${slot}" aria-label="卸下${escapeHtml(item.name)}" title="卸下">↧</button>
               <button class="icon-button" type="button" data-reforge-id="${escapeHtml(item.id)}" data-reforge-location="equipment" data-reforge-slot="${slot}" aria-label="重铸${escapeHtml(item.name)}" title="重铸词条">⚒</button>
@@ -632,25 +688,26 @@ export class DungeonUI {
     if (this.dom.managerEquipment) {
       const classMeta = this.currentCharacterSummary?.classMeta ?? {};
       const slots = Object.entries(SLOT_META).map(([slot, meta]) => {
+        const label = getSlotLabel(slot, this.language);
         const item = equipment?.[slot];
         const selected = item?.id && item.id === this.selectedInventoryItemId;
         if (!item) {
           return `
-            <button class="loadout-slot slot-${slot} is-empty" type="button" data-loadout-filter="${slot}" aria-label="${meta.label}未装备，筛选${meta.label}">
-              <span aria-hidden="true">${meta.icon}</span><small>${meta.label}</small>
+            <button class="loadout-slot slot-${slot} is-empty" type="button" data-loadout-filter="${slot}" aria-label="${label}: ${pickLanguage("未装备", "empty", this.language)}">
+              <span aria-hidden="true">${meta.icon}</span><small>${label}</small>
             </button>`;
         }
         return `
           <button class="loadout-slot slot-${slot} rarity-${rarityKey(item.rarity)} ${selected ? "is-selected" : ""}" type="button" data-item-select="${escapeHtml(item.id)}" aria-label="查看已装备的${escapeHtml(item.name)}">
             <span aria-hidden="true">${escapeHtml(item.icon || meta.icon)}</span>
-            <small>${meta.label}</small>
-            <strong>${escapeHtml(item.name)}</strong>
+            <small>${label}</small>
+            <strong>${escapeHtml(getItemDisplayName(item, this.language))}</strong>
           </button>`;
       }).join("");
       this.dom.managerEquipment.innerHTML = `
         <div class="loadout-avatar" aria-hidden="true">
           <span>${escapeHtml(classMeta.emoji || "⚔️")}</span>
-          <strong>${escapeHtml(classMeta.name || "冒险者")}</strong>
+          <strong>${escapeHtml(classMeta.name || pickLanguage("冒险者", "Adventurer", this.language))}</strong>
         </div>
         ${slots}`;
     }
@@ -663,8 +720,8 @@ export class DungeonUI {
         const id = floor.id ?? floor.floorId;
         const locked = floor.unlocked === false;
         const state = locked
-          ? floor.lockedByPrestige ? "需转生" : "未解锁"
-          : floor.cleared ? "已通过" : "可挑战";
+          ? floor.lockedByPrestige ? pickLanguage("需转生", "Rebirth Required", this.language) : pickLanguage("未解锁", "Locked", this.language)
+          : floor.cleared ? pickLanguage("已通过", "Cleared", this.language) : pickLanguage("可挑战", "Available", this.language);
         const classes = [
           "floor-button",
           id === selectedFloorId ? "is-selected" : "",
@@ -678,7 +735,7 @@ export class DungeonUI {
               <span class="floor-number">${locked ? "🔒" : String(id).padStart(2, "0")}</span>
               <span class="floor-copy">
                 <strong>${escapeHtml(floor.name || `第 ${id} 层`)}</strong>
-                <small>推荐战力 ${formatNumber(floor.recommendedPower)}</small>
+                <small>${pickLanguage("推荐战力", "Recommended Power", this.language)} ${formatNumber(floor.recommendedPower, this.language)}</small>
               </span>
               <span class="floor-state">${state}</span>
             </button>
@@ -698,18 +755,21 @@ export class DungeonUI {
     const id = floor.id ?? floor.floorId;
     const powerRatio = floor.recommendedPower > 0 ? heroPower / floor.recommendedPower : 1;
     const danger = powerRatio >= 1.2
-      ? "优势明显"
-      : powerRatio >= 0.9 ? "势均力敌" : "凶险异常";
+      ? pickLanguage("优势明显", "Favored", this.language)
+      : powerRatio >= 0.9 ? pickLanguage("势均力敌", "Even Match", this.language) : pickLanguage("凶险异常", "Deadly", this.language);
     this.dom.floorPreview.innerHTML = `
       <div class="preview-topline">
-        <span class="danger-tag">${floor.isBoss ? "首领层" : danger}</span>
-        <span class="recommended-power">推荐战力 <strong>${formatNumber(floor.recommendedPower)}</strong></span>
+        <span class="danger-tag">${floor.isBoss ? pickLanguage("首领层", "Boss Floor", this.language) : danger}</span>
+        <span class="recommended-power">${pickLanguage("推荐战力", "Recommended Power", this.language)} <strong>${formatNumber(floor.recommendedPower, this.language)}</strong></span>
       </div>
       <div class="floor-emblem" aria-hidden="true">${escapeHtml(floor.icon || floor.emoji || (floor.isBoss ? "👑" : "🚪"))}</div>
       <div class="preview-copy">
         <p class="panel-kicker">当前选择</p>
         <h3 id="floor-preview-title">第 ${id} 层 · ${escapeHtml(floor.name || "无名地窟")}</h3>
         <p>${escapeHtml(floor.description || "黑暗中传来兵刃划过石壁的声响。")}</p>
+        ${floor.pacing?.isGate
+          ? `<p class="floor-gate-hint"><strong>阶段检验 · ${escapeHtml(floor.pacing.name || "构筑检验")}</strong><span>${escapeHtml(floor.pacing.hint || "提升装备和技能后再继续深入。")}</span></p>`
+          : ""}
       </div>
       <dl class="preview-details">
         <div><dt>敌群</dt><dd>${escapeHtml(floor.enemyCountText || (floor.isBoss ? "1 名首领" : "3–5 名"))}</dd></div>
@@ -718,7 +778,7 @@ export class DungeonUI {
       </dl>
       <button class="primary-button enter-button" type="button" data-enter-floor ${floor.unlocked === false ? "disabled" : ""}>
         <span aria-hidden="true">⚔</span>
-        ${floor.unlocked === false ? "尚未解锁" : "进入地牢"}
+        ${floor.unlocked === false ? pickLanguage("尚未解锁", "Locked", this.language) : pickLanguage("进入地牢", "Enter Dungeon", this.language)}
       </button>`;
   }
 
@@ -729,7 +789,7 @@ export class DungeonUI {
     const visible = this.applyInventoryView(items);
     this.dom.inventory.innerHTML = items.length > 0 && visible.length === 0
       ? `<div class="empty-state inventory-filter-empty"><span aria-hidden="true">🔍</span><strong>该分类暂无装备</strong><p>换一个筛选条件试试。</p></div>`
-      : visible.map((item) => renderInventoryTile(item, item.id === this.selectedInventoryItemId)).join("");
+      : visible.map((item) => renderInventoryTile(item, item.id === this.selectedInventoryItemId, this.language)).join("");
 
     const equippedItems = Object.entries(equippedBySlot)
       .filter(([, item]) => item)
@@ -759,8 +819,8 @@ export class DungeonUI {
     }
     if (this.dom.inventoryDetail) {
       this.dom.inventoryDetail.innerHTML = selected
-        ? renderItemInspector(selected, equippedBySlot[selected.slot], selectedLocation, selectedSlot)
-        : renderEmptyItemInspector();
+        ? renderItemInspector(selected, equippedBySlot[selected.slot], selectedLocation, selectedSlot, this.language)
+        : renderEmptyItemInspector(this.language);
     }
     this.dom.inventoryPanel?.classList.toggle("has-item-selection", Boolean(selected));
     this.renderEquipment(equipment);
@@ -768,7 +828,7 @@ export class DungeonUI {
     setText(this.dom.inventoryCount, `${items.length}`);
     setText(this.dom.inventoryLimit, `${limit}`);
     const capacity = this.dom.inventoryCount?.parentElement;
-    if (capacity) capacity.setAttribute("aria-label", `背包容量 ${items.length} / ${limit}`);
+    if (capacity) capacity.setAttribute("aria-label", `${pickLanguage("背包容量", "Inventory capacity", this.language)} ${items.length} / ${limit}`);
     this.syncInventoryControls();
   }
 
@@ -778,16 +838,13 @@ export class DungeonUI {
       ? rowsOrMap
       : listOwnedMaterials(rowsOrMap);
     if (rows.length === 0) {
-      this.dom.materialsList.innerHTML = `<p class="materials-empty">暂无材料。野外与事件中可获得。</p>`;
+      this.dom.materialsList.innerHTML = `<p class="materials-empty">${pickLanguage("暂无材料。野外与事件中可获得。", "No materials yet. Find them outdoors and in events.", this.language)}</p>`;
       return;
     }
-    this.dom.materialsList.innerHTML = rows.map((row) => `
-      <article class="material-chip" title="${escapeHtml(row.description || row.name)}">
-        <span aria-hidden="true">${escapeHtml(row.emoji || "📦")}</span>
-        <strong>${escapeHtml(row.name || getMaterialName(row.id))}</strong>
-        <em>×${formatNumber(row.amount)}</em>
-      </article>
-    `).join("");
+    this.dom.materialsList.innerHTML = rows.map((source) => {
+      const row = localizeMaterial(source, this.language);
+      return `<article class="material-chip" title="${escapeHtml(row.description || row.name)}"><span aria-hidden="true">${escapeHtml(row.emoji || "📦")}</span><strong>${escapeHtml(row.name || getMaterialName(row.id))}</strong><em>×${formatNumber(row.amount)}</em></article>`;
+    }).join("");
   }
 
   /** Pure display-side filter + sort; the save's item order is never touched. */
@@ -838,8 +895,8 @@ export class DungeonUI {
     if (!this.dom.shop) return;
     const stock = Array.isArray(shop?.stock) ? shop.stock : [];
     this.dom.shop.innerHTML = stock.length > 0
-      ? stock.map((listing) => renderShopItem(listing, gold, equipment)).join("")
-      : `<div class="empty-state shop-empty"><span aria-hidden="true">🏪</span><strong>本轮货架已售空</strong><p>继续远征，胜利后商队会定期补货。</p></div>`;
+      ? stock.map((listing) => renderShopItem(listing, gold, equipment, this.language)).join("")
+      : `<div class="empty-state shop-empty"><span aria-hidden="true">🏪</span><strong>${pickLanguage("本轮货架已售空", "Sold out", this.language)}</strong><p>${pickLanguage("继续远征，胜利后商队会定期补货。", "Keep adventuring; the caravan restocks after victories.", this.language)}</p></div>`;
   }
 
   renderCharacterManager(model = {}) {
@@ -903,7 +960,7 @@ export class DungeonUI {
     this.renderWorldMapModeToggle(this.worldMapViewMode);
 
     if (this.dom.worldMapBoard) {
-      this.dom.worldMapBoard.innerHTML = regions.map((region) => renderWorldRegionCard(region)).join("");
+      this.dom.worldMapBoard.innerHTML = regions.map((region) => renderWorldRegionCard(region, this.language)).join("");
     }
 
     if (scene === "map") {
@@ -974,6 +1031,7 @@ export class DungeonUI {
     const mapModel = buildWorldMapModel(world.regions || [], world);
     this.worldMapMount = mountWorldMapSvg(this.dom.worldMapSvg, mapModel, {
       reducedMotion: this.reducedMotion,
+      language: this.language,
     });
     this.bindWorldMapHover(this.worldMapMount?.root);
   }
@@ -1007,19 +1065,19 @@ export class DungeonUI {
     if (!this.dom.worldMapCard) return;
     this.selectedMapNodeId = node.id || null;
     const typeLabel = node.type === "town"
-      ? "城镇 · 安全区"
+      ? pickLanguage("城镇 · 安全区", "Town · Safe Zone", this.language)
       : node.type === "outdoor"
-        ? "野外 · 刷怪"
+        ? pickLanguage("野外 · 刷怪", "Outdoor · Combat", this.language)
         : node.type === "dungeon"
-          ? "副本 · 深入"
-          : "地点";
+          ? pickLanguage("副本 · 深入", "Dungeon · Delve", this.language)
+          : pickLanguage("地点", "Location", this.language);
     setText(this.dom.worldMapCardKicker, typeLabel);
     setText(this.dom.worldMapCardTitle, node.name || "—");
     setText(this.dom.worldMapCardDesc, node.description || "");
     const metaParts = [
       node.region,
       node.range,
-      node.unlocked ? "可进入" : "未解锁",
+      node.unlocked ? pickLanguage("可进入", "Available", this.language) : pickLanguage("未解锁", "Locked", this.language),
     ].filter(Boolean);
     setText(this.dom.worldMapCardMeta, metaParts.join(" · "));
     if (this.dom.worldMapCardEnter) {
@@ -1111,19 +1169,19 @@ export class DungeonUI {
     if (!this.dom.eventDialog || !eventModel?.card) return;
     const card = eventModel.card;
     const phase = eventModel.phase || "choice";
-    setText(this.dom.eventTitle, card.title || "突发事件");
-    const rewardChips = formatEventRewardChips(eventModel.rewards);
+    setText(this.dom.eventTitle, card.title || pickLanguage("突发事件", "Unexpected Event", this.language));
+    const rewardChips = formatEventRewardChips(eventModel.rewards, this.language);
     if (phase === "result") {
       this.dom.eventContent.innerHTML = `
         <div class="event-card-hero">
           <span class="event-emoji" aria-hidden="true">${escapeHtml(card.emoji || "❔")}</span>
           <p>${escapeHtml(card.text || "")}</p>
         </div>
-        <div class="event-result-box">${escapeHtml(eventModel.resultText || "你做出了选择。")}</div>
+        <div class="event-result-box">${escapeHtml(localizeRuntimeText(eventModel.resultText || pickLanguage("你做出了选择。", "You made your choice.", this.language), this.language))}</div>
         ${rewardChips ? `<div class="event-reward-chips">${rewardChips}</div>` : ""}
       `;
       this.dom.eventActions.innerHTML = `
-        <button class="primary-button" type="button" data-event-continue>继续漫步</button>
+         <button class="primary-button" type="button" data-event-continue>${pickLanguage("继续漫步", "Continue", this.language)}</button>
       `;
     } else {
       this.dom.eventContent.innerHTML = `
@@ -1150,7 +1208,7 @@ export class DungeonUI {
     if (!this.dom.dialogueDialog || !dialogue?.node) return;
     const npc = dialogue.npc || {};
     const node = dialogue.node;
-    setText(this.dom.dialogueTitle, npc.name || "对话");
+    setText(this.dom.dialogueTitle, npc.name || pickLanguage("对话", "Dialogue", this.language));
     if (this.dom.dialogueEmoji) this.dom.dialogueEmoji.textContent = npc.emoji || "🗨️";
     this.dom.dialogueContent.innerHTML = `<p>${escapeHtml(node.text || "……")}</p>`;
     const options = Array.isArray(node.options) ? node.options : [];
@@ -1158,7 +1216,7 @@ export class DungeonUI {
       <button class="${index === 0 ? "primary-button" : "secondary-button"}" type="button" data-dialogue-option="${index}">
         ${escapeHtml(option.label || `选项 ${index + 1}`)}
       </button>
-    `).join("") || `<button class="primary-button" type="button" data-dialogue-close>告辞</button>`;
+    `).join("") || `<button class="primary-button" type="button" data-dialogue-close>${pickLanguage("告辞", "Farewell", this.language)}</button>`;
     openDialog(this.dom.dialogueDialog);
   }
 
@@ -1178,9 +1236,9 @@ export class DungeonUI {
           <div class="quest-progress">${escapeHtml(quest.progressText || "")}</div>
         </article>
       `).join("")
-      : `<p class="quest-log-empty">当前没有进行中的任务。</p>`;
+      : `<p class="quest-log-empty">${pickLanguage("当前没有进行中的任务。", "No active quests.", this.language)}</p>`;
     const completedMarkup = completed.length
-      ? `<h3 class="panel-kicker" style="margin:14px 0 8px">已完成</h3>
+      ? `<h3 class="panel-kicker" style="margin:14px 0 8px">${pickLanguage("已完成", "Completed", this.language)}</h3>
         ${completed.map((quest) => `
           <article class="quest-log-item">
             <strong>${escapeHtml(quest.name || quest.id)}</strong>
@@ -1206,6 +1264,23 @@ export class DungeonUI {
     }
     for (const panel of document.querySelectorAll("[data-inventory-view]")) {
       panel.hidden = panel.dataset.inventoryView !== selected;
+    }
+  }
+
+  activateCharacterTab(name, { focus = false } = {}) {
+    const valid = ["attributes", "skills", "career", "equipment"];
+    const selected = valid.includes(name) ? name : "attributes";
+    for (const tab of document.querySelectorAll("[data-character-tab]")) {
+      const active = tab.dataset.characterTab === selected;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", String(active));
+      tab.tabIndex = active ? 0 : -1;
+      if (active && focus) tab.focus();
+    }
+    for (const panel of document.querySelectorAll("[data-character-view]")) {
+      const active = panel.dataset.characterView === selected;
+      panel.hidden = !active;
+      panel.classList.toggle("is-active", active);
     }
   }
 
@@ -1285,7 +1360,7 @@ export class DungeonUI {
       button.hidden = true;
     }
     this.dom.battleView.hidden = false;
-    setText(this.dom.heroBattleName, hero.name || "无名战士");
+    setText(this.dom.heroBattleName, hero.name || pickLanguage("无名战士", "Unnamed Warrior", this.language));
     const portrait = document.querySelector(".hero-combatant .combatant-portrait");
     if (portrait) portrait.textContent = classMeta?.emoji || "⚔️";
     setText(this.dom.battleRound, 1);
@@ -1299,7 +1374,7 @@ export class DungeonUI {
     this.setCharacterControlsDisabled(true);
     const outdoor = mode === "outdoor";
     this.currentAdventureMode = outdoor ? "outdoor" : "dungeon";
-    setText(this.dom.battleCaption, outdoor ? `野外漫步 · 第 ${waveNumber} 波` : "自动战斗");
+    setText(this.dom.battleCaption, outdoor ? pickLanguage(`野外漫步 · 第 ${waveNumber} 波`, `Outdoor Run · Wave ${waveNumber}`, this.language) : pickLanguage("自动战斗", "Auto Battle", this.language));
     if (this.dom.retreat) this.dom.retreat.hidden = outdoor;
     if (this.dom.outdoorStop) this.dom.outdoorStop.hidden = !outdoor;
     this.setStatus(outdoor ? `第 ${waveNumber} 波 · 漫步中` : `第 ${floor.id ?? floor.floorId} 层 · 战斗中`, true);
@@ -1312,7 +1387,7 @@ export class DungeonUI {
           <span class="enemy-portrait" aria-hidden="true">${escapeHtml(enemy.icon || "💀")}</span>
           <div>
             <div class="enemy-name-row">
-              <strong>${enemy.isBoss ? `<span class="unit-badge is-boss">首领</span>` : enemy.isElite ? `<span class="unit-badge is-elite">精英</span>` : ""}${escapeHtml(enemy.name)}</strong>
+              <strong>${enemy.isBoss ? `<span class="unit-badge is-boss">${pickLanguage("首领", "Boss", this.language)}</span>` : enemy.isElite ? `<span class="unit-badge is-elite">${pickLanguage("精英", "Elite", this.language)}</span>` : ""}${escapeHtml(getUnitDisplayName(enemy, this.language))}</strong>
               <span data-enemy-hp-text>${formatNumber(enemy.hp ?? enemy.maxHp)} / ${formatNumber(enemy.maxHp)}</span>
             </div>
             <div class="meter enemy-hp" role="progressbar" aria-label="${escapeHtml(enemy.name)}生命值"
@@ -1377,7 +1452,7 @@ export class DungeonUI {
     if (!this.dom.log) return;
     const item = document.createElement("li");
     item.dataset.logType = logType(entry);
-    item.textContent = entry?.message ?? entry?.text ?? String(entry ?? "");
+    item.textContent = localizeBattleLog(entry, this.language);
     this.dom.log.append(item);
     if (this.dom.log.children.length > 160) this.dom.log.firstElementChild?.remove();
     this.dom.log.scrollTop = this.dom.log.scrollHeight;
@@ -1553,18 +1628,19 @@ export class DungeonUI {
   }
 
   showResult(result) {
+    result = { ...result, diagnosis: localizeDiagnosis(result.diagnosis, this.language) };
     this.lastResult = result;
     if (!this.dom.resultContent || !this.dom.resultDialog) return;
-    setText(this.dom.resultKicker, "远征结算");
-    setText(this.dom.resultTitle, "战斗结果");
-    setText(this.dom.resultReturn, result.outdoor === true ? "返回野外" : "返回地牢");
+    setText(this.dom.resultKicker, pickLanguage("远征结算", "Expedition Summary", this.language));
+    setText(this.dom.resultTitle, pickLanguage("战斗结果", "Battle Result", this.language));
+    setText(this.dom.resultReturn, result.outdoor === true ? pickLanguage("返回野外", "Return Outdoors", this.language) : pickLanguage("返回地牢", "Return to Dungeon", this.language));
     if (this.dom.resultAgain) {
       const canRepeat = result.canRepeat === true;
       this.dom.resultAgain.hidden = !canRepeat;
       if (canRepeat) {
         const advances = result.victory && result.nextFloorId
           && result.nextFloorId !== result.floorId;
-        setText(this.dom.resultAgain, advances ? `⚔ 挑战第 ${result.nextFloorId} 层` : "⚔ 再战本层");
+        setText(this.dom.resultAgain, advances ? pickLanguage(`⚔ 挑战第 ${result.nextFloorId} 层`, `⚔ Challenge Floor ${result.nextFloorId}`, this.language) : pickLanguage("⚔ 再战本层", "⚔ Fight Again", this.language));
       }
     }
     this.audio.play(result.victory ? "victory" : "defeat");
@@ -1580,11 +1656,11 @@ export class DungeonUI {
     const rewardMarkup = result.victory
       ? `
         <div class="result-rewards" aria-label="战斗收益">
-          <div><span>经验</span><strong>+${formatNumber(result.experience)}</strong></div>
-          <div><span>金币</span><strong>+${formatNumber(result.gold)}</strong></div>
+          <div><span>${pickLanguage("经验", "Experience", this.language)}</span><strong>+${formatNumber(result.experience, this.language)}</strong></div>
+          <div><span>${pickLanguage("金币", "Gold", this.language)}</span><strong>+${formatNumber(result.gold, this.language)}</strong></div>
         </div>
         ${result.levelsGained ? `<p class="level-up-callout">✦ 等级提升至 Lv.${result.level}${result.skillPointsGained ? `，技能点 +${result.skillPointsGained}` : ""}</p>` : result.skillPointsGained ? `<p class="level-up-callout">✦ 技能点 +${result.skillPointsGained}</p>` : ""}
-        ${lootItems.length > 0 ? `<section class="loot-result"><h3>获得装备${lootItems.length > 1 ? `（${lootItems.length} 件）` : ""}</h3>${lootItems.map((item) => renderResultLoot(item, previousEquipment[item.slot] ?? result.equippedItem)).join("")}</section>` : ""}
+        ${lootItems.length > 0 ? `<section class="loot-result"><h3>${pickLanguage("获得装备", "Equipment Found", this.language)}${lootItems.length > 1 ? ` (${lootItems.length})` : ""}</h3>${lootItems.map((item) => renderResultLoot(item, previousEquipment[item.slot] ?? result.equippedItem, this.language)).join("")}</section>` : ""}
         ${salvagedItems.length > 0 ? `<p class="salvage-note">💰 背包已满，${salvagedItems.map((item) => escapeHtml(item.name)).join("、")} 已自动分解为 ${formatNumber(result.salvageGold)} 枚金币。</p>` : ""}`
       : `
         <div class="result-rewards is-defeat" aria-label="${retreated ? "撤退损失" : "战败损失"}">
@@ -1592,15 +1668,19 @@ export class DungeonUI {
           <div><span>损失金币</span><strong>-${formatNumber(result.goldLost)}</strong></div>
         </div>
         <p class="defeat-note">${retreated ? "你及时脱离了战场。" : "你被拖回了营地。"}角色和装备都得以保留，可以整备后再次挑战。</p>`;
+    const diagnosisMarkup = !result.victory && result.diagnosis?.suggestions?.length
+      ? `<section class="battle-diagnosis"><h3>⌁ ${escapeHtml(t("diagnostics.title", this.language))}</h3><div>${result.diagnosis.suggestions.map((item) => `<article class="severity-${escapeHtml(item.severity)}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail)}</p><small>${escapeHtml(item.action)}</small></article>`).join("")}</div></section>`
+      : "";
 
     this.dom.resultContent.innerHTML = `
       <div class="result-banner ${result.victory ? "is-victory" : retreated ? "is-retreat" : "is-defeat"}">
         <span aria-hidden="true">${result.victory ? "🏆" : retreated ? "↩" : "☠️"}</span>
-        <div><strong>${result.victory ? "清剿完成" : retreated ? "已撤退" : "远征失利"}</strong><p>${escapeHtml(result.summary || "")}</p></div>
+        <div><strong>${result.victory ? pickLanguage("清剿完成", "Victory", this.language) : retreated ? pickLanguage("已撤退", "Retreated", this.language) : pickLanguage("远征失利", "Defeat", this.language)}</strong><p>${escapeHtml(localizeRuntimeText(result.summary || "", this.language))}</p></div>
       </div>
       ${result.saveFailed ? `<p class="save-error-note" role="alert">进度暂时无法写入浏览器存储，请检查存储权限后再继续。</p>` : ""}
       ${rewardMarkup}
-      ${renderBattleReport(result.statistics)}`;
+      ${diagnosisMarkup}
+      ${renderBattleReport(result.statistics, this.language)}`;
     if (typeof this.dom.resultDialog.showModal === "function") {
       if (!this.dom.resultDialog.open) this.dom.resultDialog.showModal();
     } else {
@@ -1652,7 +1732,7 @@ export class DungeonUI {
   showToast(message, tone = "normal") {
     if (!this.dom.toast) return;
     clearTimeout(this.toastTimer);
-    this.dom.toast.textContent = message;
+    this.dom.toast.textContent = localizeRuntimeText(message, this.language);
     this.dom.toast.hidden = false;
     this.dom.toast.classList.toggle("is-error", tone === "error");
     this.dom.toast.classList.toggle("is-reward", tone === "reward");
@@ -1812,6 +1892,8 @@ function collectDom() {
     resultReturn: hook("result-return"),
     resultAgain: hook("result-again"),
     soundToggle: hook("toggle-sound"),
+    languageLabel: hook("language-label"),
+    endgameObjective: hook("endgame-objective"),
     importFile: hook("import-file"),
     bulkRarity: hook("bulk-rarity"),
     careerVictories: hook("career-victories"),
@@ -1823,32 +1905,36 @@ function collectDom() {
   };
 }
 
-function renderInventoryTile(item, selected = false) {
-  const meta = SLOT_META[item.slot] || { label: "装备", icon: "◆" };
+function renderInventoryTile(item, selected = false, language = "zh-CN") {
+  const meta = SLOT_META[item.slot] || { icon: "◆" };
+  const displayName = getItemDisplayName(item, language);
+  const slotLabel = getSlotLabel(item.slot, language);
   const locked = item.locked === true;
   return `
-    <button class="inventory-item-tile rarity-${rarityKey(item.rarity)} ${locked ? "is-locked" : ""} ${item.upgradeDelta > 0 ? "is-upgrade" : ""} ${selected ? "is-selected" : ""}" type="button" data-item-select="${escapeHtml(item.id)}" aria-pressed="${selected ? "true" : "false"}" title="${escapeHtml(item.name)} · ${meta.label} · Lv.${numberOr(item.level, 1)}">
+    <button class="inventory-item-tile rarity-${rarityKey(item.rarity)} ${locked ? "is-locked" : ""} ${item.upgradeDelta > 0 ? "is-upgrade" : ""} ${selected ? "is-selected" : ""}" type="button" data-item-select="${escapeHtml(item.id)}" aria-pressed="${selected ? "true" : "false"}" title="${escapeHtml(displayName)} · ${slotLabel} · Lv.${numberOr(item.level, 1)}">
       <span class="item-tile-icon" aria-hidden="true">${escapeHtml(item.icon || meta.icon)}</span>
       <span class="item-tile-power">✦ ${formatNumber(item.power)}</span>
-      <span class="item-tile-name">${escapeHtml(item.name)}</span>
+      <span class="item-tile-name">${escapeHtml(displayName)}</span>
       <span class="item-tile-level">Lv.${numberOr(item.level, 1)}</span>
       ${item.upgradeDelta > 0 ? `<span class="item-tile-upgrade" title="预计提升 ${formatNumber(item.upgradeDelta)} 战力">↑</span>` : ""}
       ${locked ? `<span class="item-tile-lock" aria-label="已锁定">🔒</span>` : ""}
     </button>`;
 }
 
-function renderEmptyItemInspector() {
+function renderEmptyItemInspector(language = "zh-CN") {
   return `
     <button class="icon-button item-inspector-close" type="button" data-inventory-detail-close aria-label="关闭装备详情" title="关闭详情">×</button>
     <div class="item-inspector-empty">
       <span aria-hidden="true">✦</span>
-      <strong>选择一件装备</strong>
-      <p>查看它与当前装备的属性差异。</p>
+      <strong>${pickLanguage("选择一件装备", "Select an item", language)}</strong>
+      <p>${pickLanguage("查看它与当前装备的属性差异。", "Compare it with your currently equipped item.", language)}</p>
     </div>`;
 }
 
-function renderItemInspector(item, equippedItem, location = "inventory", slot = item?.slot) {
-  const meta = SLOT_META[item.slot] || { label: "装备", icon: "◆" };
+function renderItemInspector(item, equippedItem, location = "inventory", slot = item?.slot, language = "zh-CN") {
+  const meta = SLOT_META[item.slot] || { icon: "◆" };
+  const slotLabel = getSlotLabel(item.slot, language);
+  const displayName = getItemDisplayName(item, language);
   const locked = item.locked === true;
   const isEquipped = location === "equipment";
   const comparisonTarget = equippedItem?.id === item.id ? null : equippedItem;
@@ -1858,55 +1944,56 @@ function renderItemInspector(item, equippedItem, location = "inventory", slot = 
       const deltaMarkup = comparisonTarget && delta !== 0
         ? `<em class="${delta > 0 ? "comparison-up" : "comparison-down"}">${delta > 0 ? "+" : "−"}${formatStatValue(key, Math.abs(delta))}</em>`
         : "";
-      return `<div><span>${STAT_META[key]?.label || escapeHtml(key)}</span><strong>${formatStatValue(key, value)}</strong>${deltaMarkup}</div>`;
+      return `<div><span>${escapeHtml(getStatLabel(key, language))}</span><strong>${formatStatValue(key, value, language)}</strong>${deltaMarkup}</div>`;
     }).join("")
-    : `<p class="item-inspector-no-stats">无额外属性</p>`;
+    : `<p class="item-inspector-no-stats">${pickLanguage("无额外属性", "No bonus stats", language)}</p>`;
   const comparisonLabel = comparisonTarget
-    ? `对比：${comparisonTarget.name}`
-    : (isEquipped ? "当前已装备" : `${meta.label}槽为空`);
+    ? `${pickLanguage("对比", "Compared with", language)}: ${getItemDisplayName(comparisonTarget, language)}`
+    : (isEquipped ? pickLanguage("当前已装备", "Currently equipped", language) : `${slotLabel}: ${pickLanguage("槽位为空", "empty slot", language)}`);
   const actions = isEquipped
     ? `
-      <button class="secondary-button" type="button" data-unequip-slot="${escapeHtml(slot)}">卸下装备</button>
-      <button class="primary-button" type="button" data-reforge-id="${escapeHtml(item.id)}" data-reforge-location="equipment" data-reforge-slot="${escapeHtml(slot)}">重铸 ${formatNumber(getReforgeCost(item))}${formatReforgeMaterialSuffix()}</button>`
+      <button class="secondary-button" type="button" data-unequip-slot="${escapeHtml(slot)}">${pickLanguage("卸下装备", "Unequip", language)}</button>
+      <button class="primary-button" type="button" data-reforge-id="${escapeHtml(item.id)}" data-reforge-location="equipment" data-reforge-slot="${escapeHtml(slot)}">${pickLanguage("重铸", "Reforge", language)} ${formatNumber(getReforgeCost(item), language)}${formatReforgeMaterialSuffix(language)}</button>`
     : `
-      <button class="primary-button" type="button" data-equip-id="${escapeHtml(item.id)}">${equippedItem ? "替换装备" : "装备"}</button>
-      <button class="secondary-button" type="button" data-reforge-id="${escapeHtml(item.id)}" data-reforge-location="inventory">重铸 ${formatNumber(getReforgeCost(item))}${formatReforgeMaterialSuffix()}</button>
-      <button class="secondary-button inspector-sell-button" type="button" data-sell-id="${escapeHtml(item.id)}" ${locked ? "disabled title=\"已锁定，无法出售\"" : ""}>出售 ${formatNumber(getSellValue(item))}</button>`;
+      <button class="primary-button" type="button" data-equip-id="${escapeHtml(item.id)}">${equippedItem ? pickLanguage("替换装备", "Replace", language) : pickLanguage("装备", "Equip", language)}</button>
+      <button class="secondary-button" type="button" data-reforge-id="${escapeHtml(item.id)}" data-reforge-location="inventory">${pickLanguage("重铸", "Reforge", language)} ${formatNumber(getReforgeCost(item), language)}${formatReforgeMaterialSuffix(language)}</button>
+      <button class="secondary-button inspector-sell-button" type="button" data-sell-id="${escapeHtml(item.id)}" ${locked ? `disabled title="${pickLanguage("已锁定，无法出售", "Locked items cannot be sold", language)}"` : ""}>${pickLanguage("出售", "Sell", language)} ${formatNumber(getSellValue(item), language)}</button>`;
   return `
     <button class="icon-button item-inspector-close" type="button" data-inventory-detail-close aria-label="关闭装备详情" title="关闭详情">×</button>
     <div class="item-inspector-hero rarity-${rarityKey(item.rarity)}">
       <span class="item-inspector-icon" aria-hidden="true">${escapeHtml(item.icon || meta.icon)}</span>
       <div>
-        <p>${RARITY_LABELS[rarityKey(item.rarity)] || "普通"} · ${meta.label} · Lv.${numberOr(item.level, 1)}</p>
-        <h3>${escapeHtml(item.name)}</h3>
+        <p>${getRarityLabel(item.rarity, language)} · ${slotLabel} · Lv.${numberOr(item.level, 1)}</p>
+        <h3>${escapeHtml(displayName)}</h3>
       </div>
       <button class="icon-button lock-button ${locked ? "is-locked" : ""}" type="button" data-lock-id="${escapeHtml(item.id)}" aria-label="${locked ? "解锁" : "锁定"}${escapeHtml(item.name)}" title="${locked ? "解锁（允许出售）" : "锁定（防止出售）"}">${locked ? "🔒" : "🔓"}</button>
     </div>
-    <div class="item-inspector-power"><span>装备战力</span><strong>✦ ${formatNumber(item.power)}</strong>${numberOr(item.upgradeDelta, 0) !== 0 && !isEquipped ? `<em class="${item.upgradeDelta > 0 ? "comparison-up" : "comparison-down"}">${item.upgradeDelta > 0 ? "+" : ""}${formatNumber(item.upgradeDelta)}</em>` : ""}</div>
+    <div class="item-inspector-power"><span>${pickLanguage("装备战力", "Item Power", language)}</span><strong>✦ ${formatNumber(item.power, language)}</strong>${numberOr(item.upgradeDelta, 0) !== 0 && !isEquipped ? `<em class="${item.upgradeDelta > 0 ? "comparison-up" : "comparison-down"}">${item.upgradeDelta > 0 ? "+" : ""}${formatNumber(item.upgradeDelta, language)}</em>` : ""}</div>
     <p class="item-comparison-label">${escapeHtml(comparisonLabel)}</p>
     <div class="item-inspector-stats">${statMarkup}</div>
-    ${renderAffixQuality(item)}
-    ${renderEffect(item.effect)}
+    ${renderAffixQuality(item, language)}
+    ${renderEffect(item.effect, language)}
     <div class="item-inspector-actions">${actions}</div>`;
 }
 
 /** Per-affix roll-quality chips: how close each roll is to its level ceiling. */
-function renderAffixQuality(item) {
+function renderAffixQuality(item, language = "zh-CN") {
   const affixes = Array.isArray(item?.affixes) ? item.affixes : [];
   if (affixes.length === 0) return "";
   const chips = affixes.map((affix) => {
     const quality = getAffixRollQuality(affix, item.level);
     if (!quality) return "";
     const tier = quality.percent >= 80 ? "q-high" : quality.percent >= 40 ? "q-mid" : "q-low";
-    return `<span class="affix-chip ${tier}" title="${escapeHtml(affix.name || affix.id)}:本词条区间的 ${quality.percent}% 位">${escapeHtml(affix.name || affix.id)} ${quality.percent}%</span>`;
+    const localized = localizeAffix(affix, language);
+    return `<span class="affix-chip ${tier}" title="${escapeHtml(localized.name || localized.id)}: ${quality.percent}%">${escapeHtml(localized.name || localized.id)} ${quality.percent}%</span>`;
   }).join("");
   return chips ? `<p class="item-affix-quality" aria-label="词条成色">${chips}</p>` : "";
 }
 
-function renderShopItem(listing, gold, equipment = {}) {
+function renderShopItem(listing, gold, equipment = {}, language = "zh-CN") {
   const item = listing?.item;
   if (!item) return "";
-  const meta = SLOT_META[item.slot] || { label: "装备", icon: "◆" };
+  const meta = SLOT_META[item.slot] || { icon: "◆" };
   const price = getShopPrice(item);
   // 与身上同部位装备对比(↑绿↓红),买前一眼看出值不值。
   const comparison = compareStats(item, equipment?.[item.slot]);
@@ -1915,42 +2002,42 @@ function renderShopItem(listing, gold, equipment = {}) {
       const deltaMarkup = delta === 0
         ? ""
         : `<span class="${delta > 0 ? "comparison-up" : "comparison-down"}">${delta > 0 ? "↑" : "↓"}${formatStatValue(key, Math.abs(delta))}</span>`;
-      return `<span>${STAT_META[key]?.label || escapeHtml(key)} +${formatStatValue(key, value)} ${deltaMarkup}</span>`;
+      return `<span>${escapeHtml(getStatLabel(key, language))} +${formatStatValue(key, value, language)} ${deltaMarkup}</span>`;
     }).join("")
-    : "<span>无额外属性</span>";
+    : `<span>${pickLanguage("无额外属性", "No bonus stats", language)}</span>`;
   return `
     <article class="shop-item rarity-${rarityKey(item.rarity)}">
       <div class="inventory-item-header">
         <span class="slot-icon" aria-hidden="true">${escapeHtml(item.emoji || meta.icon)}</span>
-        <span class="inventory-item-name"><strong>${escapeHtml(item.name)}</strong><small>${meta.label} · Lv.${numberOr(item.level, 1)}</small></span>
+        <span class="inventory-item-name"><strong>${escapeHtml(getItemDisplayName(item, language))}</strong><small>${getSlotLabel(item.slot, language)} · Lv.${numberOr(item.level, 1)}</small></span>
         <span class="item-power">✦ ${formatNumber(item.power)}</span>
       </div>
       <p class="item-stats">${statMarkup}</p>
-      ${renderEffect(item.effect)}
+      ${renderEffect(item.effect, language)}
       <button class="secondary-button shop-buy-button" type="button" data-buy-listing="${escapeHtml(listing.listingId)}" ${numberOr(gold, 0) < price ? "disabled" : ""}>
         ◈ ${formatNumber(price)}
       </button>
     </article>`;
 }
 
-function renderWorldRegionCard(region) {
+function renderWorldRegionCard(region, language = "zh-CN") {
   const unlocked = region.unlocked === true;
   const nodes = Array.isArray(region.nodes) ? region.nodes : [];
   const range = Array.isArray(region.worldLevelRange)
     ? region.worldLevelRange
     : null;
   const rangeText = range
-    ? `世界 ${range[0]}–${range[1] ?? range[0]}`
+    ? `${pickLanguage("世界", "World", language)} ${range[0]}–${range[1] ?? range[0]}`
     : (region.theme || "");
   const nodeMarkup = unlocked && nodes.length > 0
     ? `<div class="world-node-grid">${nodes.map((node) => {
       const typeLabel = node.type === "town"
-        ? "城镇"
+        ? pickLanguage("城镇", "Town", language)
         : node.type === "outdoor"
-          ? "野外"
+          ? pickLanguage("野外", "Outdoor", language)
           : node.type === "dungeon"
-            ? "副本"
-            : "节点";
+            ? pickLanguage("副本", "Dungeon", language)
+            : pickLanguage("节点", "Location", language);
       return `
         <button
           class="world-node-button"
@@ -1969,8 +2056,8 @@ function renderWorldRegionCard(region) {
     }).join("")}</div>`
     : `<p class="world-region-lock-hint">${escapeHtml(
       unlocked
-        ? "此区域暂无节点"
-        : (region.unlockHint || "尚未解锁"),
+        ? pickLanguage("此区域暂无节点", "No locations in this region", language)
+        : (language === "en-US" ? "Locked" : (region.unlockHint || "尚未解锁")),
     )}</p>`;
 
   return `
@@ -2004,59 +2091,61 @@ function renderReforgeColumn(label, item, tone) {
     </section>`;
 }
 
-function renderResultLoot(item, equippedItem) {
+function renderResultLoot(item, equippedItem, language = "zh-CN") {
   const comparison = compareStats(item, equippedItem);
   return `
     <article class="result-loot-card rarity-${rarityKey(item.rarity)}">
       <span class="result-loot-icon" aria-hidden="true">${escapeHtml(item.icon || SLOT_META[item.slot]?.icon || "💎")}</span>
       <div>
-        <span class="rarity-${rarityKey(item.rarity)}">${RARITY_LABELS[rarityKey(item.rarity)]}</span>
-        <h4>${escapeHtml(item.name)}</h4>
+        <span class="rarity-${rarityKey(item.rarity)}">${getRarityLabel(item.rarity, language)}</span>
+        <h4>${escapeHtml(getItemDisplayName(item, language))}</h4>
         <p>${comparison.map(({ key, value, delta }) => {
           const deltaText = delta === 0 ? "" : ` ${delta > 0 ? "↑" : "↓"}${formatStatValue(key, Math.abs(delta))}`;
           const deltaClass = delta > 0 ? "comparison-up" : delta < 0 ? "comparison-down" : "";
-          return `<span>${escapeHtml(STAT_META[key]?.label || key)} +${formatStatValue(key, value)} <b class="${deltaClass}">${deltaText}</b></span>`;
+          return `<span>${escapeHtml(getStatLabel(key, language))} +${formatStatValue(key, value, language)} <b class="${deltaClass}">${deltaText}</b></span>`;
         }).join(" · ")}</p>
-        ${renderEffect(item.effect)}
+        ${renderEffect(item.effect, language)}
       </div>
       <button class="primary-button" type="button" data-equip-id="${escapeHtml(item.id)}">立即装备</button>
     </article>`;
 }
 
-function renderEffect(effect) {
+function renderEffect(effect, language = "zh-CN") {
   if (!effect) return "";
+  effect = localizeEffect(effect, language);
   const label = effect.name || effect.id || "特殊效果";
   const description = effect.description || "传说特效，会在战斗中自动触发。";
   return `<p class="item-effect">🔥 ${escapeHtml(label)}：${escapeHtml(description)}</p>`;
 }
 
 /** Compact end-of-battle report; rows with zero value are hidden. */
-function renderBattleReport(statistics) {
+function renderBattleReport(statistics, language = "zh-CN") {
   if (!statistics) return "";
   const skillHealing = Math.max(
     0,
     numberOr(statistics.playerHealing, 0) - numberOr(statistics.lifestealHealing, 0),
   );
+  const row = (zh, en, value) => [pickLanguage(zh, en, language), value];
   const rows = [
-    ["造成伤害", statistics.playerDamageDealt],
-    ["召唤物伤害", statistics.minionDamageDealt],
-    ["承受伤害", statistics.playerDamageTaken],
-    ["最大一击", statistics.playerMaxHit],
-    ["暴击次数", statistics.playerCriticalHits],
-    ["闪避次数", statistics.playerDodges],
-    ["技能治疗", skillHealing],
-    ["吸血回复", statistics.lifestealHealing],
-    ["燃烧伤害", statistics.burnDamage],
-    ["荆棘反伤", statistics.thornsDamage],
-    ["连击触发", statistics.extraStrikes],
-    ["召唤 / 折损", statistics.minionsSummoned > 0
+    row("造成伤害", "Damage Dealt", statistics.playerDamageDealt),
+    row("召唤物伤害", "Minion Damage", statistics.minionDamageDealt),
+    row("承受伤害", "Damage Taken", statistics.playerDamageTaken),
+    row("最大一击", "Largest Hit", statistics.playerMaxHit),
+    row("暴击次数", "Critical Hits", statistics.playerCriticalHits),
+    row("闪避次数", "Dodges", statistics.playerDodges),
+    row("技能治疗", "Skill Healing", skillHealing),
+    row("吸血回复", "Lifesteal", statistics.lifestealHealing),
+    row("燃烧伤害", "Burn Damage", statistics.burnDamage),
+    row("荆棘反伤", "Thorns Damage", statistics.thornsDamage),
+    row("连击触发", "Extra Strikes", statistics.extraStrikes),
+    row("召唤 / 折损", "Summoned / Lost", statistics.minionsSummoned > 0
       ? `${formatNumber(statistics.minionsSummoned)} / ${formatNumber(statistics.minionsLost)}`
-      : 0],
+      : 0),
   ].filter(([, value]) => typeof value === "string" || numberOr(value, 0) > 0);
   if (rows.length === 0) return "";
   return `
-    <section class="battle-report" aria-label="战报统计">
-      <h3>战报 · ${formatNumber(statistics.rounds)} 回合</h3>
+    <section class="battle-report" aria-label="${pickLanguage("战报统计", "Battle statistics", language)}">
+      <h3>${pickLanguage("战报", "Battle Report", language)} · ${formatNumber(statistics.rounds, language)} ${pickLanguage("回合", "Rounds", language)}</h3>
       <div class="battle-report-grid">
         ${rows.map(([label, value]) => `<div><span>${label}</span><strong>${typeof value === "string" ? escapeHtml(value) : formatNumber(value)}</strong></div>`).join("")}
       </div>
@@ -2114,19 +2203,19 @@ function rarityKey(value) {
   return RARITY_CLASSES[value] || "normal";
 }
 
-function renderAttribute(element, stat, value) {
+function renderAttribute(element, stat, value, language = "zh-CN") {
   if (!element) return;
   element.innerHTML = `<span>${formatNumber(value)}</span><button class="stat-add-button" type="button"
-    data-allocate-stat="${stat}" aria-label="增加${STAT_META[stat]?.label || stat}" title="加 1 点">+</button>`;
+    data-allocate-stat="${stat}" aria-label="${pickLanguage("增加", "Increase", language)} ${getStatLabel(stat, language)}" title="${pickLanguage("加 1 点", "Add 1 point", language)}">+</button>`;
 }
 
-function formatStatValue(key, value) {
+function formatStatValue(key, value, language = "zh-CN") {
   if (STAT_META[key]?.percent) return `${Math.round(value * 100)}%`;
-  return formatNumber(value);
+  return formatNumber(value, language);
 }
 
-function formatNumber(value) {
-  return Math.round(numberOr(value, 0)).toLocaleString("zh-CN");
+function formatNumber(value, language = "zh-CN") {
+  return Math.round(numberOr(value, 0)).toLocaleString(normalizeLanguage(language));
 }
 
 function escapeHtml(value) {
@@ -2143,10 +2232,11 @@ function cssEscape(value) {
   return String(value).replaceAll('"', '\\"');
 }
 
-function formatReforgeMaterialSuffix() {
+function formatReforgeMaterialSuffix(language = "zh-CN") {
   const req = getReforgeMaterialRequirement();
   if (!req?.required) return "";
-  return ` + ${req.emoji || "✨"}${req.name || getMaterialName(req.materialId)}×${req.amount || 1}`;
+  const material = localizeMaterial({ id: req.materialId, name: req.name || getMaterialName(req.materialId), emoji: req.emoji }, language);
+  return ` + ${material.emoji || "✨"}${material.name}×${req.amount || 1}`;
 }
 
 function numberOr(value, fallback) {
@@ -2168,30 +2258,33 @@ function closeDialog(dialog) {
   else dialog.removeAttribute("open");
 }
 
-function formatEventRewardChips(rewards) {
+function formatEventRewardChips(rewards, language = "zh-CN") {
   if (!rewards || typeof rewards !== "object") return "";
   const chips = [];
-  if (rewards.gold) chips.push(`<span>金币 +${formatNumber(rewards.gold)}</span>`);
-  if (rewards.goldSpent) chips.push(`<span>花费 ${formatNumber(rewards.goldSpent)} 金</span>`);
-  if (rewards.experience) chips.push(`<span>经验 +${formatNumber(rewards.experience)}</span>`);
+  if (rewards.gold) chips.push(`<span>${pickLanguage("金币", "Gold", language)} +${formatNumber(rewards.gold, language)}</span>`);
+  if (rewards.goldSpent) chips.push(`<span>${pickLanguage("花费", "Spent", language)} ${formatNumber(rewards.goldSpent, language)} ${pickLanguage("金", "gold", language)}</span>`);
+  if (rewards.experience) chips.push(`<span>${pickLanguage("经验", "XP", language)} +${formatNumber(rewards.experience, language)}</span>`);
   if (Array.isArray(rewards.items) && rewards.items.length) {
-    chips.push(`<span>装备 ×${rewards.items.length}</span>`);
+    chips.push(`<span>${pickLanguage("装备", "Equipment", language)} ×${rewards.items.length}</span>`);
   }
   if (rewards.materials && typeof rewards.materials === "object") {
     for (const [id, amount] of Object.entries(rewards.materials)) {
-      if (amount > 0) chips.push(`<span>${escapeHtml(formatMaterialChip(id, amount))}</span>`);
+      if (amount > 0) {
+        const material = localizeMaterial({ id, name: getMaterialName(id), emoji: "✨" }, language);
+        chips.push(`<span>${escapeHtml(`${material.emoji} ${material.name} ×${amount}`)}</span>`);
+      }
     }
   }
   if (rewards.buffs && typeof rewards.buffs === "object") {
     const buffNames = { maxHp: "生命", attack: "攻击", defense: "防御", speed: "速度" };
     for (const [stat, amount] of Object.entries(rewards.buffs)) {
       if (amount) {
-        const label = buffNames[stat] || "属性";
+        const label = getStatLabel(stat, language) || pickLanguage("属性", "Stat", language);
         chips.push(`<span>${escapeHtml(label)} ${amount > 0 ? "+" : ""}${amount}</span>`);
       }
     }
   }
-  if (rewards.battle) chips.push("<span>触发战斗</span>");
+  if (rewards.battle) chips.push(`<span>${pickLanguage("触发战斗", "Battle triggered", language)}</span>`);
   return chips.join("");
 }
 

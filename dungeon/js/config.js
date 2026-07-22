@@ -61,6 +61,20 @@ const SKILLS = {
       perLevel: { multiplier: 0.11 },
       milestones: [{ level: 7, add: { cooldown: -1 } }],
     },
+    branches: [
+      {
+        id: "heavy_strike_crusher",
+        name: "粉碎重击",
+        description: "进一步提高单次伤害，适合正面击破高生命目标。",
+        add: { multiplier: 0.24 },
+      },
+      {
+        id: "heavy_strike_executioner",
+        name: "处决重击",
+        description: "显著提高本技能的暴击概率，追求爆发上限。",
+        add: { critChanceBonus: 0.2 },
+      },
+    ],
   },
   whirlwind: {
     id: "whirlwind",
@@ -78,6 +92,20 @@ const SKILLS = {
       perLevel: { multiplier: 0.04 },
       milestones: [{ level: 6, add: { minimumTargets: -1 } }],
     },
+    branches: [
+      {
+        id: "whirlwind_bladestorm",
+        name: "剑刃风暴",
+        description: "提高旋风斩的每目标伤害，强化群体清场。",
+        add: { multiplier: 0.1 },
+      },
+      {
+        id: "whirlwind_relentless",
+        name: "无尽回旋",
+        description: "降低施放所需的敌人数，更早进入技能循环。",
+        add: { minimumTargets: -1 },
+      },
+    ],
   },
   block: {
     id: "block",
@@ -97,6 +125,20 @@ const SKILLS = {
       perLevel: { reduction: 0.018 },
       milestones: [{ level: 8, add: { cooldown: -1 } }],
     },
+    branches: [
+      {
+        id: "block_fortress",
+        name: "钢铁壁垒",
+        description: "提高格挡期间的减伤，专注抵挡首领重击。",
+        add: { reduction: 0.1 },
+      },
+      {
+        id: "block_enduring",
+        name: "持久防线",
+        description: "格挡多持续一回合，换取更稳定的防护覆盖。",
+        add: { duration: 1 },
+      },
+    ],
   },
   arcane_bolt: {
     id: "arcane_bolt",
@@ -125,6 +167,20 @@ const SKILLS = {
       perLevel: { multiplier: 0.12 },
       milestones: [{ level: 8, add: { cooldown: -1 } }],
     },
+    branches: [
+      {
+        id: "fireball_inferno",
+        name: "炼狱火球",
+        description: "提高火球术的稳定伤害，专注单体爆发。",
+        add: { multiplier: 0.25 },
+      },
+      {
+        id: "fireball_wildfire",
+        name: "狂燃核心",
+        description: "提高火球术的暴击概率，制造更高峰值。",
+        add: { critChanceBonus: 0.22 },
+      },
+    ],
   },
   chain_lightning: {
     id: "chain_lightning",
@@ -142,6 +198,20 @@ const SKILLS = {
       perLevel: { multiplier: 0.05 },
       milestones: [{ level: 7, add: { cooldown: -1 } }],
     },
+    branches: [
+      {
+        id: "chain_lightning_overload",
+        name: "雷霆过载",
+        description: "提高每次跳跃的伤害，强化密集敌群处理。",
+        add: { multiplier: 0.09 },
+      },
+      {
+        id: "chain_lightning_forked",
+        name: "分叉闪电",
+        description: "两名敌人时也优先施放，提升小规模战斗覆盖。",
+        add: { minimumTargets: -1 },
+      },
+    ],
   },
   mana_shield: {
     id: "mana_shield",
@@ -151,9 +221,9 @@ const SKILLS = {
     multiplier: 0,
     cooldown: 5,
     resourceCost: 0,
-    reduction: 0.52,
-    duration: 2,
-    triggerBelowHpRatio: 0.55,
+    reduction: 0.62,
+    duration: 3,
+    triggerBelowHpRatio: 0.8,
     classIds: ["mage"],
     leveling: {
       initialLevel: 1,
@@ -161,6 +231,20 @@ const SKILLS = {
       perLevel: { reduction: 0.012 },
       milestones: [{ level: 7, add: { cooldown: -1 } }],
     },
+    branches: [
+      {
+        id: "mana_shield_prismatic",
+        name: "棱彩屏障",
+        description: "提高护盾减伤，抵挡短时间内的高额爆发。",
+        add: { reduction: 0.08 },
+      },
+      {
+        id: "mana_shield_lingering",
+        name: "延续结界",
+        description: "护盾多持续一回合，提高持续作战稳定性。",
+        add: { duration: 1 },
+      },
+    ],
   },
   // 游侠以多段独立判定制造暴击波动，单段倍率刻意低于重击类技能。
   quick_shot: {
@@ -193,6 +277,20 @@ const SKILLS = {
       perLevel: { multiplier: 0.09, critChanceBonus: 0.015 },
       milestones: [{ level: 8, add: { cooldown: -1 } }],
     },
+    branches: [
+      {
+        id: "aimed_shot_deadeye",
+        name: "神射手",
+        description: "提高瞄准射击的伤害，稳定击穿高防目标。",
+        add: { multiplier: 0.2 },
+      },
+      {
+        id: "aimed_shot_execution",
+        name: "猎杀标记",
+        description: "提高瞄准射击的暴击概率，赌一轮高额爆发。",
+        add: { critChanceBonus: 0.18 },
+      },
+    ],
   },
   arrow_rain: {
     id: "arrow_rain",
@@ -211,6 +309,20 @@ const SKILLS = {
       perLevel: { multiplier: 0.015 },
       milestones: [{ level: 7, add: { minimumTargets: -1 } }],
     },
+    branches: [
+      {
+        id: "arrow_rain_storm",
+        name: "暴雨箭幕",
+        description: "提高每支箭的伤害，强化多目标压制。",
+        add: { multiplier: 0.06 },
+      },
+      {
+        id: "arrow_rain_widened",
+        name: "扩散箭幕",
+        description: "三名以下的敌群也能触发箭雨。",
+        add: { minimumTargets: -1 },
+      },
+    ],
   },
   evasion_stance: {
     id: "evasion_stance",
@@ -231,6 +343,20 @@ const SKILLS = {
       perLevel: { dodgeBonus: 0.012 },
       milestones: [{ level: 8, add: { cooldown: -1 } }],
     },
+    branches: [
+      {
+        id: "evasion_stance_phantom",
+        name: "幻影步",
+        description: "显著提高姿态期间的闪避，适合规避首领连击。",
+        add: { dodgeBonus: 0.08 },
+      },
+      {
+        id: "evasion_stance_guarded",
+        name: "稳固姿态",
+        description: "用少量闪避换取更可靠的伤害减免。",
+        add: { reduction: 0.12 },
+      },
+    ],
   },
   enemy_attack: {
     id: "enemy_attack",
@@ -269,6 +395,20 @@ const SKILLS = {
       perLevel: { multiplier: 0.1 },
       milestones: [{ level: 8, add: { cooldown: -1 } }],
     },
+    branches: [
+      {
+        id: "bone_spear_impale",
+        name: "穿魂骨矛",
+        description: "提高骨矛的伤害，专注单体收割。",
+        add: { multiplier: 0.22 },
+      },
+      {
+        id: "bone_spear_critical",
+        name: "裂颅骨矛",
+        description: "提高骨矛的暴击概率，追求脆弱窗口爆发。",
+        add: { critChanceBonus: 0.2 },
+      },
+    ],
   },
   corpse_burst: {
     id: "corpse_burst",
@@ -286,6 +426,20 @@ const SKILLS = {
       perLevel: { multiplier: 0.045 },
       milestones: [{ level: 7, add: { minimumTargets: -1 } }],
     },
+    branches: [
+      {
+        id: "corpse_burst_volatile",
+        name: "不稳定尸火",
+        description: "提高尸爆伤害，让密集敌群更快崩解。",
+        add: { multiplier: 0.08 },
+      },
+      {
+        id: "corpse_burst_chain",
+        name: "连锁尸爆",
+        description: "少量敌人时也能引爆尸爆，保持清场节奏。",
+        add: { minimumTargets: -1 },
+      },
+    ],
   },
   raise_skeleton: {
     id: "raise_skeleton",
@@ -297,24 +451,38 @@ const SKILLS = {
     resourceCost: 0,
     // 每次召唤 summonCount 名,场上召唤物不超过 maxMinions(另受内核硬上限约束)。
     summonCount: 2,
-    maxMinions: 3,
+    maxMinions: 2,
     minionName: "骷髅战士",
     minionEmoji: "💀",
     // 召唤物属性 = 施法者当前属性 × 比例。
-    minionHpRatio: 0.32,
-    minionAttackRatio: 0.42,
+    minionHpRatio: 0.22,
+    minionAttackRatio: 0.3,
     minionDefenseRatio: 0.4,
     minionSpeedRatio: 0.85,
     classIds: ["necromancer"],
     leveling: {
       initialLevel: 1,
       maxLevel: 10,
-      perLevel: { minionHpRatio: 0.025, minionAttackRatio: 0.03 },
+      perLevel: { minionHpRatio: 0.02, minionAttackRatio: 0.018 },
       milestones: [
-        { level: 5, add: { maxMinions: 1 } },
+        { level: 7, add: { maxMinions: 1 } },
         { level: 9, add: { summonCount: 1 } },
       ],
     },
+    branches: [
+      {
+        id: "raise_skeleton_legion",
+        name: "骸骨军团",
+        description: "提高战场召唤上限，靠数量分摊伤害。",
+        add: { maxMinions: 1 },
+      },
+      {
+        id: "raise_skeleton_elite",
+        name: "精锐亡骨",
+        description: "提高骷髅的攻击比例，牺牲数量换取质量。",
+        add: { minionAttackRatio: 0.1 },
+      },
+    ],
   },
   // ——德鲁伊:狼魂形态(增伤+吸血)+ 回春续航的近身斗士——
   claw_swipe: {
@@ -344,6 +512,20 @@ const SKILLS = {
       perLevel: { multiplier: 0.1 },
       milestones: [{ level: 8, add: { cooldown: -1 } }],
     },
+    branches: [
+      {
+        id: "savage_bite_rend",
+        name: "撕裂伤口",
+        description: "提高野性撕咬的伤害，专注快速解决单体目标。",
+        add: { multiplier: 0.22 },
+      },
+      {
+        id: "savage_bite_fang",
+        name: "獠牙突袭",
+        description: "提高野性撕咬的暴击概率，制造爆发窗口。",
+        add: { critChanceBonus: 0.2 },
+      },
+    ],
   },
   natures_wrath: {
     id: "natures_wrath",
@@ -361,6 +543,20 @@ const SKILLS = {
       perLevel: { multiplier: 0.04 },
       milestones: [{ level: 6, add: { minimumTargets: -1 } }],
     },
+    branches: [
+      {
+        id: "natures_wrath_tempest",
+        name: "风暴核心",
+        description: "提高自然之怒的范围伤害，强化群体清场。",
+        add: { multiplier: 0.08 },
+      },
+      {
+        id: "natures_wrath_roots",
+        name: "缠根领域",
+        description: "较小敌群也能触发自然之怒，维持稳定循环。",
+        add: { minimumTargets: -1 },
+      },
+    ],
   },
   wolf_form: {
     id: "wolf_form",
@@ -371,8 +567,8 @@ const SKILLS = {
     cooldown: 5,
     resourceCost: 0,
     // empower:持续期内提升输出并附带吸血,由施法 AI 主动保持覆盖。
-    damageBonus: 0.32,
-    lifestealBonus: 0.1,
+    damageBonus: 0.28,
+    lifestealBonus: 0.07,
     duration: 3,
     classIds: ["druid"],
     leveling: {
@@ -381,6 +577,20 @@ const SKILLS = {
       perLevel: { damageBonus: 0.02 },
       milestones: [{ level: 7, add: { cooldown: -1 } }],
     },
+    branches: [
+      {
+        id: "wolf_form_berserker",
+        name: "狂狼之魂",
+        description: "进一步提高形态增伤，放弃部分续航换取爆发。",
+        add: { damageBonus: 0.08 },
+      },
+      {
+        id: "wolf_form_predator",
+        name: "猎食本能",
+        description: "提高形态吸血，适合长线作战和持续回复。",
+        add: { lifestealBonus: 0.07 },
+      },
+    ],
   },
   rejuvenation: {
     id: "rejuvenation",
@@ -390,7 +600,7 @@ const SKILLS = {
     multiplier: 0,
     cooldown: 4,
     resourceCost: 0,
-    healRatio: 0.3,
+    healRatio: 0.25,
     triggerBelowHpRatio: 0.6,
     classIds: ["druid"],
     leveling: {
@@ -399,6 +609,20 @@ const SKILLS = {
       perLevel: { healRatio: 0.02 },
       milestones: [{ level: 8, add: { cooldown: -1 } }],
     },
+    branches: [
+      {
+        id: "rejuvenation_bloom",
+        name: "繁盛回春",
+        description: "提高单次恢复量，适合承受高额爆发。",
+        add: { healRatio: 0.1 },
+      },
+      {
+        id: "rejuvenation_cycle",
+        name: "循环生息",
+        description: "缩短回春术冷却，更频繁地维持生命线。",
+        add: { cooldown: -1 },
+      },
+    ],
   },
   // ——以下为敌方专属技能(enemyOnly),不会进入任何职业的技能列表——
   venom_fangs: {
@@ -994,8 +1218,8 @@ export const CONFIG = deepFreeze({
     startingStats: { strength: 10, agility: 5, intelligence: 2, vitality: 10 },
     startingSkills: ["basic_attack", "heavy_strike", "whirlwind", "block"],
     statPointsPerLevel: 3,
-    // 30 级一轮约需 2.3 万经验，推进前 20 层并适量重复刷即可转生。
-    experience: { base: 85, growth: 1.115, linear: 16 },
+    // 30 级一轮约需 3.7 万经验；Boss 门槛之间需要适量刷装与调整构筑。
+    experience: { base: 110, growth: 1.13, linear: 22 },
   },
 
   classes: {
@@ -1041,16 +1265,16 @@ export const CONFIG = deepFreeze({
       // 智力优先，敏捷维持先手与暴击，体质补足生存。
       autoAllocation: { strength: 0, agility: 0.2, intelligence: 0.55, vitality: 0.25 },
       combat: {
-        baseHp: 60,
-        hpPerVitality: 9,
-        hpPerLevel: 5,
+        baseHp: 65,
+        hpPerVitality: 10.5,
+        hpPerLevel: 5.5,
         baseAttack: 7,
         attackPerLevel: 2.2,
         attackPerAttribute: { strength: 0.1, agility: 0.2, intelligence: 2.25, vitality: 0 },
-        baseDefense: 1,
-        defensePerVitality: 0.55,
+        baseDefense: 1.5,
+        defensePerVitality: 0.65,
         defensePerStrength: 0.08,
-        defensePerLevel: 0.72,
+        defensePerLevel: 0.85,
         baseSpeed: 78,
         speedPerAgility: 2.1,
       },
@@ -1090,12 +1314,12 @@ export const CONFIG = deepFreeze({
         baseSpeed: 84,
         speedPerAgility: 2.6,
         baseCritChance: 0.08,
-        critChancePerAgility: 0.008,
-        maxCritChance: 0.8,
+        critChancePerAgility: 0.007,
+        maxCritChance: 0.75,
         baseCritDamage: 1.6,
         baseDodgeChance: 0.05,
-        dodgeChancePerAgility: 0.006,
-        maxDodgeChance: 0.5,
+        dodgeChancePerAgility: 0.005,
+        maxDodgeChance: 0.42,
       },
     },
     necromancer: {
@@ -1155,27 +1379,31 @@ export const CONFIG = deepFreeze({
         damageReduction: 1.4,
       },
       combat: {
-        baseHp: 76,
-        hpPerVitality: 12.5,
-        hpPerLevel: 6,
+        baseHp: 72,
+        hpPerVitality: 11.2,
+        hpPerLevel: 5.8,
         baseAttack: 5,
         attackPerLevel: 2,
         attackPerAttribute: { strength: 1.7, agility: 0.25, intelligence: 0.15, vitality: 0.5 },
-        baseDefense: 1.8,
-        defensePerVitality: 0.85,
-        defensePerStrength: 0.25,
-        defensePerLevel: 0.95,
+        baseDefense: 2,
+        defensePerVitality: 0.72,
+        defensePerStrength: 0.22,
+        defensePerLevel: 0.9,
         baseSpeed: 74,
         speedPerAgility: 2.1,
       },
     },
   },
 
-  // 每两级给 1 点，单轮不足以点满三条技能，确保构筑有取舍。
+  // 满级累计 30 点，但单套构筑最多投入 25 点，保留明确取舍。
   skillProgression: {
-    pointEveryLevels: 2,
+    initialPoints: 1,
+    pointEveryLevels: 1,
     pointsPerAward: 1,
-    pointsPerPrestige: 3,
+    pointsPerPrestige: 0,
+    totalPointCap: 30,
+    investmentCap: 25,
+    branchUnlockLevel: 5,
     freeReset: true,
   },
 
@@ -1184,7 +1412,7 @@ export const CONFIG = deepFreeze({
     maxCount: 99,
     combatBonusPerCount: 0.08,
     affectedStats: ["maxHp", "attack", "defense"],
-    pointsPerCount: 3,
+    pointsPerCount: 0,
     resetSkillLevels: true,
     initialFloorCap: 20,
     floorsPerCount: 20,
@@ -2072,6 +2300,16 @@ export const CONFIG = deepFreeze({
         ["desert_town", "desert_wild_ruins"],
         ["desert_wild_dunes", "desert_dungeon"],
         ["desert_wild_ruins", "desert_dungeon"],
+        ["desert_dungeon", "abyss_town"],
+        ["abyss_town", "abyss_wild_rift"],
+        ["abyss_town", "abyss_wild_forge"],
+        ["abyss_wild_rift", "abyss_dungeon"],
+        ["abyss_wild_forge", "abyss_dungeon"],
+        ["abyss_dungeon", "void_town"],
+        ["void_town", "void_wild_shards"],
+        ["void_town", "void_wild_echoes"],
+        ["void_wild_shards", "void_dungeon"],
+        ["void_wild_echoes", "void_dungeon"],
       ],
       regionShapes: {
         // 林地：主舞台，约占画布 55% 宽
@@ -2245,7 +2483,15 @@ export const CONFIG = deepFreeze({
         description: "裂隙深处涌出的硫磺与烈焰，恶魔军团的前哨。",
         worldLevelRange: [45, 75],
         unlockHint: "通关枯骨荒漠更高层后解锁",
-        nodes: [],
+        lootBias: ["damageReduction", "armorPenetration", "lifesteal"],
+        outdoorFloorBonus: 10,
+        outdoorEnemyStatMultiplier: 1.14,
+        nodes: [
+          { id: "abyss_town", type: "town", name: "余烬堡垒", emoji: "🏰", description: "深渊边缘最后的军寨，铁匠以恶魔残骸维持熔炉。", x: 20, y: 48, mapX: 805, mapY: 350 },
+          { id: "abyss_wild_rift", type: "outdoor", name: "灼热裂谷", emoji: "🔥", description: "烈焰从地壳裂口喷涌，怪物偏重灼烧与破甲。", x: 48, y: 28, mapX: 850, mapY: 215 },
+          { id: "abyss_wild_forge", type: "outdoor", name: "恶魔熔炉", emoji: "⚒️", description: "废弃熔炉仍在运转，适合寻找防御与吸血词条。", x: 52, y: 66, mapX: 875, mapY: 390 },
+          { id: "abyss_dungeon", type: "dungeon", name: "深渊王城", emoji: "🏛️", description: "通往七十层以后阶段检验的恶魔王城。", x: 82, y: 48, mapX: 925, mapY: 300, suggestedMinFloor: 45 },
+        ],
       },
       void: {
         id: "void",
@@ -2255,9 +2501,25 @@ export const CONFIG = deepFreeze({
         description: "世界缝隙之外的混沌，仅强者得以踏入。",
         worldLevelRange: [75, 100],
         unlockHint: "通关炼狱深渊副本后解锁",
-        nodes: [],
+        lootBias: ["critChance", "damageReduction", "dodgeChance"],
+        outdoorFloorBonus: 16,
+        outdoorEnemyStatMultiplier: 1.2,
+        nodes: [
+          { id: "void_town", type: "town", name: "最后灯塔", emoji: "🗼", description: "现实边缘的最后补给站，远征者在此准备终局挑战。", x: 20, y: 50, mapX: 900, mapY: 155 },
+          { id: "void_wild_shards", type: "outdoor", name: "破碎原野", emoji: "🌌", description: "漂浮的现实碎片间潜伏着高闪避虚空猎手。", x: 48, y: 28, mapX: 945, mapY: 80 },
+          { id: "void_wild_echoes", type: "outdoor", name: "回声墓园", emoji: "⚰️", description: "历代远征者的回声仍在战斗，回报与危险并存。", x: 50, y: 68, mapX: 950, mapY: 190 },
+          { id: "void_dungeon", type: "dungeon", name: "界外王座", emoji: "👁️", description: "终局副本。完成第 100 层检验，证明构筑真正成形。", x: 82, y: 50, mapX: 985, mapY: 125, suggestedMinFloor: 75 },
+        ],
       },
     },
+  },
+
+  endgame: {
+    objectives: [
+      { id: "reach_50", floor: 50, name: "踏入深渊", description: "击败第 50 层守门者，进入完整的中后期循环。" },
+      { id: "reach_85", floor: 85, name: "流派定型", description: "通过虚空检验，完成 25 点技能构筑与核心装备组合。" },
+      { id: "clear_100", floor: 100, name: "终局征服", description: "击败第 100 层虚空君王，并继续挑战终局装备。" },
+    ],
   },
 
   dungeon: {

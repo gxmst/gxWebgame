@@ -159,6 +159,9 @@ export function renderWorldMapSvgMarkup(model, options = {}) {
   const map = isRecord(model) ? model : buildWorldMapModel([], {});
   const [minX, minY, width, height] = normalizeViewBox(map.viewBox);
   const reducedMotion = options.reducedMotion === true;
+  const english = options.language === "en-US" || options.language === "en";
+  const text = (zh, en) => english ? en : zh;
+  const nodeTypeLabels = english ? { town: "Town", outdoor: "Outdoor", dungeon: "Dungeon" } : NODE_TYPE_LABELS;
   const regions = Array.isArray(map.regions) ? map.regions : [];
   const edges = Array.isArray(map.edges) ? map.edges : [];
   const decorations = Array.isArray(map.decorations) ? map.decorations : [];
@@ -171,7 +174,7 @@ export function renderWorldMapSvgMarkup(model, options = {}) {
     const lockClass = unlocked ? "" : " is-locked-region";
     const label = shape.label || { x: width * 0.5, y: height * 0.5 };
     const range = Array.isArray(region.worldLevelRange)
-      ? `世界 ${region.worldLevelRange[0]}–${region.worldLevelRange[1] ?? region.worldLevelRange[0]}`
+      ? `${text("世界", "World")} ${region.worldLevelRange[0]}–${region.worldLevelRange[1] ?? region.worldLevelRange[0]}`
       : "";
     const themeClass = ` theme-${safeToken(region.id || region.theme) || "unknown"}`;
     const knownGradient = ["forest", "desert", "abyss", "void"].includes(region.id)
@@ -186,7 +189,7 @@ export function renderWorldMapSvgMarkup(model, options = {}) {
         ${unlocked ? "" : `<path class="wm-region-fog" d="${escapeAttr(shape.path)}" />`}
         <text class="wm-region-label" x="${finiteNumber(label.x, 0)}" y="${finiteNumber(label.y, 0)}" text-anchor="middle">
           <tspan class="wm-region-title" x="${finiteNumber(label.x, 0)}" dy="0">${escapeXml(region.emoji || "")} ${escapeXml(region.name || region.id)}</tspan>
-          <tspan class="wm-region-sub" x="${finiteNumber(label.x, 0)}" dy="16">${escapeXml(unlocked ? range : (region.unlockHint || "未解锁"))}</tspan>
+          <tspan class="wm-region-sub" x="${finiteNumber(label.x, 0)}" dy="16">${escapeXml(unlocked ? range : text("未解锁", "Locked"))}</tspan>
         </text>
         ${unlocked ? "" : `<text class="wm-region-mystery" x="${finiteNumber(label.x, 0)}" y="${finiteNumber(label.y, 0) + 36}" text-anchor="middle">?</text>`}
       </g>`;
@@ -201,13 +204,13 @@ export function renderWorldMapSvgMarkup(model, options = {}) {
   const decorLayer = decorations.map(renderMapDecoration).join("");
 
   const nodeLayer = regions.flatMap((region) => region.nodes.map((node) => {
-    const typeLabel = NODE_TYPE_LABELS[node.type] || "地点";
+    const typeLabel = nodeTypeLabels[node.type] || text("地点", "Location");
     const range = Array.isArray(region.worldLevelRange)
-      ? `推荐世界 ${region.worldLevelRange[0]}+`
+      ? `${text("推荐世界", "Recommended World")} ${region.worldLevelRange[0]}+`
       : "";
     const state = node.unlocked
-      ? (node.isCurrent ? "当前位置" : "可进入")
-      : "未解锁";
+      ? (node.isCurrent ? text("当前位置", "Current Location") : text("可进入", "Available"))
+      : text("未解锁", "Locked");
     const aria = `${node.name || node.id}，${typeLabel}，${state}${range ? `，${range}` : ""}`;
     const typeClass = `type-${node.type || "node"}`;
     const currentClass = node.isCurrent ? " is-current" : "";
@@ -236,7 +239,7 @@ export function renderWorldMapSvgMarkup(model, options = {}) {
         <text class="wm-node-emoji" text-anchor="middle" dominant-baseline="central" dy="1">${escapeXml(node.emoji || "◆")}</text>
         <rect class="wm-node-label-bg" x="${-labelWidth / 2}" y="22" width="${labelWidth}" height="18" rx="6" />
         <text class="wm-node-caption" text-anchor="middle" y="34">${escapeXml(node.name || node.id)}</text>
-        ${node.isCurrent ? `<text class="wm-node-you" text-anchor="middle" y="-29">◆ 当前位置</text>` : ""}
+        ${node.isCurrent ? `<text class="wm-node-you" text-anchor="middle" y="-29">◆ ${text("当前位置", "YOU ARE HERE")}</text>` : ""}
       </g>`;
   })).join("");
 
@@ -246,7 +249,7 @@ export function renderWorldMapSvgMarkup(model, options = {}) {
   viewBox="${minX} ${minY} ${width} ${height}"
   preserveAspectRatio="xMidYMid meet"
   role="img"
-  aria-label="世界地图"
+  aria-label="${text("世界地图", "World Map")}"
   focusable="false"
 >
   <defs>
@@ -291,7 +294,7 @@ export function renderWorldMapSvgMarkup(model, options = {}) {
     <rect x="${minX}" y="${minY}" width="${width}" height="${height}" fill="url(#wm-vignette)" />
     <path class="wm-map-frame" d="M18,18 H982 V542 H18 Z" />
     <path class="wm-map-frame-inner" d="M27,27 H973 V533 H27 Z" />
-    <g class="wm-map-cartouche"><rect x="42" y="34" width="220" height="44" rx="8"/><text x="58" y="54">灰烬大陆</text><text class="wm-map-cartouche-sub" x="58" y="68">ASHEN REALMS · 探索地图</text></g>
+    <g class="wm-map-cartouche"><rect x="42" y="34" width="220" height="44" rx="8"/><text x="58" y="54">${text("灰烬大陆", "ASHEN REALMS")}</text><text class="wm-map-cartouche-sub" x="58" y="68">${text("ASHEN REALMS · 探索地图", "WORLD EXPLORATION MAP")}</text></g>
     <g class="wm-compass" transform="translate(930 484)"><circle r="30"/><path d="M0-25L7-5 0 0-7-5Z M0 25L7 5 0 0-7 5Z"/><path class="wm-compass-cross" d="M-22 0H22M0-22V22"/><text y="-34" text-anchor="middle">N</text></g>
   </g>
 

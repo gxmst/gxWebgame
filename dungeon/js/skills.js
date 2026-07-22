@@ -8,6 +8,9 @@ const DEFAULT_SKILL_PROGRESSION = Object.freeze({
   pointEveryLevels: 1,
   pointsPerAward: 1,
   pointsPerPrestige: 3,
+  totalPointCap: 30,
+  investmentCap: 25,
+  branchUnlockLevel: 5,
 });
 
 const DEFAULT_PRESTIGE = Object.freeze({
@@ -81,6 +84,17 @@ function getGlobalSkillProgression() {
     10_000,
     DEFAULT_SKILL_PROGRESSION.pointEveryLevels,
   );
+  const totalPointCap = positiveInteger(
+    source.totalPointCap
+      ?? source.totalPointsCap
+      ?? source.totalPoints
+      ?? source.pointCap
+      ?? source.earnedCap
+      ?? source.maxEarnedPoints
+      ?? source.maxSkillPoints
+      ?? source.maxPoints,
+    DEFAULT_SKILL_PROGRESSION.totalPointCap,
+  );
   return {
     initialLevel: integer(
       source.initialLevel ?? source.startLevel,
@@ -109,6 +123,27 @@ function getGlobalSkillProgression() {
     initialPoints: positiveInteger(
       source.initialPoints ?? source.startingPoints,
       0,
+    ),
+    totalPointCap,
+    investmentCap: integer(
+      source.investmentCap
+        ?? source.investedPointCap
+        ?? source.maxInvestedPoints
+        ?? source.maxInvestment
+        ?? source.maxSpentPoints
+        ?? source.buildPointCap
+        ?? source.buildCap,
+      0,
+      totalPointCap,
+      Math.min(DEFAULT_SKILL_PROGRESSION.investmentCap, totalPointCap),
+    ),
+    branchUnlockLevel: integer(
+      source.branchUnlockLevel
+        ?? source.branchesUnlockAt
+        ?? source.specializationLevel,
+      1,
+      1_000,
+      DEFAULT_SKILL_PROGRESSION.branchUnlockLevel,
     ),
   };
 }
@@ -174,6 +209,13 @@ function getHeroSkillEntries(hero) {
     isRecord(entry) ? entry.id ?? entry.key : entry,
   ).trim()));
   return explicit.length > 0 ? explicit : classSkills;
+}
+
+function getHeroConfiguredSkill(hero, skillId) {
+  const id = String(skillId ?? "").trim();
+  const supplied = getHeroSkillEntries(hero).find((entry) =>
+    isRecord(entry) && String(entry.id ?? entry.key ?? "").trim() === id);
+  return getConfiguredSkill(supplied ?? id);
 }
 
 function getSkillLevelMap(hero) {
@@ -246,14 +288,146 @@ function getCombatHitCap() {
   );
 }
 
-function applyNumericChanges(target, changes, factor = 1) {
+function applyNumericChanges(target, changes, factor = 1, createMissing = false) {
   if (!isRecord(changes)) return;
   for (const [key, rawDelta] of Object.entries(changes)) {
     const delta = Number(rawDelta);
     if (!Number.isFinite(delta)) continue;
     const current = Number(target[key]);
     if (Number.isFinite(current)) target[key] = current + delta * factor;
+    else if (createMissing) target[key] = delta * factor;
   }
+}
+
+function getSkillBranchDefinitions(definition) {
+  const source = definition?.branches
+    ?? definition?.specializations
+    ?? definition?.augments;
+  const entries = Array.isArray(source)
+    ? source
+    : isRecord(source)
+      ? Object.entries(source).map(([id, branch]) =>
+        isRecord(branch) ? { ...branch, id: branch.id ?? id } : null)
+      : [];
+  const defaultUnlockLevel = integer(
+    definition?.branchUnlockLevel
+      ?? definition?.branchesUnlockAt
+      ?? getGlobalSkillProgression().branchUnlockLevel,
+    1,
+    1_000,
+    getGlobalSkillProgression().branchUnlockLevel,
+  );
+  const seen = new Set();
+  return entries
+    .map((entry) => {
+      if (!isRecord(entry)) return null;
+      const id = String(entry.id ?? entry.key ?? "").trim();
+      if (!id || seen.has(id)) return null;
+      seen.add(id);
+      return {
+        ...entry,
+        id,
+        unlockLevel: integer(
+          entry.unlockLevel ?? entry.requiredLevel ?? entry.unlockAt,
+          1,
+          1_000,
+          defaultUnlockLevel,
+        ),
+      };
+    })
+    .filter(Boolean);
+}
+
+function getSkillBranchMap(hero) {
+  const source = firstRecord(
+    hero?.skillBranches,
+    hero?.skillSpecializations,
+    hero?.skillProgress?.branches,
+  );
+  if (!source) return {};
+  return Object.fromEntries(Object.entries(source)
+    .map(([skillId, selection]) => [
+      String(skillId ?? "").trim(),
+      String(isRecord(selection) ? selection.id ?? selection.key ?? "" : selection ?? "").trim(),
+    ])
+    .filter(([skillId, branchId]) => skillId && branchId));
+}
+
+function getRequestedBranchId(selection, skillId = "") {
+  if (isRecord(selection) && skillId) {
+    const fromHero = getSkillBranchMap(selection)[String(skillId).trim()];
+    if (fromHero) return fromHero;
+  }
+  return String(
+    isRecord(selection)
+      ? selection.selectedBranchId
+        ?? selection.branchId
+        ?? selection.id
+        ?? selection.key
+        ?? ""
+      : selection ?? "",
+  ).trim();
+}
+
+function applyDirectChanges(target, changes) {
+  if (!isRecord(changes)) return;
+  const protectedKeys = new Set([
+    "id",
+    "level",
+    "skillLevel",
+    "maxLevel",
+    "leveling",
+    "branches",
+  ]);
+  for (const [key, value] of Object.entries(changes)) {
+    if (protectedKeys.has(key)) continue;
+    if (typeof value === "number" && Number.isFinite(value)) target[key] = value;
+    else if (typeof value === "boolean" || typeof value === "string") target[key] = value;
+  }
+}
+
+function applyMultipliers(target, changes) {
+  if (!isRecord(changes)) return;
+  for (const [key, rawMultiplier] of Object.entries(changes)) {
+    const multiplier = Number(rawMultiplier);
+    const current = Number(target[key]);
+    if (Number.isFinite(multiplier) && Number.isFinite(current)) {
+      target[key] = current * multiplier;
+    }
+  }
+}
+
+function applySkillBranch(target, branch) {
+  if (!branch) return;
+  const effects = isRecord(branch.effects) ? branch.effects : {};
+  const nestedEffects = hasOwn(effects, "add")
+    || hasOwn(effects, "set")
+    || hasOwn(effects, "override")
+    || hasOwn(effects, "multiply");
+  const additions = firstRecord(
+    branch.add,
+    branch.changes,
+    effects.add,
+    effects.changes,
+    nestedEffects ? null : effects,
+  );
+  const replacements = firstRecord(
+    branch.set,
+    branch.override,
+    branch.values,
+    effects.set,
+    effects.override,
+    effects.values,
+  );
+  const multipliers = firstRecord(
+    branch.multiply,
+    branch.multipliers,
+    effects.multiply,
+    effects.multipliers,
+  );
+  applyNumericChanges(target, additions, 1, true);
+  applyMultipliers(target, multipliers);
+  applyDirectChanges(target, replacements);
 }
 
 function normalizeMilestones(value) {
@@ -348,8 +522,36 @@ export function getSkillLevel(hero, skillId) {
   );
 }
 
+/** Returns normalized, detached branch definitions for a configured skill. */
+export function getSkillBranches(skillOrId) {
+  const definition = getConfiguredSkill(skillOrId);
+  if (!definition) return [];
+  return getSkillBranchDefinitions(definition).map((branch) => ({ ...branch }));
+}
+
+/** Returns the selected branch id when the saved choice still exists in config. */
+export function getSkillBranchChoice(hero, skillId) {
+  const id = String(skillId ?? "").trim();
+  const definition = getHeroConfiguredSkill(hero, id);
+  if (!definition) return null;
+  const selectedId = getSkillBranchMap(hero)[id];
+  if (!selectedId) return null;
+  return getSkillBranchDefinitions(definition).some((branch) => branch.id === selectedId)
+    ? selectedId
+    : null;
+}
+
+/** Returns the selected branch definition, or null for an absent/stale choice. */
+export function getSelectedSkillBranch(hero, skillId) {
+  const selectedId = getSkillBranchChoice(hero, skillId);
+  if (!selectedId) return null;
+  const definition = getHeroConfiguredSkill(hero, skillId);
+  return getSkillBranchDefinitions(definition)
+    .find((branch) => branch.id === selectedId) ?? null;
+}
+
 /** Resolves one skill at a level without mutating config or the supplied object. */
-export function resolveSkillAtLevel(skillOrId, level) {
+export function resolveSkillAtLevel(skillOrId, level, branchChoice = null) {
   const definition = getConfiguredSkill(skillOrId);
   if (!definition) return null;
   const leveling = getSkillLeveling(definition);
@@ -371,7 +573,35 @@ export function resolveSkillAtLevel(skillOrId, level) {
     if (milestone.level <= rank) applyNumericChanges(resolved, milestone.changes);
   }
   applyLevelValues(resolved, leveling.levels, rank);
-  return clampResolvedSkill(resolved);
+  const branches = getSkillBranchDefinitions(definition);
+  const requestedBranchId = getRequestedBranchId(
+    branchChoice ?? definition.selectedBranchId ?? definition.branchId,
+    definition.id,
+  );
+  const selectedBranch = requestedBranchId
+    ? branches.find((branch) => branch.id === requestedBranchId)
+    : null;
+  const activeBranch = selectedBranch
+    ? branches.find((branch) =>
+      branch.id === requestedBranchId && rank >= branch.unlockLevel)
+    : null;
+  applySkillBranch(resolved, activeBranch);
+  const clamped = clampResolvedSkill(resolved);
+  const branchUnlockLevel = selectedBranch?.unlockLevel
+    ?? (branches.length ? Math.min(...branches.map((branch) => branch.unlockLevel)) : null);
+  clamped.branches = branches.map((branch) => ({
+    ...branch,
+    unlocked: rank >= branch.unlockLevel,
+    selected: branch.id === selectedBranch?.id,
+  }));
+  clamped.selectedBranchId = selectedBranch?.id ?? null;
+  clamped.branchUnlocked = branchUnlockLevel !== null && rank >= branchUnlockLevel;
+  clamped.branchUnlockLevel = branchUnlockLevel;
+  if (activeBranch) {
+    clamped.branchId = activeBranch.id;
+    clamped.activeBranch = { ...activeBranch };
+  }
+  return clamped;
 }
 
 /** Returns all active skills for a hero with their current level applied. */
@@ -387,6 +617,7 @@ export function getHeroSkills(hero) {
     const resolved = resolveSkillAtLevel(
       definition,
       getSkillLevel(hero, id),
+      getSkillBranchChoice(hero, id),
     );
     if (!resolved) continue;
     skills.push(resolved);
@@ -413,7 +644,10 @@ export function getSkillPointsEarnedAtLevel(level) {
     Math.floor(safeLevel / progression.pointEveryLevels)
       - Math.floor(1 / progression.pointEveryLevels),
   );
-  return progression.initialPoints + awards * progression.pointsPerAward;
+  return Math.min(
+    progression.totalPointCap,
+    progression.initialPoints + awards * progression.pointsPerAward,
+  );
 }
 
 /** Returns immutable skill-point accounting, including migration-friendly totals. */
@@ -434,8 +668,14 @@ export function getSkillPointState(hero) {
 
   const prestigeCount = getPrestigeCount(hero);
   const earnedFromLevels = getSkillPointsEarnedAtLevel(hero?.level ?? 1);
-  const earnedFromPrestige = prestigeCount * progression.pointsPerPrestige;
-  const earned = earnedFromLevels + earnedFromPrestige;
+  const earnedFromPrestige = Math.min(
+    Math.max(0, progression.totalPointCap - earnedFromLevels),
+    prestigeCount * progression.pointsPerPrestige,
+  );
+  const earned = Math.min(
+    progression.totalPointCap,
+    earnedFromLevels + earnedFromPrestige,
+  );
   const explicitUnspent = Number.isFinite(hero?.unspentSkillPoints)
     ? hero.unspentSkillPoints
     : Number.isFinite(hero?.skillPoints)
@@ -443,18 +683,30 @@ export function getSkillPointState(hero) {
       : hero?.skillPoints && Number.isFinite(hero.skillPoints.unspent)
         ? hero.skillPoints.unspent
         : null;
+  const unspentCapacity = Math.max(0, progression.totalPointCap - spent);
   const unspent = explicitUnspent === null
     ? Math.max(0, earned - spent)
-    : positiveInteger(explicitUnspent);
+    : Math.min(unspentCapacity, positiveInteger(explicitUnspent));
+  const remainingInvestment = Math.max(0, progression.investmentCap - spent);
+  const available = Math.min(unspent, remainingInvestment);
   return {
     unspent,
-    available: unspent,
+    available,
+    spendable: available,
+    reserve: Math.max(0, unspent - available),
     spent,
     total: spent + unspent,
     earned,
     earnedFromLevels,
     earnedFromPrestige,
     pointsPerPrestige: progression.pointsPerPrestige,
+    totalPointCap: progression.totalPointCap,
+    earnedCap: progression.totalPointCap,
+    maxPoints: progression.totalPointCap,
+    investmentCap: progression.investmentCap,
+    maxInvestedPoints: progression.investmentCap,
+    remainingInvestment,
+    atInvestmentCap: remainingInvestment === 0,
   };
 }
 
@@ -466,8 +718,40 @@ function cloneSkillState(hero) {
       ? source.skills.map((entry) => isRecord(entry) ? { ...entry } : entry)
       : source.skills,
     skillLevels: getSkillLevelMap(source),
+    skillBranches: getSkillBranchMap(source),
   };
 }
+
+/** Selects one unlocked branch. A different choice requires an explicit reset. */
+export function chooseSkillBranch(hero, skillId, branchId) {
+  const next = cloneSkillState(hero);
+  const id = String(skillId ?? "").trim();
+  const requestedId = getRequestedBranchId(branchId);
+  const definition = getHeroConfiguredSkill(hero, id);
+  if (!definition || !requestedId || !isSkillAvailable(hero, id)) return next;
+  const branch = getSkillBranchDefinitions(definition)
+    .find((entry) => entry.id === requestedId);
+  if (!branch || getSkillLevel(hero, id) < branch.unlockLevel) return next;
+  const selectedId = getSkillBranchChoice(hero, id);
+  if (selectedId && selectedId !== requestedId) return next;
+  next.skillBranches[id] = requestedId;
+  return next;
+}
+
+/** Clears one branch choice, or every choice when skillId is omitted. */
+export function clearSkillBranches(hero, skillId = null) {
+  const next = cloneSkillState(hero);
+  const id = String(skillId ?? "").trim();
+  if (!id) {
+    next.skillBranches = {};
+    return next;
+  }
+  delete next.skillBranches[id];
+  return next;
+}
+
+export const resetSkillBranches = clearSkillBranches;
+export const selectSkillBranch = chooseSkillBranch;
 
 /** Spends up to amount skill points on one non-basic skill immutably. */
 export function upgradeSkill(hero, skillId, amount = 1) {
@@ -481,7 +765,7 @@ export function upgradeSkill(hero, skillId, amount = 1) {
   const requested = positiveInteger(amount, 1);
   const points = Math.min(
     requested,
-    state.unspent,
+    state.available,
     Math.max(0, leveling.maxLevel - current),
   );
   if (points <= 0) return next;
@@ -503,7 +787,11 @@ export function resetSkillPoints(hero) {
     if (!definition) continue;
     next.skillLevels[id] = getSkillLeveling(definition).initialLevel;
   }
-  next.unspentSkillPoints = state.unspent + state.spent;
+  next.unspentSkillPoints = Math.min(
+    state.totalPointCap,
+    state.unspent + state.spent,
+  );
+  next.skillBranches = {};
   return next;
 }
 
@@ -580,7 +868,10 @@ export function getPrestigeBonuses(hero) {
     multiplier,
     combatMultiplier: multiplier,
     statBonus: multiplier - 1,
-    skillPoints: count * config.pointsPerCount,
+    skillPoints: Math.min(
+      getGlobalSkillProgression().totalPointCap,
+      count * config.pointsPerCount,
+    ),
     floorCap,
     initialFloorCap: config.initialFloorCap,
     floorsPerCount: config.floorsPerCount,
@@ -600,6 +891,11 @@ export function getPrestigePreview(hero) {
   const nextCount = Math.min(getPrestigeConfig().maxCount, current.count + 1);
   const next = getPrestigeBonuses({ ...(isRecord(hero) ? hero : {}), prestigeCount: nextCount });
   const config = getPrestigeConfig();
+  const state = getSkillPointState(hero);
+  const skillPointsGranted = Math.min(
+    config.pointsPerCount,
+    Math.max(0, state.totalPointCap - state.total),
+  );
   return {
     eligible: canPrestige(hero),
     canPrestige: canPrestige(hero),
@@ -610,7 +906,7 @@ export function getPrestigePreview(hero) {
     multiplierGain: Math.max(0, next.multiplier - current.multiplier),
     currentFloorCap: current.floorCap,
     nextFloorCap: next.floorCap,
-    skillPointsGranted: config.pointsPerCount,
+    skillPointsGranted,
     resetSkillLevels: config.resetSkillLevels,
     maxLevel: config.minLevel,
   };
@@ -654,9 +950,16 @@ export function prestigeHero(hero) {
     const refunded = config.refundSkillPointsOnPrestige
       ? currentState.unspent + currentState.spent
       : currentState.unspent;
-    next.unspentSkillPoints = refunded + config.pointsPerCount;
+    next.unspentSkillPoints = Math.min(
+      currentState.totalPointCap,
+      refunded + config.pointsPerCount,
+    );
+    next.skillBranches = {};
   } else {
-    next.unspentSkillPoints = currentState.unspent + config.pointsPerCount;
+    next.unspentSkillPoints = Math.min(
+      currentState.totalPointCap,
+      currentState.unspent + config.pointsPerCount,
+    );
   }
   return next;
 }

@@ -124,7 +124,14 @@ export const tests = [
       });
       const first = actions(result, druid.id)[0];
       assert(first?.skillId === "wolf_form", `first action was ${first?.skillId}`);
-      assert(first.actionType === "empower" && first.message.includes("伤害 +32%"), first.message);
+      const configuredDamageBonus = Math.round(CONFIG.skills.wolf_form.damageBonus * 100);
+      const configuredLifestealBonus = Math.round(CONFIG.skills.wolf_form.lifestealBonus * 100);
+      assert(
+        first.actionType === "empower"
+          && first.message.includes(`伤害 +${configuredDamageBonus}%`)
+          && first.message.includes(`吸血 +${configuredLifestealBonus}%`),
+        first.message,
+      );
       assert(first.snapshot.player.empower?.remainingTurns > 0,
         "empower status must appear in snapshots");
       const strike = actions(result, druid.id)[1];
@@ -210,15 +217,31 @@ export const tests = [
         "raise_skeleton",
         CONFIG.skills.raise_skeleton.leveling.maxLevel,
       );
-      assert(maxedSummon.maxMinions === 4 && maxedSummon.summonCount === 3,
-        `summon milestones were ${maxedSummon.maxMinions}/${maxedSummon.summonCount}`);
+      const expectedMaxMinions = CONFIG.skills.raise_skeleton.maxMinions
+        + CONFIG.skills.raise_skeleton.leveling.milestones
+          .filter((milestone) => milestone.level <= CONFIG.skills.raise_skeleton.leveling.maxLevel)
+          .reduce((sum, milestone) => sum + Number(milestone.add?.maxMinions ?? 0), 0);
+      const expectedSummonCount = CONFIG.skills.raise_skeleton.summonCount
+        + CONFIG.skills.raise_skeleton.leveling.milestones
+          .filter((milestone) => milestone.level <= CONFIG.skills.raise_skeleton.leveling.maxLevel)
+          .reduce((sum, milestone) => sum + Number(milestone.add?.summonCount ?? 0), 0);
+      assert(maxedSummon.maxMinions === expectedMaxMinions
+        && maxedSummon.summonCount === expectedSummonCount,
+      `summon milestones were ${maxedSummon.maxMinions}/${maxedSummon.summonCount}`);
       assert(maxedSummon.minionAttackRatio > CONFIG.skills.raise_skeleton.minionAttackRatio);
 
       const maxedForm = resolveSkillAtLevel(
         "wolf_form",
         CONFIG.skills.wolf_form.leveling.maxLevel,
       );
-      assert(Math.abs(maxedForm.damageBonus - 0.5) < 1e-9,
+      const formLeveling = CONFIG.skills.wolf_form.leveling;
+      const expectedFormDamage = CONFIG.skills.wolf_form.damageBonus
+        + Number(formLeveling.perLevel?.damageBonus ?? 0)
+          * (formLeveling.maxLevel - formLeveling.initialLevel)
+        + formLeveling.milestones
+          .filter((milestone) => milestone.level <= formLeveling.maxLevel)
+          .reduce((sum, milestone) => sum + Number(milestone.add?.damageBonus ?? 0), 0);
+      assert(Math.abs(maxedForm.damageBonus - expectedFormDamage) < 1e-9,
         `wolf form max bonus was ${maxedForm.damageBonus}`);
       assert(maxedForm.cooldown === CONFIG.skills.wolf_form.cooldown - 1);
     },
