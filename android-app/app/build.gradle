@@ -12,6 +12,10 @@ android {
     namespace "com.gxgxg.arcade"
     compileSdk 35
 
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId "com.gxgxg.arcade"
         minSdk 24

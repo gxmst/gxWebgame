@@ -65,7 +65,10 @@ public final class MainActivity extends Activity {
         rootView.setBackgroundColor(Color.rgb(5, 31, 43));
         rootView.setOnApplyWindowInsetsListener((view, insets) -> {
             applySafeAreaInsets(insets);
-            return insets;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                return WindowInsets.CONSUMED;
+            }
+            return insets.consumeSystemWindowInsets();
         });
 
         webView = new WebView(this);
@@ -85,15 +88,18 @@ public final class MainActivity extends Activity {
     }
 
     private void applySafeAreaInsets(WindowInsets windowInsets) {
+        if (immersiveGame) {
+            rootView.setPadding(0, 0, 0, 0);
+            return;
+        }
+
         int left;
         int top;
         int right;
         int bottom;
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            int insetTypes = immersiveGame
-                    ? WindowInsets.Type.displayCutout() | WindowInsets.Type.mandatorySystemGestures()
-                    : WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout();
+            int insetTypes = WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout();
             Insets safeInsets = windowInsets.getInsets(insetTypes);
             left = safeInsets.left;
             top = safeInsets.top;
