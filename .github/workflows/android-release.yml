@@ -81,7 +81,7 @@ jobs:
         run: |
           test -f android-app/app/build/outputs/apk/release/app-release.apk
           cp android-app/app/build/outputs/apk/release/app-release.apk GX-Arcade.apk
-          apksigner verify --verbose --print-certs GX-Arcade.apk
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs GX-Arcade.apk
           keytool -list -keystore "$RUNNER_TEMP/gx-arcade-release.keystore" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
           sha256sum GX-Arcade.apk > GX-Arcade.apk.sha256
 
