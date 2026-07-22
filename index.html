@@ -118,6 +118,128 @@
     padding-top: 22px;
     border-top: 1px solid var(--line);
   }
+
+  .app-prompt {
+    position: fixed;
+    z-index: 20;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    max-width: 430px;
+    margin: 0 auto;
+    color: var(--ink);
+    filter: drop-shadow(0 16px 28px rgba(0, 0, 0, 0.5));
+  }
+  .app-prompt[hidden] { display: none; }
+  .app-prompt details {
+    overflow: hidden;
+    border: 1px solid rgba(126, 231, 223, 0.44);
+    border-radius: 16px;
+    background: rgba(5, 31, 43, 0.96);
+    backdrop-filter: blur(16px);
+  }
+  .app-prompt summary {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-height: 58px;
+    padding: 9px 46px 9px 11px;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+  }
+  .app-prompt summary::-webkit-details-marker { display: none; }
+  .app-prompt-icon {
+    display: grid;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    border-radius: 11px;
+    background: linear-gradient(145deg, var(--accent2), #0c6d87);
+    color: #052d38;
+    font: 900 14px "Courier New", monospace;
+  }
+  .app-prompt-title {
+    display: block;
+    font-size: 14px;
+    font-weight: 800;
+  }
+  .app-prompt-hint {
+    display: block;
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .app-prompt summary::after {
+    content: "⌃";
+    margin-left: auto;
+    color: var(--accent2);
+    font-size: 18px;
+    transition: transform 0.18s ease;
+  }
+  .app-prompt details:not([open]) summary::after { transform: rotate(180deg); }
+  .app-prompt-close {
+    position: absolute;
+    z-index: 1;
+    top: 9px;
+    right: 9px;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--muted);
+    font-size: 22px;
+    cursor: pointer;
+  }
+  .app-prompt-close:focus-visible,
+  .app-prompt-close:hover {
+    outline: 1px solid var(--accent2);
+    color: var(--ink);
+  }
+  .app-prompt-body {
+    padding: 0 14px 14px;
+    border-top: 1px solid var(--line);
+  }
+  .app-prompt-body p {
+    margin: 12px 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.65;
+  }
+  .app-prompt-actions { display: flex; gap: 9px; }
+  .app-download, .app-later {
+    display: inline-flex;
+    min-height: 42px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 0 18px;
+    font-size: 13px;
+    font-weight: 800;
+    text-decoration: none;
+  }
+  .app-download {
+    flex: 1;
+    background: var(--accent2);
+    color: #052d38;
+  }
+  .app-later {
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .app-download:focus-visible, .app-download:hover { background: #a2f5ef; outline: none; }
+  .app-later:focus-visible, .app-later:hover { border-color: var(--muted); color: var(--ink); outline: none; }
+
+  @media (min-width: 700px) {
+    .app-prompt { left: auto; right: 20px; margin: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .app-prompt summary::after { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -156,8 +278,49 @@
   </a>
 </main>
 
+<aside class="app-prompt" id="android-app-prompt" aria-label="Android 应用下载建议" hidden>
+  <details open>
+    <summary>
+      <span class="app-prompt-icon" aria-hidden="true">GX</span>
+      <span>
+        <span class="app-prompt-title">用 GX 小游戏 App 玩</span>
+        <span class="app-prompt-hint">自动横屏 · 沉浸全屏 · 网页内容实时更新</span>
+      </span>
+    </summary>
+    <div class="app-prompt-body">
+      <p>安装 Android 版后，“大鱼吃小鱼”会直接横屏，不用关闭手机的竖屏锁定。APK 来自本项目的 GitHub Release。</p>
+      <div class="app-prompt-actions">
+        <a class="app-download" href="https://github.com/gxmst/gxWebgame/releases/latest/download/GX-Arcade.apk" rel="noreferrer">下载 Android 版</a>
+        <button class="app-later" id="android-app-prompt-later" type="button">暂不提示</button>
+      </div>
+    </div>
+  </details>
+  <button class="app-prompt-close" id="android-app-prompt-close" type="button" aria-label="关闭并不再提示">×</button>
+</aside>
+
 <footer class="site-foot">
   <p>gx 小游戏合集 · 纯前端 · 打开即玩</p>
 </footer>
+<script>
+  (() => {
+    const prompt = document.querySelector("#android-app-prompt");
+    const dismissKey = "gx-arcade-android-prompt-dismissed-v1";
+    const userAgent = navigator.userAgent || "";
+    const isAndroidBrowser = /Android/i.test(userAgent) && !/GXArcadeApp\//i.test(userAgent);
+    const isStandalone = window.matchMedia?.("(display-mode: standalone)").matches === true;
+
+    let dismissed = false;
+    try { dismissed = localStorage.getItem(dismissKey) === "1"; } catch (_) {}
+    if (!prompt || !isAndroidBrowser || isStandalone || dismissed) return;
+
+    prompt.hidden = false;
+    const dismiss = () => {
+      prompt.hidden = true;
+      try { localStorage.setItem(dismissKey, "1"); } catch (_) {}
+    };
+    prompt.querySelector("#android-app-prompt-close")?.addEventListener("click", dismiss);
+    prompt.querySelector("#android-app-prompt-later")?.addEventListener("click", dismiss);
+  })();
+</script>
 </body>
 </html>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GX 小游戏</string>
+    <string name="ssl_error">安全连接失败，请稍后重试</string>
+    <string name="no_browser">没有可打开此链接的浏览器</string>
+    <string name="offline_html"><![CDATA[
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:28px;background:linear-gradient(180deg,#083849,#051f2b);color:#f5fbf7;font-family:sans-serif;text-align:center}.box{max-width:360px}h1{font-size:24px}p{color:#9ab6bd;line-height:1.7}button{border:0;border-radius:999px;padding:13px 24px;background:#7ee7df;color:#052d38;font-weight:800;font-size:16px}</style></head><body><main class="box"><div style="font-size:54px">🎮</div><h1>暂时无法连接游戏站</h1><p>请检查网络连接，然后重新尝试。你的本地游戏存档不会受到影响。</p><button onclick="location.href='https://game.gxgxg.com/'">重新连接</button></main></body></html>
+    ]]></string>
+</resources>
